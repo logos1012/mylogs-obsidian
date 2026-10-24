@@ -1,0 +1,399 @@
+{
+ "2026": {
+  "counts": {
+   "scheduled": 9,
+   "done": 0,
+   "moved": 9,
+   "cancelled": 1
+  },
+  "items": [
+   {
+    "line": 10,
+    "month": 1,
+    "kind": "event",
+    "status": "moved",
+    "start": "2026-01-02",
+    "end": null,
+    "time": "",
+    "text": "시무식",
+    "tags": [
+     "회사"
+    ],
+    "fields": [],
+    "moved_to": "03 Desk Calendar/2026/2026-01",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 11,
+    "month": 1,
+    "kind": "task",
+    "status": "moved",
+    "start": "2026-01-15",
+    "end": null,
+    "time": "",
+    "text": "신년 계획 정리",
+    "tags": [],
+    "fields": [],
+    "moved_to": "03 Desk Calendar/2026/2026-01",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 14,
+    "month": 2,
+    "kind": "event",
+    "status": "moved",
+    "start": "2026-02-16",
+    "end": "2026-02-18",
+    "time": "",
+    "text": "설 연휴",
+    "tags": [
+     "가족"
+    ],
+    "fields": [],
+    "moved_to": "03 Desk Calendar/2026/2026-02",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 17,
+    "month": 3,
+    "kind": "task",
+    "status": "moved",
+    "start": "2026-03-31",
+    "end": null,
+    "time": "",
+    "text": "1분기 보고서 제출",
+    "tags": [
+     "회사"
+    ],
+    "fields": [],
+    "moved_to": "03 Desk Calendar/2026/2026-03",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 20,
+    "month": 4,
+    "kind": "event",
+    "status": "moved",
+    "start": "2026-04-18",
+    "end": "2026-04-22",
+    "time": "",
+    "text": "NAB Show 출장",
+    "tags": [
+     "회사"
+    ],
+    "fields": [],
+    "moved_to": "03 Desk Calendar/2026/2026-04",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 23,
+    "month": 5,
+    "kind": "event",
+    "status": "cancelled",
+    "start": "2026-05-09",
+    "end": null,
+    "time": "",
+    "text": "워크숍",
+    "tags": [],
+    "fields": [],
+    "moved_to": "",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 28,
+    "month": 7,
+    "kind": "task",
+    "status": "moved",
+    "start": "2026-07-31",
+    "end": null,
+    "time": "",
+    "text": "상반기 성과평가서 제출",
+    "tags": [
+     "회사"
+    ],
+    "fields": [],
+    "moved_to": "03 Desk Calendar/2026/2026-07",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 33,
+    "month": 9,
+    "kind": "event",
+    "status": "moved",
+    "start": "2026-09-24",
+    "end": "2026-09-27",
+    "time": "",
+    "text": "추석 연휴",
+    "tags": [
+     "가족"
+    ],
+    "fields": [],
+    "moved_to": "03 Desk Calendar/2026/2026-09",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 36,
+    "month": 10,
+    "kind": "event",
+    "status": "moved",
+    "start": "2026-10-15",
+    "end": "2026-10-17",
+    "time": "",
+    "text": "부산 출장",
+    "tags": [
+     "회사"
+    ],
+    "fields": [],
+    "moved_to": "03 Desk Calendar/2026/2026-10",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 37,
+    "month": 10,
+    "kind": "task",
+    "status": "moved",
+    "start": "2026-10-31",
+    "end": null,
+    "time": "",
+    "text": "시사회 보고문 제출",
+    "tags": [
+     "회사"
+    ],
+    "fields": [],
+    "moved_to": "03 Desk Calendar/2026/2026-10",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 40,
+    "month": 11,
+    "kind": "event",
+    "status": "scheduled",
+    "start": "2026-11-03",
+    "end": "2026-11-07",
+    "time": "",
+    "text": "호치민 출장",
+    "tags": [
+     "회사"
+    ],
+    "fields": [],
+    "moved_to": "",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 41,
+    "month": 11,
+    "kind": "task",
+    "status": "scheduled",
+    "start": "2026-11-14",
+    "end": null,
+    "time": "",
+    "text": "Claude Code 강의 1~5강 완성",
+    "tags": [],
+    "fields": [
+     [
+      "goal",
+      "G-2026-01.2"
+     ]
+    ],
+    "moved_to": "",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 42,
+    "month": 11,
+    "kind": "event",
+    "status": "scheduled",
+    "start": "2026-11-21",
+    "end": null,
+    "time": "",
+    "text": "가족 생일",
+    "tags": [
+     "가족"
+    ],
+    "fields": [],
+    "moved_to": "",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 43,
+    "month": 11,
+    "kind": "task",
+    "status": "scheduled",
+    "start": null,
+    "end": null,
+    "time": "",
+    "text": "2027년 예산안 초안 검토",
+    "tags": [
+     "회사"
+    ],
+    "fields": [],
+    "moved_to": "",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 46,
+    "month": 12,
+    "kind": "event",
+    "status": "scheduled",
+    "start": "2026-12-05",
+    "end": null,
+    "time": "",
+    "text": "혼팀 인스타그램 이벤트",
+    "tags": [],
+    "fields": [
+     [
+      "goal",
+      "G-2026-03.1"
+     ]
+    ],
+    "moved_to": "",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 47,
+    "month": 12,
+    "kind": "task",
+    "status": "scheduled",
+    "start": "2026-12-20",
+    "end": null,
+    "time": "",
+    "text": "체중 중간 점검",
+    "tags": [
+     "건강"
+    ],
+    "fields": [
+     [
+      "goal",
+      "G-2026-02.1"
+     ]
+    ],
+    "moved_to": "",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 48,
+    "month": 12,
+    "kind": "event",
+    "status": "scheduled",
+    "start": "2026-12-24",
+    "end": "2026-12-25",
+    "time": "",
+    "text": "크리스마스",
+    "tags": [
+     "가족"
+    ],
+    "fields": [],
+    "moved_to": "",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 49,
+    "month": 12,
+    "kind": "task",
+    "status": "scheduled",
+    "start": "2026-12-31",
+    "end": null,
+    "time": "",
+    "text": "2026 Yearly 리뷰",
+    "tags": [],
+    "fields": [],
+    "moved_to": "",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 50,
+    "month": 12,
+    "kind": "note",
+    "status": "scheduled",
+    "start": null,
+    "end": null,
+    "time": "",
+    "text": "연말 감사 인사 보낼 사람 정리",
+    "tags": [],
+    "fields": [],
+    "moved_to": "",
+    "test": true,
+    "ok": true
+   }
+  ],
+  "issues": 0
+ },
+ "2027": {
+  "counts": {
+   "scheduled": 3,
+   "done": 0,
+   "moved": 0,
+   "cancelled": 0
+  },
+  "items": [
+   {
+    "line": 10,
+    "month": 1,
+    "kind": "task",
+    "status": "scheduled",
+    "start": "2027-01-02",
+    "end": null,
+    "time": "",
+    "text": "2027 Pinboard 목표 세우기",
+    "tags": [],
+    "fields": [],
+    "moved_to": "",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 13,
+    "month": 2,
+    "kind": "event",
+    "status": "scheduled",
+    "start": "2027-02-06",
+    "end": "2027-02-08",
+    "time": "",
+    "text": "설 연휴",
+    "tags": [
+     "가족"
+    ],
+    "fields": [],
+    "moved_to": "",
+    "test": true,
+    "ok": true
+   },
+   {
+    "line": 16,
+    "month": 3,
+    "kind": "task",
+    "status": "scheduled",
+    "start": null,
+    "end": null,
+    "time": "",
+    "text": "건강검진 예약",
+    "tags": [
+     "건강"
+    ],
+    "fields": [],
+    "moved_to": "",
+    "test": true,
+    "ok": true
+   }
+  ],
+  "issues": 0
+ }
+}
