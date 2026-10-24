@@ -201,7 +201,8 @@ export function replaceSectionContent(text: string, name: string, content: strin
 	} else if (!parts.core) {
 		newBody = newCore + eol + (r.hasNext ? eol : "");
 	} else {
-		let tail = parts.tail;
+		// Trailing spaces belonged to the old last line (e.g. an empty `- ` bullet), not to the new content.
+		let tail = parts.tail.replace(/^[ \t]+/, "");
 		if (!/\n/.test(tail)) tail = eol + (r.hasNext ? eol : "");
 		newBody = parts.lead + newCore + tail;
 	}
