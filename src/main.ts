@@ -1,6 +1,7 @@
 import { debounce, Plugin, type WorkspaceLeaf } from "obsidian";
 import { mergeSettings, type MyLogsSettings, MyLogsSettingTab } from "./settings.ts";
 import { DailyPadView, VIEW_TYPE_DAILY_PAD } from "./view.ts";
+import { refreshDeskCalendars, registerDeskCalendar } from "./desk/register.ts";
 
 /*
  * MyLogs v0.1.0 — Daily Pad view only.
@@ -8,7 +9,7 @@ import { DailyPadView, VIEW_TYPE_DAILY_PAD } from "./view.ts";
  * Out of scope for v0.1 (see the vault's `MyLogs Plugin 계획.md`):
  * TODO(계획 §1): Pinboard view (`mylogs-pinboard`).
  * TODO(계획 §2): Wall Calendar view (`mylogs-wall-calendar`).
- * TODO(계획 §3): Desk Calendar view (`mylogs-desk-calendar`) incl. drag & drop allocation.
+ * §3 Desk Calendar view (`mylogs-desk-calendar`, drag & drop allocation): src/desk/.
  * TODO(계획 §4 「못 한 일 버튼」): 다른 날 / 미래로 / 서랍에 / 쪼개기 / 놓아주기, moved count, 3rd-move questions.
  * TODO(계획 「기본 방침」 5, 「결정할 것」 1): index updates (Daily Pad Index.md, Desk Calendar Index.md).
  * TODO(계획 「기본 방침」 8): move UI strings into translation files (i18n).
@@ -22,6 +23,7 @@ export default class MyLogsPlugin extends Plugin {
 				const v = leaf.view;
 				if (v instanceof DailyPadView) void v.refreshAll();
 			}
+			refreshDeskCalendars(this);
 		},
 		600,
 		true,
@@ -39,6 +41,8 @@ export default class MyLogsPlugin extends Plugin {
 			name: "Daily Pad 열기",
 			callback: () => void this.activateDailyPad(),
 		});
+
+		registerDeskCalendar(this);
 
 		this.addSettingTab(new MyLogsSettingTab(this.app, this));
 	}
