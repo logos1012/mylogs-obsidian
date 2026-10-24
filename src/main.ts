@@ -4,15 +4,20 @@ import { DailyPadView, VIEW_TYPE_DAILY_PAD } from "./view.ts";
 import { PinboardView, VIEW_TYPE_PINBOARD } from "./pinboard/view.ts";
 import { VIEW_TYPE_WALL_CALENDAR, WallCalendarView } from "./wall/view.ts";
 import { refreshDeskCalendars, registerDeskCalendar } from "./desk/register.ts";
+import { refreshProjectFolders, registerProjectFolders } from "./projects/register.ts";
 
 /*
- * MyLogs — Daily Pad, Pinboard, Wall Calendar, Desk Calendar views.
+ * MyLogs — Daily Pad, Pinboard, Wall Calendar, Desk Calendar, Project Folders views.
  *
  * Desk Calendar view (`mylogs-desk-calendar`, drag & drop allocation): src/desk/.
+ * Project Folders view (`mylogs-project-folders`, kanban / list / 완료 타임라인): src/projects/.
  *
  * Still out of scope (see the vault's `MyLogs Plugin 계획.md`):
  * TODO(계획 §4 「못 한 일 버튼」): 다른 날 / 미래로 / 서랍에 / 쪼개기 / 놓아주기, moved count, 3rd-move questions.
  * TODO(계획 「기본 방침」 5, 「결정할 것」 1): index updates (Daily Pad Index.md, Desk Calendar Index.md).
+ * TODO(계획 §6 「후보」): Drawer 「프로젝트 후보」 in the 후보 column + "프로젝트로 만들기" (Drawer format undecided).
+ * TODO(계획 §6 「새 프로젝트」): cover image generation (「대표 이미지 프롬프트」; integration undecided).
+ * TODO(AGENTS 「3-2」 5): link Pinboard Sub Goals (goals ↔ projects/project_ids) when creating a project.
  * TODO(계획 「기본 방침」 8): move UI strings into translation files (i18n).
  */
 export default class MyLogsPlugin extends Plugin {
@@ -33,6 +38,7 @@ export default class MyLogsPlugin extends Plugin {
 				if (v instanceof WallCalendarView) void v.refreshAll();
 			}
 			refreshDeskCalendars(this);
+			refreshProjectFolders(this);
 		},
 		600,
 		true,
@@ -67,6 +73,7 @@ export default class MyLogsPlugin extends Plugin {
 			callback: () => void this.activateView(VIEW_TYPE_WALL_CALENDAR),
 		});
 		registerDeskCalendar(this);
+		registerProjectFolders(this);
 
 		this.addSettingTab(new MyLogsSettingTab(this.app, this));
 	}

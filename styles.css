@@ -3801,3 +3801,667 @@
 	color: var(--text-muted);
 }
 /* ===== /Desk Calendar view ===== */
+
+/* ===== Project Folders view ===== */
+/*
+   Same paper as the Desk Calendar: white background, hairline rules, teal accent.
+   Kanban (one column per status), list (grouped by area), 완료 타임라인 (month axis).
+   Everything is scoped under .mylogs-projects; class names use the pf- prefix.
+*/
+.view-content.mylogs-projects-container {
+	padding: 0;
+	background: #ffffff;
+	container-type: inline-size;
+}
+.theme-dark .view-content.mylogs-projects-container {
+	background: #1c1d1f;
+}
+.mylogs-projects {
+	--pf-bg: #ffffff;
+	--pf-paper: #ffffff;
+	--pf-ink: #1d1d1f;
+	--pf-ink-2: #4a4a4f;
+	--pf-muted: #8e8e93;
+	--pf-faint: #b9b9be;
+	--pf-line: #ececee;
+	--pf-line-strong: #d6d6da;
+	--pf-col-bg: #f8f8f6;
+	--pf-accent: #0f766e;
+	--pf-accent-soft: #e8f3f1;
+	--pf-accent-ink: #ffffff;
+	--pf-warn: #a35a00;
+	--pf-warn-bg: #fff3df;
+	--pf-chip-bg: #f2f2f4;
+	--pf-personal: #3d6fb6;
+	--pf-personal-bg: #edf2fa;
+	--pf-work: #8a5a12;
+	--pf-work-bg: #f8f0e3;
+	--pf-shadow: 0 1px 2px rgba(20, 20, 30, 0.04), 0 6px 18px -10px rgba(20, 20, 30, 0.18);
+
+	min-height: 100%;
+	max-width: 1640px;
+	margin: 0 auto;
+	padding: 44px 40px 56px;
+	background: var(--pf-bg);
+	color: var(--pf-ink);
+	font-family: Pretendard, "Pretendard Variable", "Apple SD Gothic Neo", var(--font-interface), -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Noto Sans KR", sans-serif;
+	font-size: 13px;
+	line-height: 1.45;
+	-webkit-font-smoothing: antialiased;
+	letter-spacing: -0.005em;
+}
+.theme-dark .mylogs-projects {
+	--pf-bg: #1c1d1f;
+	--pf-paper: #232427;
+	--pf-ink: #ececee;
+	--pf-ink-2: #c4c4c8;
+	--pf-muted: #8d8d93;
+	--pf-faint: #5d5d63;
+	--pf-line: #2c2d30;
+	--pf-line-strong: #3a3b3f;
+	--pf-col-bg: #202124;
+	--pf-accent: #5cc0b3;
+	--pf-accent-soft: #1d2a29;
+	--pf-accent-ink: #10201e;
+	--pf-warn: #f0b45c;
+	--pf-warn-bg: #3a2c17;
+	--pf-chip-bg: #2a2b2e;
+	--pf-personal: #84a9e0;
+	--pf-personal-bg: #1f2735;
+	--pf-work: #e2b56f;
+	--pf-work-bg: #33291b;
+	--pf-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 20px -12px rgba(0, 0, 0, 0.6);
+}
+.mylogs-projects *,
+.mylogs-projects *::before,
+.mylogs-projects *::after {
+	box-sizing: border-box;
+}
+.mylogs-projects.is-busy {
+	cursor: progress;
+}
+.mylogs-projects.is-busy .pf-board,
+.mylogs-projects.is-busy .pf-area {
+	opacity: 0.6;
+	pointer-events: none;
+}
+
+/* ── header ── */
+.mylogs-projects .pf-top {
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 24px;
+	flex-wrap: wrap;
+	padding-bottom: 22px;
+	border-bottom: 1px solid var(--pf-ink);
+}
+.mylogs-projects .pf-eyebrow {
+	font-size: 11px;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+	color: var(--pf-muted);
+	margin-bottom: 6px;
+}
+.mylogs-projects h1 {
+	margin: 0;
+	font-size: 40px;
+	line-height: 1.05;
+	font-weight: 700;
+	letter-spacing: -0.03em;
+	color: var(--pf-ink);
+}
+.mylogs-projects .pf-right {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 8px;
+}
+.mylogs-projects .pf-controls {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+}
+.mylogs-projects .pf-seg {
+	display: inline-flex;
+}
+.mylogs-projects .pf-seg .pf-btn {
+	border-radius: 0;
+	margin-left: -1px;
+}
+.mylogs-projects .pf-seg .pf-btn:first-child {
+	border-radius: 6px 0 0 6px;
+	margin-left: 0;
+}
+.mylogs-projects .pf-seg .pf-btn:last-child {
+	border-radius: 0 6px 6px 0;
+}
+.mylogs-projects .pf-btn {
+	font: inherit;
+	font-size: 12px;
+	height: 28px;
+	padding: 0 10px;
+	border: 1px solid var(--pf-line-strong);
+	border-radius: 6px;
+	background: var(--pf-paper);
+	color: var(--pf-ink-2);
+	box-shadow: none;
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	position: relative;
+}
+.mylogs-projects .pf-btn:hover {
+	border-color: var(--pf-accent);
+	color: var(--pf-accent);
+	z-index: 1;
+}
+.mylogs-projects .pf-btn.is-active {
+	color: var(--pf-accent);
+	border-color: var(--pf-accent);
+	background: var(--pf-accent-soft);
+	z-index: 1;
+}
+.mylogs-projects .pf-btn-icon {
+	display: inline-flex;
+}
+.mylogs-projects .pf-btn svg {
+	width: 14px;
+	height: 14px;
+}
+.mylogs-projects .pf-btn-primary {
+	background: var(--pf-accent);
+	border-color: var(--pf-accent);
+	color: var(--pf-accent-ink);
+	font-weight: 600;
+}
+.mylogs-projects .pf-btn-primary:hover {
+	color: var(--pf-accent-ink);
+	opacity: 0.9;
+}
+.mylogs-projects .pf-notice {
+	margin-top: 16px;
+	padding: 9px 12px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 12.5px;
+	color: var(--pf-warn);
+	background: var(--pf-warn-bg);
+	border-radius: 6px;
+}
+.mylogs-projects .pf-notice-icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* ── kanban ── */
+.mylogs-projects .pf-board {
+	margin-top: 22px;
+	display: grid;
+	grid-template-columns: repeat(5, minmax(220px, 1fr));
+	gap: 14px;
+	align-items: start;
+	overflow-x: auto;
+	padding-bottom: 6px;
+}
+.mylogs-projects .pf-col {
+	background: var(--pf-col-bg);
+	border: 1px solid var(--pf-line);
+	border-radius: 10px;
+	padding: 12px 10px 10px;
+	min-height: 160px;
+	transition: box-shadow 0.12s, background 0.12s;
+}
+.mylogs-projects .pf-col-head {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	padding: 0 4px;
+}
+.mylogs-projects .pf-col-name {
+	font-size: 14px;
+	font-weight: 700;
+}
+.mylogs-projects .pf-col-count {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--pf-muted);
+	font-variant-numeric: tabular-nums;
+	margin-left: 6px;
+}
+.mylogs-projects .pf-col-hint {
+	font-size: 11px;
+	color: var(--pf-muted);
+	padding: 2px 4px 10px;
+}
+.mylogs-projects .pf-col.st-진행 .pf-col-name {
+	color: var(--pf-accent);
+}
+.mylogs-projects .pf-col-list {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+.mylogs-projects .pf-col-empty {
+	font-size: 12px;
+	color: var(--pf-faint);
+	text-align: center;
+	padding: 18px 0;
+	border: 1px dashed var(--pf-line-strong);
+	border-radius: 8px;
+}
+.mylogs-projects .pf-more {
+	font: inherit;
+	font-size: 12px;
+	margin-top: 10px;
+	width: 100%;
+	height: 30px;
+	border: none;
+	background: none;
+	box-shadow: none;
+	color: var(--pf-accent);
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+}
+.mylogs-projects .pf-more:hover {
+	text-decoration: underline;
+}
+.mylogs-projects .pf-more svg {
+	width: 13px;
+	height: 13px;
+}
+
+/* ── drag and drop ── */
+.mylogs-projects .pf-draggable {
+	cursor: grab;
+}
+.mylogs-projects .pf-dragging {
+	opacity: 0.35;
+}
+.mylogs-projects.pf-is-dragging .pf-col:not(.pf-drop-ok) {
+	opacity: 0.55;
+}
+.mylogs-projects.pf-is-dragging .pf-drop-ok {
+	box-shadow: inset 0 0 0 1.5px var(--pf-accent);
+}
+.mylogs-projects.pf-is-dragging .pf-drop-ok.pf-drop-hover {
+	background: var(--pf-accent-soft);
+	box-shadow: inset 0 0 0 2px var(--pf-accent);
+}
+
+/* ── card ── */
+.mylogs-projects .pf-card {
+	background: var(--pf-paper);
+	border: 1px solid var(--pf-line);
+	border-radius: 8px;
+	padding: 12px 12px 10px;
+	box-shadow: var(--pf-shadow);
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	overflow: hidden;
+}
+.mylogs-projects .pf-card.is-stale > :not(.pf-stale) {
+	opacity: 0.5;
+}
+.mylogs-projects .pf-card.is-stale {
+	background: var(--pf-col-bg);
+	box-shadow: none;
+	border-style: dashed;
+}
+.mylogs-projects .pf-cover {
+	margin: -12px -12px 2px;
+	aspect-ratio: 16 / 9;
+	background: var(--pf-chip-bg);
+	overflow: hidden;
+}
+.mylogs-projects .pf-cover img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	display: block;
+}
+.mylogs-projects .pf-meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 5px;
+	align-items: center;
+}
+.mylogs-projects .pf-scope,
+.mylogs-projects .pf-status,
+.mylogs-projects .pf-kind,
+.mylogs-projects .pf-chip,
+.mylogs-projects .pf-draft {
+	font-size: 10.5px;
+	font-weight: 600;
+	padding: 1px 7px;
+	border-radius: 999px;
+	line-height: 1.6;
+	white-space: nowrap;
+}
+.mylogs-projects .pf-scope.is-personal {
+	color: var(--pf-personal);
+	background: var(--pf-personal-bg);
+}
+.mylogs-projects .pf-scope.is-work {
+	color: var(--pf-work);
+	background: var(--pf-work-bg);
+}
+.mylogs-projects .pf-status {
+	color: var(--pf-ink-2);
+	border: 1px solid var(--pf-line-strong);
+}
+.mylogs-projects .pf-status.st-진행 {
+	color: var(--pf-accent);
+	border-color: var(--pf-accent);
+}
+.mylogs-projects .pf-kind {
+	color: var(--pf-muted);
+	font-weight: 500;
+	padding-left: 0;
+}
+.mylogs-projects .pf-name {
+	margin: 0;
+	font-size: 14px;
+	font-weight: 700;
+	line-height: 1.3;
+	cursor: pointer;
+	color: var(--pf-ink);
+}
+.mylogs-projects .pf-name:hover {
+	color: var(--pf-accent);
+}
+.mylogs-projects .pf-action {
+	border-left: 3px solid var(--pf-accent);
+	padding: 2px 0 2px 9px;
+}
+.mylogs-projects .pf-action-k {
+	display: block;
+	font-size: 10.5px;
+	color: var(--pf-muted);
+	margin-bottom: 2px;
+}
+.mylogs-projects .pf-action-v {
+	font-size: 17px;
+	font-weight: 650;
+	line-height: 1.35;
+	letter-spacing: -0.015em;
+	color: var(--pf-ink);
+}
+.mylogs-projects .pf-action.is-empty {
+	border-left-color: var(--pf-line-strong);
+}
+.mylogs-projects .pf-action.is-empty .pf-action-v {
+	color: var(--pf-faint);
+	font-weight: 500;
+}
+.mylogs-projects .pf-action.is-done .pf-action-v {
+	text-decoration: line-through;
+	color: var(--pf-muted);
+}
+.mylogs-projects .pf-draft {
+	display: inline-block;
+	margin-top: 4px;
+	color: var(--pf-warn);
+	background: var(--pf-warn-bg);
+}
+.mylogs-projects .pf-result {
+	font-size: 12.5px;
+	color: var(--pf-ink-2);
+}
+.mylogs-projects .pf-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+.mylogs-projects .pf-chip {
+	color: var(--pf-ink-2);
+	background: var(--pf-chip-bg);
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-projects .pf-card-foot {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+	font-size: 11px;
+	color: var(--pf-muted);
+	font-variant-numeric: tabular-nums;
+	border-top: 1px solid var(--pf-line);
+	padding-top: 7px;
+}
+.mylogs-projects .pf-ago {
+	color: var(--pf-faint);
+}
+.mylogs-projects .pf-stale {
+	background: var(--pf-warn-bg);
+	border-radius: 6px;
+	padding: 8px;
+}
+.mylogs-projects .pf-stale-q {
+	font-size: 12px;
+	color: var(--pf-warn);
+	margin-bottom: 6px;
+}
+.mylogs-projects .pf-stale-btns {
+	display: flex;
+	gap: 6px;
+}
+.mylogs-projects .pf-stale-btns .pf-btn {
+	flex: 1;
+	justify-content: center;
+	height: 26px;
+}
+
+/* ── list ── */
+.mylogs-projects .pf-area {
+	margin-top: 26px;
+}
+.mylogs-projects .pf-area-name {
+	margin: 0 0 12px;
+	font-size: 16px;
+	font-weight: 700;
+	padding-bottom: 8px;
+	border-bottom: 1px solid var(--pf-line);
+}
+.mylogs-projects .pf-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+	gap: 12px;
+	align-items: start;
+}
+
+/* ── empty ── */
+.mylogs-projects .pf-empty {
+	margin-top: 22px;
+	padding: 28px;
+	border: 1px dashed var(--pf-line-strong);
+	border-radius: 8px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
+	text-align: center;
+}
+.mylogs-projects .pf-empty p {
+	margin: 0;
+	color: var(--pf-muted);
+}
+.mylogs-projects .pf-empty-title {
+	font-size: 15px;
+	font-weight: 600;
+}
+.mylogs-projects .pf-foot {
+	margin-top: 32px;
+	font-size: 11px;
+	color: var(--pf-faint);
+}
+
+/* ── 완료 타임라인 ── */
+.mylogs-projects .pf-tl-nav {
+	margin-top: 22px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.mylogs-projects .pf-tl-year {
+	font-size: 22px;
+	font-weight: 700;
+	min-width: 64px;
+	text-align: center;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-projects .pf-tl-years {
+	margin-left: 8px;
+	font-size: 12px;
+	color: var(--pf-muted);
+}
+.mylogs-projects .pf-tl {
+	margin-top: 16px;
+	overflow-x: auto;
+}
+.mylogs-projects .pf-tl-axis,
+.mylogs-projects .pf-tl-grid {
+	display: grid;
+	grid-template-columns: repeat(12, 1fr);
+	min-width: 900px;
+}
+.mylogs-projects .pf-tl-month {
+	font-size: 11px;
+	color: var(--pf-muted);
+	padding: 0 0 6px 6px;
+	border-left: 1px solid var(--pf-line);
+}
+.mylogs-projects .pf-tl-body {
+	position: relative;
+	min-width: 900px;
+	min-height: 120px;
+	padding: 10px 0 14px;
+	border-top: 1px solid var(--pf-ink);
+}
+.mylogs-projects .pf-tl-grid {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+}
+.mylogs-projects .pf-tl-grid > div {
+	border-left: 1px solid var(--pf-line);
+}
+.mylogs-projects .pf-tl-now {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 0;
+	border-left: 1.5px solid var(--pf-accent);
+	z-index: 1;
+	pointer-events: none;
+}
+.mylogs-projects .pf-tl-row {
+	position: relative;
+	height: 74px;
+	margin-bottom: 8px;
+}
+.mylogs-projects .pf-tl-bar {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	min-width: 150px;
+	display: flex;
+	gap: 8px;
+	align-items: stretch;
+	background: var(--pf-paper);
+	border: 1px solid var(--pf-line-strong);
+	border-left: 4px solid var(--pf-accent);
+	border-radius: 6px;
+	box-shadow: var(--pf-shadow);
+	overflow: hidden;
+	cursor: pointer;
+	z-index: 2;
+}
+.mylogs-projects .pf-tl-bar:hover {
+	border-color: var(--pf-accent);
+}
+.mylogs-projects .pf-tl-bar.is-clip-start {
+	border-left-style: dashed;
+	border-top-left-radius: 0;
+	border-bottom-left-radius: 0;
+}
+.mylogs-projects .pf-tl-bar.is-clip-end {
+	border-right-style: dashed;
+}
+.mylogs-projects .pf-tl-cover {
+	width: 96px;
+	flex: none;
+	object-fit: cover;
+}
+.mylogs-projects .pf-tl-txt {
+	padding: 7px 10px 6px 4px;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.mylogs-projects .pf-tl-name {
+	font-weight: 700;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	display: flex;
+	gap: 6px;
+	align-items: center;
+}
+.mylogs-projects .pf-tl-result {
+	font-size: 12px;
+	color: var(--pf-ink-2);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.mylogs-projects .pf-tl-dates {
+	font-size: 11px;
+	color: var(--pf-muted);
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-projects .pf-tl-empty {
+	padding: 30px 0;
+	text-align: center;
+	color: var(--pf-muted);
+}
+
+/* ── narrow (side pane, phone) ── */
+@container (max-width: 700px) {
+	.mylogs-projects {
+		padding: 24px 16px 40px;
+	}
+	.mylogs-projects h1 {
+		font-size: 28px;
+	}
+	.mylogs-projects .pf-right {
+		align-items: flex-start;
+	}
+	.mylogs-projects .pf-board {
+		grid-template-columns: 1fr;
+	}
+}
+
+/* ── modals ── */
+.mylogs-projects-modal .mylogs-projects-modal-desc {
+	margin-top: 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+.mylogs-projects-modal .mylogs-projects-modal-errors {
+	color: var(--text-error);
+	font-size: var(--font-ui-small);
+	margin: 6px 0 0;
+}
+.mylogs-projects-modal .mylogs-projects-modal-wide {
+	width: 100%;
+	min-width: 240px;
+}
+/* ===== /Project Folders view ===== */

@@ -30,6 +30,7 @@ import {
 	setFmValue,
 	statusChangeTexts,
 	updateLogIndex,
+	withRo,
 	updateProjectAgents,
 	upsertActiveRow,
 } from "../src/projects/ops.ts";
@@ -237,13 +238,13 @@ test("monthly log: entry format, append, new file from template", () => {
 		[
 			"## 2026-10-24 — 상태 변경: 진행 → 대기",
 			"",
-			"- **맥락:** MyLogs Project Folders 화면에서 사용자가 카드를 옮김",
-			"- **수행:** 허브 `status`를 대기(으)로 변경",
+			"- **맥락:** MyLogs Project Folders 화면에서 사용자가 상태를 바꿈",
+			"- **수행:** 허브 `status`를 대기로 변경",
 			"- **결과:** status: 대기",
-			"- **결정:** 상태를 진행에서 대기(으)로 바꾼다. 사용자 결정",
+			"- **결정:** 상태를 진행에서 대기로 바꾼다. 사용자 결정",
 			"- **미해결:** 없음",
 			"- **다음:** 인스타그램 릴스 3개 기획안 쓰기 (AI 초안)",
-			"- **근거:** MyLogs 플러그인 (플러그인), 사용자 조작",
+			"- **근거:** MyLogs 플러그인, 사용자 조작",
 		].join("\n"),
 	);
 	const file = newMonthlyLog(templates.monthlyLog, "혼팀 브랜드", "2026-10", entry);
@@ -252,6 +253,14 @@ test("monthly log: entry format, append, new file from template", () => {
 	assert.deepEqual(leftoverPlaceholders(file), []);
 	const appended = appendLogEntry(file, "## 2026-10-25 — 다음");
 	assert.ok(appended.endsWith("사용자 조작\n\n## 2026-10-25 — 다음\n"));
+});
+
+test("withRo: Korean particle", () => {
+	assert.equal(withRo("진행"), "진행으로");
+	assert.equal(withRo("대기"), "대기로");
+	assert.equal(withRo("보류"), "보류로");
+	assert.equal(withRo("완료"), "완료로");
+	assert.equal(withRo("후보"), "후보로");
 });
 
 test("updateLogIndex: latest_log (comment kept), updated, 최근 작업, 기간별 로그", () => {

@@ -76,7 +76,7 @@ export function fillHub(template: string, i: NewProjectInput, today: string): st
 	t = replaceSectionContent(t, SUMMARY_SECTION, i.summary.trim());
 	t = replaceSectionContent(t, ACTION_SECTION, actionSectionBody(i.action));
 	for (const s of ["목표", "성공 기준", "비목표"]) t = replaceSectionContent(t, s, `- ${UNCONFIRMED}`);
-	t = replaceSectionContent(t, STATE_SECTION, `- **단계:** 후보 (프로젝트 생성, ${today})`);
+	t = replaceSectionContent(t, STATE_SECTION, `- **단계:** ${UNCONFIRMED}`);
 	return t;
 }
 
@@ -114,7 +114,7 @@ export function planNewProject(i: NewProjectInput, templates: Templates, o: { ac
 		decision: "새 프로젝트로 등록한다. 사용자 요청",
 		open: "목표·성공 기준·비목표 미확인",
 		next: i.action.trim() || UNCONFIRMED,
-		evidence: `MyLogs 플러그인 ${PLUGIN_MARK}, 사용자 입력`,
+		evidence: "MyLogs 플러그인, 사용자 입력",
 	});
 	const files: PlannedFile[] = [
 		{ path: hubPath(folder, name), content: fillHub(templates.hub, i, o.today) },

@@ -438,24 +438,32 @@ export interface StatusChangeTexts {
 	change: string;
 }
 
+/** `진행` → `진행으로`, `대기` → `대기로` (받침 없거나 ㄹ이면 「로」). */
+export function withRo(word: string): string {
+	const c = word.charCodeAt(word.length - 1);
+	if (c < 0xac00 || c > 0xd7a3) return `${word}(으)로`;
+	const jong = (c - 0xac00) % 28;
+	return `${word}${jong === 0 || jong === 8 ? "로" : "으로"}`;
+}
+
 /** What the log, hub, index and registry say about a status change made on the board. */
 export function statusChangeTexts(p: Project, to: string, today: string, opts: { result?: string; review?: boolean } = {}): StatusChangeTexts {
 	const from = p.status;
 	const same = from === to;
 	const title = same ? `리뷰: ${to} 유지` : `상태 변경: ${from} → ${to}`;
 	const next = to === "완료" ? "없음 (완료, Archive Box로 옮김)" : actionCell(p) || "미확인";
-	const decision = same ? `${to} 상태를 계속 유지한다. 사용자 확인 (${STALE_DAYS_LABEL} 리뷰)` : `상태를 ${from}에서 ${to}(으)로 바꾼다. 사용자 결정`;
+	const decision = same ? `${to} 상태를 계속 유지한다. 사용자 확인 (${STALE_DAYS_LABEL} 리뷰)` : `상태를 ${from}에서 ${withRo(to)} 바꾼다. 사용자 결정`;
 	return {
 		entry: {
 			date: today,
 			title,
-			context: opts.review ? `${STALE_DAYS_LABEL} 넘게 갱신이 없어 "계속 / 보류 / 종료"를 물음` : "MyLogs Project Folders 화면에서 사용자가 카드를 옮김",
-			done: same ? "허브 `updated` 갱신" : `허브 \`status\`를 ${to}(으)로 변경${to === "완료" ? ", 폴더를 Archive Box로 옮김" : ""}`,
+			context: opts.review ? `${STALE_DAYS_LABEL} 넘게 갱신이 없어 "계속 / 보류 / 종료"를 물음` : "MyLogs Project Folders 화면에서 사용자가 상태를 바꿈",
+			done: same ? "허브 `updated` 갱신" : `허브 \`status\`를 ${withRo(to)} 변경${to === "완료" ? ", 폴더를 Archive Box로 옮김" : ""}`,
 			result: to === "완료" && opts.result ? `완료. ${opts.result}` : `status: ${to}`,
 			decision: `${decision}`,
 			open: "없음",
 			next,
-			evidence: `MyLogs 플러그인 ${PLUGIN_MARK}, 사용자 조작`,
+			evidence: "MyLogs 플러그인, 사용자 조작",
 		},
 		recent: title,
 		decision,
