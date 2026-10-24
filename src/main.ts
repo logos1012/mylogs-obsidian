@@ -1,12 +1,12 @@
 import { debounce, Plugin, type WorkspaceLeaf } from "obsidian";
 import { mergeSettings, type MyLogsSettings, MyLogsSettingTab } from "./settings.ts";
 import { DailyPadView, VIEW_TYPE_DAILY_PAD } from "./view.ts";
+import { PinboardView, VIEW_TYPE_PINBOARD } from "./pinboard/view.ts";
 
 /*
  * MyLogs v0.1.0 — Daily Pad view only.
  *
  * Out of scope for v0.1 (see the vault's `MyLogs Plugin 계획.md`):
- * TODO(계획 §1): Pinboard view (`mylogs-pinboard`).
  * TODO(계획 §2): Wall Calendar view (`mylogs-wall-calendar`).
  * TODO(계획 §3): Desk Calendar view (`mylogs-desk-calendar`) incl. drag & drop allocation.
  * TODO(계획 §4 「못 한 일 버튼」): 다른 날 / 미래로 / 서랍에 / 쪼개기 / 놓아주기, moved count, 3rd-move questions.
@@ -21,6 +21,10 @@ export default class MyLogsPlugin extends Plugin {
 			for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_DAILY_PAD)) {
 				const v = leaf.view;
 				if (v instanceof DailyPadView) void v.refreshAll();
+			}
+			for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PINBOARD)) {
+				const v = leaf.view;
+				if (v instanceof PinboardView) void v.refresh();
 			}
 		},
 		600,
@@ -40,6 +44,14 @@ export default class MyLogsPlugin extends Plugin {
 			callback: () => void this.activateDailyPad(),
 		});
 
+		this.registerView(VIEW_TYPE_PINBOARD, (leaf: WorkspaceLeaf) => new PinboardView(leaf, this));
+		this.addRibbonIcon("target", "Pinboard 열기", () => void this.activatePinboard());
+		this.addCommand({
+			id: "open-pinboard",
+			name: "Pinboard 열기",
+			callback: () => void this.activatePinboard(),
+		});
+
 		this.addSettingTab(new MyLogsSettingTab(this.app, this));
 	}
 
@@ -49,6 +61,16 @@ export default class MyLogsPlugin extends Plugin {
 		if (!leaf) {
 			leaf = workspace.getLeaf("tab");
 			await leaf.setViewState({ type: VIEW_TYPE_DAILY_PAD, active: true });
+		}
+		await workspace.revealLeaf(leaf);
+	}
+
+	async activatePinboard(): Promise<void> {
+		const { workspace } = this.app;
+		let leaf = workspace.getLeavesOfType(VIEW_TYPE_PINBOARD)[0];
+		if (!leaf) {
+			leaf = workspace.getLeaf("tab");
+			await leaf.setViewState({ type: VIEW_TYPE_PINBOARD, active: true });
 		}
 		await workspace.revealLeaf(leaf);
 	}
