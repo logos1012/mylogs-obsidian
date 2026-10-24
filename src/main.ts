@@ -3,12 +3,14 @@ import { mergeSettings, type MyLogsSettings, MyLogsSettingTab } from "./settings
 import { DailyPadView, VIEW_TYPE_DAILY_PAD } from "./view.ts";
 import { PinboardView, VIEW_TYPE_PINBOARD } from "./pinboard/view.ts";
 import { VIEW_TYPE_WALL_CALENDAR, WallCalendarView } from "./wall/view.ts";
+import { refreshDeskCalendars, registerDeskCalendar } from "./desk/register.ts";
 
 /*
- * MyLogs — Daily Pad, Pinboard, Wall Calendar views.
+ * MyLogs — Daily Pad, Pinboard, Wall Calendar, Desk Calendar views.
+ *
+ * Desk Calendar view (`mylogs-desk-calendar`, drag & drop allocation): src/desk/.
  *
  * Still out of scope (see the vault's `MyLogs Plugin 계획.md`):
- * TODO(계획 §3): Desk Calendar view (`mylogs-desk-calendar`) incl. drag & drop allocation.
  * TODO(계획 §4 「못 한 일 버튼」): 다른 날 / 미래로 / 서랍에 / 쪼개기 / 놓아주기, moved count, 3rd-move questions.
  * TODO(계획 「기본 방침」 5, 「결정할 것」 1): index updates (Daily Pad Index.md, Desk Calendar Index.md).
  * TODO(계획 「기본 방침」 8): move UI strings into translation files (i18n).
@@ -30,6 +32,7 @@ export default class MyLogsPlugin extends Plugin {
 				const v = leaf.view;
 				if (v instanceof WallCalendarView) void v.refreshAll();
 			}
+			refreshDeskCalendars(this);
 		},
 		600,
 		true,
@@ -63,6 +66,7 @@ export default class MyLogsPlugin extends Plugin {
 			name: "Wall Calendar 열기",
 			callback: () => void this.activateView(VIEW_TYPE_WALL_CALENDAR),
 		});
+		registerDeskCalendar(this);
 
 		this.addSettingTab(new MyLogsSettingTab(this.app, this));
 	}

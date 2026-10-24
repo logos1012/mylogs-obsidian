@@ -1,0 +1,500 @@
+{
+ "2026-10": {
+  "counts": {
+   "scheduled": 27,
+   "done": 20,
+   "moved": 1,
+   "cancelled": 1,
+   "total": 49,
+   "test": 69
+  },
+  "unassigned": 3,
+  "issues": 0,
+  "alloc": [
+   {
+    "line": 37,
+    "text": "강의 1강 촬영",
+    "state": "done",
+    "targets": [
+     [
+      "2026-10-06",
+      "done"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 38,
+    "text": "혼팀 릴스 업로드",
+    "state": "done",
+    "targets": [
+     [
+      "2026-10-07",
+      "done"
+     ],
+     [
+      "2026-10-09",
+      "done"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 39,
+    "text": "웨이트 운동",
+    "state": "done",
+    "targets": [
+     [
+      "2026-10-05",
+      "done"
+     ],
+     [
+      "2026-10-07",
+      "done"
+     ],
+     [
+      "2026-10-10",
+      "done"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 69,
+    "text": "강의 2강 촬영",
+    "state": "done",
+    "targets": [
+     [
+      "2026-10-13",
+      "done"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 70,
+    "text": "혼팀 릴스 업로드",
+    "state": "moved",
+    "targets": [
+     [
+      "2026-10-14",
+      "moved"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 71,
+    "text": "웨이트 운동",
+    "state": "done",
+    "targets": [
+     [
+      "2026-10-12",
+      "done"
+     ],
+     [
+      "2026-10-18",
+      "done"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 72,
+    "text": "부산 출장 보고서 작성",
+    "state": "done",
+    "targets": [
+     [
+      "2026-10-18",
+      "done"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 99,
+    "text": "강의 3강 촬영",
+    "state": "done",
+    "targets": [
+     [
+      "2026-10-21",
+      "done"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 100,
+    "text": "혼팀 릴스 업로드",
+    "state": "done",
+    "targets": [
+     [
+      "2026-10-19",
+      "done"
+     ],
+     [
+      "2026-10-23",
+      "done"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 101,
+    "text": "웨이트 운동",
+    "state": "scheduled",
+    "targets": [
+     [
+      "2026-10-20",
+      "done"
+     ],
+     [
+      "2026-10-22",
+      "done"
+     ],
+     [
+      "2026-10-24",
+      "scheduled"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 102,
+    "text": "호치민 출장 자료 준비",
+    "state": "unassigned",
+    "targets": [],
+    "missing": []
+   },
+   {
+    "line": 103,
+    "text": "강의 썸네일 시안 받기",
+    "state": "unassigned",
+    "targets": [],
+    "missing": []
+   },
+   {
+    "line": 134,
+    "text": "강의 4강 촬영",
+    "state": "scheduled",
+    "targets": [
+     [
+      "2026-10-28",
+      "scheduled"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 135,
+    "text": "혼팀 릴스 업로드",
+    "state": "scheduled",
+    "targets": [
+     [
+      "2026-10-27",
+      "scheduled"
+     ],
+     [
+      "2026-10-30",
+      "scheduled"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 136,
+    "text": "웨이트 운동",
+    "state": "scheduled",
+    "targets": [
+     [
+      "2026-10-26",
+      "scheduled"
+     ],
+     [
+      "2026-10-29",
+      "scheduled"
+     ],
+     [
+      "2026-11-01",
+      "scheduled"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 137,
+    "text": "10월 Monthly 리뷰",
+    "state": "scheduled",
+    "targets": [
+     [
+      "2026-10-31",
+      "scheduled"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 138,
+    "text": "출장 짐 싸기",
+    "state": "scheduled",
+    "targets": [
+     [
+      "2026-11-01",
+      "scheduled"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 139,
+    "text": "연말정산 서류 미리 모으기",
+    "state": "unassigned",
+    "targets": [],
+    "missing": []
+   }
+  ],
+  "during": [
+   {
+    "line": 14,
+    "text": "연말정산 서류 미리 모으기",
+    "state": "scheduled",
+    "targets": [
+     [
+      44,
+      139
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 15,
+    "text": "부모님 선물 고르기",
+    "state": "unassigned",
+    "targets": [],
+    "missing": []
+   },
+   {
+    "line": 16,
+    "text": "혼팀 인스타 프로필 링크 정리",
+    "state": "done",
+    "targets": [],
+    "missing": []
+   }
+  ],
+  "focus": [
+   {
+    "id": "G-2026-01.2",
+    "title": "Claude Code 기본 강의 첫 판매",
+    "note": "이달 1~4강 촬영"
+   },
+   {
+    "id": "G-2026-03.1",
+    "title": "인스타그램 팔로워 500명",
+    "note": "혼팀 릴스 주 2개"
+   }
+  ]
+ },
+ "2026-11": {
+  "counts": {
+   "scheduled": 30,
+   "done": 0,
+   "moved": 0,
+   "cancelled": 1,
+   "total": 31,
+   "test": 46
+  },
+  "unassigned": 3,
+  "issues": 0,
+  "alloc": [
+   {
+    "line": 28,
+    "text": "강의 5강 촬영",
+    "state": "scheduled",
+    "targets": [
+     [
+      "2026-11-02",
+      "scheduled"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 29,
+    "text": "혼팀 릴스 예약 업로드",
+    "state": "scheduled",
+    "targets": [
+     [
+      "2026-11-05",
+      "scheduled"
+     ],
+     [
+      "2026-11-07",
+      "scheduled"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 30,
+    "text": "출장 결과 정리",
+    "state": "scheduled",
+    "targets": [
+     [
+      "2026-11-08",
+      "scheduled"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 31,
+    "text": "호텔 헬스장 운동",
+    "state": "unassigned",
+    "targets": [],
+    "missing": []
+   },
+   {
+    "line": 59,
+    "text": "강의 1~5강 최종 편집",
+    "state": "scheduled",
+    "targets": [
+     [
+      "2026-11-10",
+      "scheduled"
+     ],
+     [
+      "2026-11-12",
+      "scheduled"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 60,
+    "text": "강의 판매 페이지 오픈",
+    "state": "scheduled",
+    "targets": [
+     [
+      "2026-11-14",
+      "scheduled"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 61,
+    "text": "웨이트 운동",
+    "state": "scheduled",
+    "targets": [
+     [
+      "2026-11-09",
+      "scheduled"
+     ],
+     [
+      "2026-11-11",
+      "scheduled"
+     ],
+     [
+      "2026-11-13",
+      "scheduled"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 62,
+    "text": "혼팀 릴스 업로드",
+    "state": "scheduled",
+    "targets": [
+     [
+      "2026-11-12",
+      "scheduled"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 90,
+    "text": "웨이트 운동",
+    "state": "scheduled",
+    "targets": [
+     [
+      "2026-11-16",
+      "scheduled"
+     ],
+     [
+      "2026-11-18",
+      "scheduled"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 91,
+    "text": "2027년 예산안 초안 검토",
+    "state": "scheduled",
+    "targets": [
+     [
+      "2026-11-19",
+      "scheduled"
+     ]
+    ],
+    "missing": []
+   },
+   {
+    "line": 92,
+    "text": "혼팀 릴스 2개",
+    "state": "unassigned",
+    "targets": [],
+    "missing": []
+   },
+   {
+    "line": 93,
+    "text": "가족 생일 선물 준비",
+    "state": "unassigned",
+    "targets": [],
+    "missing": []
+   },
+   {
+    "line": 118,
+    "text": "체중 중간 측정",
+    "state": "scheduled",
+    "targets": [
+     [
+      "2026-11-28",
+      "scheduled"
+     ]
+    ],
+    "missing": []
+   }
+  ],
+  "during": [
+   {
+    "line": 14,
+    "text": "2027년 예산안 초안 검토",
+    "state": "unassigned",
+    "targets": [],
+    "missing": []
+   },
+   {
+    "line": 15,
+    "text": "혼팀 연말 이벤트 기획안",
+    "state": "unassigned",
+    "targets": [],
+    "missing": []
+   }
+  ],
+  "focus": [
+   {
+    "id": "G-2026-01.2",
+    "title": "Claude Code 기본 강의 첫 판매",
+    "note": "11/14까지 1~5강 완성, 판매 페이지 오픈"
+   },
+   {
+    "id": "G-2026-02.1",
+    "title": "체중 95kg",
+    "note": "이달 말 97kg"
+   }
+  ]
+ }
+}
