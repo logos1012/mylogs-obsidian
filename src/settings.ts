@@ -15,7 +15,7 @@ export interface MyLogsSettings {
 	deskCalendarFolder: string;
 	/** Not used yet (v0.1). TODO(MyLogs Plugin 계획.md §1 Pinboard). */
 	pinboardFolder: string;
-	/** Not used yet (v0.1). TODO(MyLogs Plugin 계획.md §2 Wall Calendar). */
+	/** Wall Calendar year files: <folder>/<YYYY>.md and <folder>/Wall Calendar Index.md. */
 	wallCalendarFolder: string;
 	sections: SectionNames;
 	/** Show `#test` markers on test data. */
@@ -87,7 +87,7 @@ export class MyLogsSettingTab extends PluginSettingTab {
 		folder("Daily Pad 폴더", "하루 파일 위치: <폴더>/<YYYY>/<YYYY-MM-DD>.md", "dailyPadFolder");
 		folder("Desk Calendar 폴더", "달 파일 위치: <폴더>/<YYYY>/<YYYY-MM>.md", "deskCalendarFolder");
 		folder("Pinboard 폴더", "다음 버전에서 사용합니다.", "pinboardFolder");
-		folder("Wall Calendar 폴더", "다음 버전에서 사용합니다.", "wallCalendarFolder");
+		folder("Wall Calendar 폴더", "연도 파일 위치: <폴더>/<YYYY>.md", "wallCalendarFolder");
 
 		new Setting(containerEl).setName("Daily Pad 섹션 이름").setHeading();
 		const section = (name: string, key: keyof SectionNames, desc?: string) => {

@@ -875,3 +875,846 @@
 	height: 20px;
 	margin-top: 0;
 }
+
+/* ===== Wall Calendar view ===== */
+/* Ported from 02 Wall Calendar/_build/wall_calendar.template.html: white paper, a subtle
+   spiral binding, a 12-month grid. Current month = red top edge; this month → December =
+   light blue tint; past months are not dimmed. Everything is scoped under .mylogs-wall-calendar. */
+
+.mylogs-wall-calendar-container {
+	padding: 0 !important;
+	background: var(--wc-wall, #ffffff);
+}
+
+.mylogs-wall-calendar {
+	--wc-paper: #ffffff;
+	--wc-edge: rgba(20, 30, 50, 0.1);
+	--wc-rule: rgba(20, 30, 50, 0.08);
+	--wc-ink: #1d2230;
+	--wc-ink-2: #4c5466;
+	--wc-ink-3: #8a91a0;
+	--wc-ink-4: #b9bec8;
+	--wc-red: #c8432f;
+	--wc-blue: #3a64a8;
+	--wc-event: #c9573a;
+	--wc-task: #34528f;
+	--wc-note: #6b8655;
+	--wc-amber: #c98a1c;
+	--wc-soon-bg: #f2f6ff;
+	--wc-soon-edge: rgba(58, 100, 200, 0.28);
+	--wc-metal-1: #f4f4f2;
+	--wc-metal-2: #b4b1aa;
+	--wc-metal-3: #7d7a73;
+	--wc-hole: #d9d6d0;
+	--wc-tag-l: 38%;
+	--wc-tag-bg-l: 50%;
+	--wc-sans: Pretendard, "Pretendard Variable", "Apple SD Gothic Neo", var(--font-interface), -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", "Noto Sans KR", sans-serif;
+	--wc-num: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, "Apple SD Gothic Neo", serif;
+	--m-check: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M2.1 5.3 4.2 7.3 7.9 2.8' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+	--m-arrow: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M1.8 5h6.2M5.3 2.3 8 5 5.3 7.7' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+
+	box-sizing: border-box;
+	min-height: 100%;
+	padding: 26px 22px 56px;
+	background: var(--wc-paper);
+	color: var(--wc-ink);
+	font-family: var(--wc-sans);
+	font-size: 14px;
+	line-height: 1.5;
+	letter-spacing: -0.01em;
+	word-break: keep-all;
+	overflow-wrap: anywhere;
+	-webkit-font-smoothing: antialiased;
+}
+.theme-dark .mylogs-wall-calendar-container {
+	--wc-wall: #1c1d21;
+}
+.theme-dark .mylogs-wall-calendar {
+	--wc-paper: #1c1d21;
+	--wc-edge: rgba(230, 236, 255, 0.1);
+	--wc-rule: rgba(230, 236, 255, 0.08);
+	--wc-ink: #e8eaf0;
+	--wc-ink-2: #b9bfcc;
+	--wc-ink-3: #8a91a0;
+	--wc-ink-4: #5d6372;
+	--wc-red: #f07a62;
+	--wc-blue: #86a9e8;
+	--wc-event: #ef8a68;
+	--wc-task: #8fb0f0;
+	--wc-note: #a6c18c;
+	--wc-amber: #f0b54a;
+	--wc-soon-bg: #1f2738;
+	--wc-soon-edge: rgba(134, 169, 232, 0.3);
+	--wc-metal-1: #c9c6be;
+	--wc-metal-2: #6f6c66;
+	--wc-metal-3: #3a3833;
+	--wc-hole: #0b0a08;
+	--wc-tag-l: 74%;
+	--wc-tag-bg-l: 60%;
+}
+.mylogs-wall-calendar *,
+.mylogs-wall-calendar *::before,
+.mylogs-wall-calendar *::after {
+	box-sizing: border-box;
+}
+.mylogs-wall-calendar button {
+	font-family: inherit;
+	box-shadow: none;
+}
+
+/* sheet + spiral binding */
+.mylogs-wall-calendar .wc-sheet {
+	position: relative;
+	max-width: 1340px;
+	margin: 0 auto;
+	padding: 40px 12px 20px;
+	background: var(--wc-paper);
+}
+.mylogs-wall-calendar .wc-binding {
+	position: absolute;
+	left: 22px;
+	right: 22px;
+	top: -14px;
+	height: 34px;
+	display: flex;
+	justify-content: space-between;
+	pointer-events: none;
+	opacity: 0.75;
+}
+.mylogs-wall-calendar .wc-binding i {
+	position: relative;
+	display: block;
+	width: 8px;
+	height: 30px;
+}
+.mylogs-wall-calendar .wc-binding i::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 2px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--wc-hole);
+	box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+.mylogs-wall-calendar .wc-binding i::after {
+	content: "";
+	position: absolute;
+	left: 1px;
+	right: 1px;
+	top: 0;
+	bottom: 6px;
+	border-radius: 5px;
+	background: linear-gradient(90deg, var(--wc-metal-3), var(--wc-metal-1) 45%, var(--wc-metal-2) 75%, var(--wc-metal-3));
+}
+.mylogs-wall-calendar .wc-binding i:nth-child(n + 31) {
+	display: none;
+}
+@container (max-width: 980px) {
+	.mylogs-wall-calendar .wc-binding i:nth-child(n + 21) {
+		display: none;
+	}
+}
+
+/* masthead */
+.mylogs-wall-calendar .wc-masthead {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	align-items: flex-end;
+	gap: 14px 30px;
+	padding-bottom: 18px;
+	border-bottom: 1.5px solid var(--wc-ink);
+}
+.mylogs-wall-calendar .wc-eyebrow {
+	font-size: 12px;
+	font-weight: 700;
+	color: var(--wc-ink-3);
+	letter-spacing: 0.14em;
+}
+.mylogs-wall-calendar .wc-yearrow {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.mylogs-wall-calendar .wc-yearrow h1 {
+	margin: 2px 0 0;
+	font-family: var(--wc-num);
+	font-weight: 600;
+	font-size: 84px;
+	line-height: 0.86;
+	letter-spacing: -0.03em;
+	font-variant-numeric: lining-nums;
+	color: var(--wc-ink);
+}
+.mylogs-wall-calendar .wc-dot {
+	display: inline-block;
+	width: 0.13em;
+	height: 0.13em;
+	margin-left: 0.06em;
+	border-radius: 50%;
+	background: var(--wc-red);
+}
+.mylogs-wall-calendar .wc-navbtn {
+	width: 30px;
+	height: 30px;
+	padding: 0;
+	border: 1px solid var(--wc-edge);
+	border-radius: 999px;
+	background: transparent;
+	color: var(--wc-ink-2);
+	font-size: 18px;
+	line-height: 1;
+	cursor: pointer;
+}
+.mylogs-wall-calendar .wc-navbtn:hover {
+	color: var(--wc-ink);
+	border-color: var(--wc-ink-4);
+}
+.mylogs-wall-calendar .wc-yearsel {
+	margin-left: 6px;
+	font-size: 13px;
+}
+.mylogs-wall-calendar .wc-todaybox {
+	text-align: right;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+}
+.mylogs-wall-calendar .wc-tl {
+	font-size: 12px;
+	color: var(--wc-ink-3);
+	font-weight: 600;
+	letter-spacing: 0.04em;
+}
+.mylogs-wall-calendar .wc-td {
+	font-size: 19px;
+	font-weight: 700;
+}
+.mylogs-wall-calendar .wc-linkbtn {
+	margin-top: 4px;
+	padding: 2px 10px;
+	height: auto;
+	border: 1px solid var(--wc-edge);
+	border-radius: 999px;
+	background: transparent;
+	color: var(--wc-blue);
+	font-size: 12px;
+	cursor: pointer;
+}
+
+/* legend */
+.mylogs-wall-calendar .wc-legend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 16px;
+	align-items: center;
+	margin: 12px 0 18px;
+	font-size: 12px;
+	color: var(--wc-ink-3);
+}
+.mylogs-wall-calendar .wc-lg {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+.mylogs-wall-calendar .wc-lg .wc-sym {
+	top: 0;
+}
+.mylogs-wall-calendar .wc-hint {
+	margin-left: auto;
+	color: var(--wc-ink-4);
+}
+
+/* 12 months */
+.mylogs-wall-calendar {
+	container-type: inline-size;
+}
+.mylogs-wall-calendar .wc-months {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 12px;
+}
+@container (max-width: 1180px) {
+	.mylogs-wall-calendar .wc-months {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+}
+@container (max-width: 900px) {
+	.mylogs-wall-calendar .wc-months {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+@container (max-width: 600px) {
+	.mylogs-wall-calendar .wc-months {
+		grid-template-columns: 1fr;
+	}
+	.mylogs-wall-calendar .wc-yearrow h1 {
+		font-size: 60px;
+	}
+	.mylogs-wall-calendar .wc-todaybox {
+		align-items: flex-start;
+		text-align: left;
+	}
+	.mylogs-wall-calendar .wc-binding i:nth-child(n + 13) {
+		display: none;
+	}
+}
+.mylogs-wall-calendar .wc-month {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	min-height: 210px;
+	padding: 14px 14px 12px;
+	background: var(--wc-paper);
+	border: 1px solid var(--wc-edge);
+	border-radius: 10px;
+}
+.mylogs-wall-calendar .wc-month.is-upcoming {
+	background: var(--wc-soon-bg);
+	border-color: var(--wc-soon-edge);
+}
+.mylogs-wall-calendar .wc-month.is-now {
+	border-color: color-mix(in srgb, var(--wc-red) 45%, transparent);
+	box-shadow: inset 0 3px 0 var(--wc-red);
+}
+.mylogs-wall-calendar .wc-month.is-now .wc-mnum {
+	color: var(--wc-red);
+}
+.mylogs-wall-calendar .wc-month.is-drop {
+	outline: 2px dashed var(--wc-blue);
+	outline-offset: 2px;
+}
+.mylogs-wall-calendar.is-dragging .wc-month:not(.is-past) {
+	border-style: dashed;
+}
+
+.mylogs-wall-calendar .wc-mhead {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	gap: 10px;
+	padding-bottom: 10px;
+	border-bottom: 1px solid var(--wc-rule);
+}
+.mylogs-wall-calendar .wc-mtitle {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	column-gap: 2px;
+	min-width: 0;
+}
+.mylogs-wall-calendar .wc-mnum {
+	font-family: var(--wc-num);
+	font-size: 44px;
+	line-height: 0.9;
+	font-weight: 600;
+	letter-spacing: -0.03em;
+	font-variant-numeric: lining-nums;
+}
+.mylogs-wall-calendar .wc-mwol {
+	margin-left: 2px;
+	font-size: 15px;
+	font-weight: 700;
+	color: var(--wc-ink-2);
+}
+.mylogs-wall-calendar .wc-mmeta {
+	flex-basis: 100%;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	align-items: center;
+	min-height: 22px;
+	margin-top: 8px;
+}
+.mylogs-wall-calendar .wc-nowmark {
+	font-size: 11px;
+	font-weight: 800;
+	color: var(--wc-red);
+}
+.mylogs-wall-calendar .wc-cnt {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--wc-ink-3);
+}
+.mylogs-wall-calendar .wc-add {
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border: 1px solid var(--wc-edge);
+	border-radius: 6px;
+	background: transparent;
+	color: var(--wc-ink-3);
+	font-size: 15px;
+	line-height: 1;
+	cursor: pointer;
+}
+.mylogs-wall-calendar .wc-add:hover {
+	color: var(--wc-blue);
+	border-color: var(--wc-soon-edge);
+}
+
+/* mini month */
+.mylogs-wall-calendar .wc-mini {
+	flex: none;
+	display: grid;
+	grid-template-columns: repeat(7, 15px);
+	grid-auto-rows: 14px;
+	gap: 1px 2px;
+	font-size: 8.5px;
+	line-height: 14px;
+	text-align: center;
+	color: var(--wc-ink-3);
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-wall-calendar .wc-mini i {
+	font-style: normal;
+	font-weight: 700;
+	font-size: 8px;
+	color: var(--wc-ink-4);
+}
+.mylogs-wall-calendar .wc-mini span {
+	border-radius: 4px;
+}
+.mylogs-wall-calendar .wc-mini .sun {
+	color: color-mix(in srgb, var(--wc-red) 75%, var(--wc-ink-3));
+}
+.mylogs-wall-calendar .wc-mini .sat {
+	color: color-mix(in srgb, var(--wc-blue) 75%, var(--wc-ink-3));
+}
+.mylogs-wall-calendar .wc-mini .has {
+	color: var(--wc-ink);
+	font-weight: 700;
+	background: color-mix(in srgb, var(--wc-ink) 7%, transparent);
+}
+.mylogs-wall-calendar .wc-mini .has.live.k-event {
+	background: color-mix(in srgb, var(--wc-event) 22%, transparent);
+}
+.mylogs-wall-calendar .wc-mini .has.live.k-task {
+	background: color-mix(in srgb, var(--wc-task) 20%, transparent);
+}
+.mylogs-wall-calendar .wc-mini .has.live.k-note {
+	background: color-mix(in srgb, var(--wc-note) 22%, transparent);
+}
+.mylogs-wall-calendar .wc-mini .today {
+	outline: 1.5px solid var(--wc-red);
+	outline-offset: -1px;
+	color: var(--wc-red);
+	font-weight: 800;
+}
+
+/* items */
+.mylogs-wall-calendar .wc-mbody {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	padding-top: 8px;
+}
+.mylogs-wall-calendar .wc-items {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+.mylogs-wall-calendar .wc-item {
+	display: grid;
+	grid-template-columns: 12px 54px 1fr;
+	column-gap: 8px;
+	align-items: start;
+	padding: 7px 2px;
+	margin: 0;
+	border-bottom: 1px dotted var(--wc-rule);
+	border-radius: 4px;
+	cursor: pointer;
+}
+.mylogs-wall-calendar .wc-item:last-child {
+	border-bottom: 0;
+}
+.mylogs-wall-calendar .wc-item:hover {
+	background: color-mix(in srgb, var(--wc-ink) 4%, transparent);
+}
+.mylogs-wall-calendar .wc-item.is-dragging {
+	opacity: 0.4;
+}
+.mylogs-wall-calendar .wc-items.is-undated .wc-item {
+	grid-template-columns: 12px 1fr;
+}
+.mylogs-wall-calendar .wc-items.is-undated .wc-d {
+	display: none;
+}
+.mylogs-wall-calendar .wc-sym {
+	position: relative;
+	top: 4px;
+	display: inline-block;
+	flex: none;
+	width: 11px;
+	height: 11px;
+	padding: 0;
+	margin: 0;
+	border: 0;
+	background: transparent;
+}
+.mylogs-wall-calendar .k-event .wc-sym::before {
+	content: "";
+	position: absolute;
+	inset: 3px;
+	border-radius: 50%;
+	background: var(--wc-event);
+}
+.mylogs-wall-calendar .k-note .wc-sym::before {
+	content: "";
+	position: absolute;
+	left: 2px;
+	right: 2px;
+	top: 4.75px;
+	height: 1.5px;
+	border-radius: 1px;
+	background: var(--wc-note);
+}
+.mylogs-wall-calendar .k-task .wc-sym {
+	border: 1.5px solid var(--wc-task);
+	border-radius: 3px;
+	background: var(--wc-paper);
+}
+.mylogs-wall-calendar button.wc-sym {
+	cursor: pointer;
+}
+.mylogs-wall-calendar .k-task.s-done .wc-sym {
+	background: var(--wc-task);
+}
+.mylogs-wall-calendar .k-task.s-done .wc-sym::before,
+.mylogs-wall-calendar .k-task.s-moved .wc-sym::before {
+	content: "";
+	position: absolute;
+	inset: -0.5px;
+	-webkit-mask: var(--m-check) center / 100% 100% no-repeat;
+	mask: var(--m-check) center / 100% 100% no-repeat;
+	background: var(--wc-paper);
+}
+.mylogs-wall-calendar .k-task.s-moved .wc-sym {
+	border-color: var(--wc-ink-4);
+}
+.mylogs-wall-calendar .k-task.s-moved .wc-sym::before {
+	-webkit-mask-image: var(--m-arrow);
+	mask-image: var(--m-arrow);
+	background: var(--wc-blue);
+}
+.mylogs-wall-calendar .k-task.s-cancelled .wc-sym {
+	border-color: var(--wc-ink-4);
+}
+.mylogs-wall-calendar .k-task.s-cancelled .wc-sym::before {
+	content: "";
+	position: absolute;
+	left: 1.5px;
+	right: 1.5px;
+	top: 3.25px;
+	height: 1.5px;
+	border-radius: 1px;
+	background: var(--wc-ink-3);
+}
+.mylogs-wall-calendar .k-plain .wc-sym::before {
+	content: "?";
+	position: absolute;
+	inset: -3px 0 0;
+	font-size: 11px;
+	font-weight: 800;
+	line-height: 14px;
+	text-align: center;
+	color: var(--wc-amber);
+}
+.mylogs-wall-calendar .wc-d {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	min-width: 0;
+}
+.mylogs-wall-calendar .wc-d b {
+	font-family: var(--wc-num);
+	font-size: 15.5px;
+	font-weight: 600;
+	line-height: 1.1;
+	letter-spacing: -0.02em;
+	font-variant-numeric: lining-nums tabular-nums;
+	white-space: nowrap;
+}
+.mylogs-wall-calendar .wc-d small {
+	margin-top: 1px;
+	font-size: 10px;
+	font-weight: 600;
+	line-height: 1.3;
+	color: var(--wc-ink-3);
+}
+.mylogs-wall-calendar .wc-body {
+	min-width: 0;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 2px 6px;
+}
+.mylogs-wall-calendar .wc-t {
+	font-size: 13.5px;
+	font-weight: 600;
+	line-height: 1.4;
+}
+.mylogs-wall-calendar .wc-chips {
+	display: flex;
+	flex-wrap: wrap;
+	flex-basis: 100%;
+	gap: 4px;
+	align-items: center;
+	margin-top: 2px;
+}
+.mylogs-wall-calendar .wc-chips:empty {
+	display: none;
+}
+.mylogs-wall-calendar .wc-chip {
+	display: inline-flex;
+	align-items: center;
+	height: 19px;
+	padding: 0 7px;
+	border: 1px solid var(--wc-edge);
+	border-radius: 5px;
+	font-size: 10.5px;
+	font-weight: 600;
+	line-height: 19px;
+	white-space: nowrap;
+	color: var(--wc-ink-2);
+}
+.mylogs-wall-calendar .wc-chip.is-goal {
+	color: color-mix(in srgb, var(--wc-amber) 85%, var(--wc-ink));
+	border-color: var(--wc-soon-edge);
+	background: color-mix(in srgb, var(--wc-amber) 9%, transparent);
+}
+.mylogs-wall-calendar .wc-chip.is-proj {
+	color: var(--wc-task);
+	border-color: color-mix(in srgb, var(--wc-task) 30%, transparent);
+}
+.mylogs-wall-calendar .wc-chip.is-from {
+	height: auto;
+	padding: 1px 7px;
+	line-height: 1.4;
+	white-space: normal;
+	border-style: dashed;
+	color: var(--wc-ink-3);
+}
+.mylogs-wall-calendar .wc-chip.is-tag {
+	border: 0;
+	color: hsl(var(--h) 45% var(--wc-tag-l));
+	background: hsl(var(--h) 45% var(--wc-tag-bg-l) / 0.12);
+}
+.mylogs-wall-calendar .wc-testmark {
+	padding: 0 1px;
+	font-size: 8.5px;
+	font-weight: 700;
+	letter-spacing: 0.12em;
+	color: var(--wc-ink-4);
+}
+.mylogs-wall-calendar .s-done .wc-t,
+.mylogs-wall-calendar .s-done .wc-d b,
+.mylogs-wall-calendar .s-moved .wc-t,
+.mylogs-wall-calendar .s-moved .wc-d b {
+	color: var(--wc-ink-3);
+}
+.mylogs-wall-calendar .s-moved .wc-chips,
+.mylogs-wall-calendar .s-done .wc-chips {
+	opacity: 0.75;
+}
+.mylogs-wall-calendar .wc-moved {
+	display: inline-flex;
+	align-items: center;
+	height: 17px;
+	padding: 0 6px;
+	border-radius: 4px;
+	font-size: 10px;
+	font-weight: 700;
+	white-space: nowrap;
+	color: var(--wc-ink-3);
+	background: color-mix(in srgb, var(--wc-ink) 6%, transparent);
+}
+.mylogs-wall-calendar .s-cancelled .wc-t {
+	text-decoration: line-through;
+	text-decoration-color: color-mix(in srgb, var(--wc-red) 70%, transparent);
+	text-decoration-thickness: 1.5px;
+	color: var(--wc-ink-3);
+}
+.mylogs-wall-calendar .s-cancelled .wc-d b {
+	text-decoration: line-through;
+	color: var(--wc-ink-3);
+}
+.mylogs-wall-calendar .s-cancelled .wc-chips {
+	opacity: 0.6;
+}
+.mylogs-wall-calendar .wc-cancel {
+	font-size: 10px;
+	font-weight: 800;
+	white-space: nowrap;
+	color: var(--wc-red);
+}
+.mylogs-wall-calendar .wc-qmark {
+	padding: 0 5px;
+	border: 1px dashed var(--wc-soon-edge);
+	border-radius: 4px;
+	font-size: 10px;
+	font-weight: 700;
+	white-space: nowrap;
+	color: var(--wc-amber);
+}
+.mylogs-wall-calendar .wc-sub {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 8px 0 1px;
+	font-size: 10.5px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	color: var(--wc-ink-3);
+}
+.mylogs-wall-calendar .wc-sub::after {
+	content: "";
+	flex: 1;
+	height: 1px;
+	background: var(--wc-rule);
+}
+.mylogs-wall-calendar .wc-sub.is-warn {
+	color: var(--wc-amber);
+}
+.mylogs-wall-calendar .wc-empty {
+	flex: 1;
+	min-height: 100px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 6px;
+	font-size: 12.5px;
+	font-weight: 600;
+	color: var(--wc-ink-4);
+	background: repeating-linear-gradient(180deg, transparent 0 21px, var(--wc-rule) 21px 22px);
+}
+.mylogs-wall-calendar .wc-empty span {
+	padding: 0 8px;
+	background: var(--wc-paper);
+}
+.mylogs-wall-calendar .wc-month.is-upcoming .wc-empty span {
+	background: var(--wc-soon-bg);
+}
+
+/* inline add form */
+.mylogs-wall-calendar .wc-addform {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-bottom: 8px;
+	padding: 8px;
+	border: 1px solid var(--wc-soon-edge);
+	border-radius: 8px;
+	background: var(--wc-paper);
+}
+.mylogs-wall-calendar .wc-kinds {
+	display: flex;
+	gap: 4px;
+}
+.mylogs-wall-calendar .wc-kind {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	height: 24px;
+	padding: 0 8px;
+	border: 1px solid var(--wc-edge);
+	border-radius: 999px;
+	background: transparent;
+	color: var(--wc-ink-2);
+	font-size: 12px;
+	cursor: pointer;
+}
+.mylogs-wall-calendar .wc-kind .wc-sym {
+	top: 0;
+}
+.mylogs-wall-calendar .wc-kind.is-active {
+	border-color: var(--wc-blue);
+	color: var(--wc-ink);
+	font-weight: 700;
+}
+.mylogs-wall-calendar .wc-addrow {
+	display: flex;
+	gap: 6px;
+}
+.mylogs-wall-calendar .wc-addate {
+	flex: 0 0 74px;
+	width: 74px;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-wall-calendar .wc-addtext {
+	flex: 1;
+	min-width: 0;
+}
+.mylogs-wall-calendar .wc-addactions {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 6px;
+}
+.mylogs-wall-calendar .wc-addhint {
+	margin-right: auto;
+	font-size: 11px;
+	color: var(--wc-ink-3);
+}
+
+/* missing file / issues / footer */
+.mylogs-wall-calendar .wc-missing {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 12px;
+	padding: 60px 0;
+	color: var(--wc-ink-3);
+}
+.mylogs-wall-calendar .wc-issues {
+	margin-top: 22px;
+	padding: 14px 16px;
+	border: 1px dashed var(--wc-soon-edge);
+	border-radius: 10px;
+}
+.mylogs-wall-calendar .wc-issues h3 {
+	margin: 0 0 6px;
+	font-size: 13px;
+	color: var(--wc-amber);
+}
+.mylogs-wall-calendar .wc-issues ul {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.mylogs-wall-calendar .wc-issues li {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 10px;
+	font-size: 12px;
+}
+.mylogs-wall-calendar .wc-ln {
+	min-width: 64px;
+	font-weight: 700;
+	color: var(--wc-ink-3);
+}
+.mylogs-wall-calendar .wc-foot {
+	margin-top: 22px;
+	padding-top: 12px;
+	border-top: 1px solid var(--wc-rule);
+	font-size: 11.5px;
+	color: var(--wc-ink-3);
+}
+.mylogs-wall-calendar .wc-foot a {
+	color: inherit;
+}
+
+/* modals (month picker, prompts) */
+.mylogs-wall-modal .mylogs-wall-modal-desc {
+	margin-top: 0;
+	color: var(--text-muted);
+}
+.mylogs-wall-modal .mylogs-wall-monthpick {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 8px;
+}
+/* ===== /Wall Calendar view ===== */
