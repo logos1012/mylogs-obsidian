@@ -414,3 +414,13 @@ test("planNewProject: minimal-visible layout, filled templates, registry row", (
 	assert.ok(reg.ok && reg.added);
 	assert.equal(parseRegistry(reg.text).active[0].name, "혼팀 브랜드");
 });
+
+test("planNewProject: `from` sources (Drawer 「4-3」 1) go to the hub frontmatter as a list", () => {
+	const from = ["[[10 Archive Box/Sessions/2026-10-01 혼팀]]", "대화 2026-10-14"];
+	const plan = planNewProject({ ...input, from }, templates, { activeRoot: "05 Project Folders", today: "2026-10-24" });
+	const hub = plan.files[0].content;
+	assert.match(hub, /^from:\n  - "\[\[10 Archive Box\/Sessions\/2026-10-01 혼팀\]\]"\n  - 대화 2026-10-14\n/m);
+	assert.deepEqual(parseFrontmatterText(hub).data.from, from);
+	// without `from` the hub has no such key
+	assert.ok(!/^from:/m.test(planNewProject(input, templates, { activeRoot: "05 Project Folders", today: "2026-10-24" }).files[0].content));
+});

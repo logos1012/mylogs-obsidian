@@ -24,7 +24,7 @@ import {
 	hubPath,
 	logIndexPath,
 } from "./model.ts";
-import { type ActiveRow, actionSectionBody, formatLogEntry, newLogIndex, newMonthlyLog, PLUGIN_MARK, setFmValue, yamlScalar } from "./ops.ts";
+import { type ActiveRow, actionSectionBody, formatLogEntry, newLogIndex, newMonthlyLog, PLUGIN_MARK, setFmList, setFmValue, yamlScalar } from "./ops.ts";
 
 /** The template files in `05 Project Folders/99 작업실/템플릿/`. */
 export const TEMPLATE_FILES = {
@@ -73,6 +73,7 @@ export function fillHub(template: string, i: NewProjectInput, today: string): st
 	t = setFmValue(t, "kind", yamlScalar(i.kind));
 	t = setFmValue(t, "status", "후보");
 	t = setFmValue(t, "updated", today);
+	if (i.from?.length) t = setFmList(t, "from", i.from);
 	t = replaceSectionContent(t, SUMMARY_SECTION, i.summary.trim());
 	t = replaceSectionContent(t, ACTION_SECTION, actionSectionBody(i.action));
 	for (const s of ["목표", "성공 기준", "비목표"]) t = replaceSectionContent(t, s, `- ${UNCONFIRMED}`);

@@ -2,11 +2,18 @@ import { type App, Modal, Setting } from "obsidian";
 import { toIsoDate } from "../parser.ts";
 import { KINDS, type NewProjectInput, type Scope, SCOPES, suggestId, validateInput } from "./model.ts";
 
+export interface NewProjectOptions {
+	areas: string[];
+	taken: { ids: string[]; names: string[] };
+	scope?: Scope;
+	/** Values to start from (e.g. a Drawer 프로젝트 후보: name and `from` sessions). */
+	prefill?: Partial<NewProjectInput>;
+	/** Shown under the title (e.g. where the prefilled values come from). */
+	note?: string;
+}
+
 /** 「3-2」: 이름, 한 문장 설명, 개인/회사, area, 유형 (+ id, 별칭, 한 가지 행동). Resolves null when cancelled. */
-export function askNewProject(
-	app: App,
-	opts: { areas: string[]; taken: { ids: string[]; names: string[] }; scope?: Scope },
-): Promise<NewProjectInput | null> {
+export function askNewProject(app: App, opts: NewProjectOptions): Promise<NewProjectInput | null> {
 	return new Promise((resolve) => new NewProjectModal(app, opts, resolve).open());
 }
 
@@ -18,11 +25,12 @@ class NewProjectModal extends Modal {
 
 	constructor(
 		app: App,
-		private opts: { areas: string[]; taken: { ids: string[]; names: string[] }; scope?: Scope },
+		private opts: NewProjectOptions,
 		private resolve: (v: NewProjectInput | null) => void,
 	) {
 		super(app);
-		this.v = { name: "", summary: "", scope: opts.scope ?? "개인", area: "", kind: "", id: "P-", aliases: "", action: "" };
+		const p = opts.prefill ?? {};
+		this.v = { name: p.name ?? "", summary: p.summary ?? "", scope: p.scope ?? opts.scope ?? "개인", area: p.area ?? "", kind: p.kind ?? "", id: p.id ?? (p.name ? suggestId(p.name) : "P-"), aliases: p.aliases ?? "", action: p.action ?? "", from: p.from };
 	}
 
 	onOpen(): void {
@@ -33,9 +41,11 @@ class NewProjectModal extends Modal {
 			cls: "mylogs-projects-modal-desc",
 			text: "템플릿으로 폴더를 만들고 등록부에 올려요. 보이는 것은 01 초안, 02 산출물, 허브, AGENTS.md뿐이고 나머지는 99 작업실 안에 둬요.",
 		});
+		if (this.opts.note) el.createEl("p", { cls: "mylogs-projects-modal-desc", text: this.opts.note });
 
 		let idInput: HTMLInputElement | null = null;
 		new Setting(el).setName("이름").addText((t) => {
+			t.setValue(this.v.name);
 			t.setPlaceholder("예: 혼팀 브랜드").onChange((x) => {
 				this.v.name = x;
 				if (!this.idTouched && idInput) {
@@ -45,7 +55,7 @@ class NewProjectModal extends Modal {
 			});
 			window.setTimeout(() => t.inputEl.focus(), 0);
 		});
-		new Setting(el).setName("한 문장 설명").addText((t) => t.setPlaceholder("무엇을, 왜").onChange((x) => (this.v.summary = x)));
+		new Setting(el).setName("한 문장 설명").addText((t) => t.setValue(this.v.summary).setPlaceholder("무엇을, 왜").onChange((x) => (this.v.summary = x)));
 		new Setting(el).setName("개인 / 회사").addDropdown((d) => {
 			for (const s of SCOPES) d.addOption(s, s);
 			d.setValue(this.v.scope).onChange((x) => (this.v.scope = x as Scope));
@@ -58,12 +68,14 @@ class NewProjectModal extends Modal {
 				const dl = el.createEl("datalist", { attr: { id: listId } });
 				for (const a of this.opts.areas) dl.createEl("option", { attr: { value: a } });
 				t.inputEl.setAttr("list", listId);
-				t.setPlaceholder(this.opts.areas.slice(0, 3).join(", ") || "예: 사업").onChange((x) => (this.v.area = x));
+				t.setValue(this.v.area)
+					.setPlaceholder(this.opts.areas.slice(0, 3).join(", ") || "예: 사업")
+					.onChange((x) => (this.v.area = x));
 			});
 		new Setting(el).setName("유형").addDropdown((d) => {
 			d.addOption("", "고르기");
 			for (const k of KINDS) d.addOption(k, k);
-			d.onChange((x) => (this.v.kind = x));
+			d.setValue(this.v.kind).onChange((x) => (this.v.kind = x));
 		});
 		new Setting(el)
 			.setName("id")
@@ -78,12 +90,13 @@ class NewProjectModal extends Modal {
 		new Setting(el)
 			.setName("별칭")
 			.setDesc("선택. 쉼표로 구분")
-			.addText((t) => t.onChange((x) => (this.v.aliases = x)));
+			.addText((t) => t.setValue(this.v.aliases).onChange((x) => (this.v.aliases = x)));
 		new Setting(el)
 			.setName("지금 가장 효과적인 한 가지 행동")
 			.setDesc("선택. 비우면 「미확인」으로 둬요")
-			.addText((t) => t.onChange((x) => (this.v.action = x)));
-		// TODO(계획 §6 「후보」): Drawer 「프로젝트 후보」를 후보 열에 보여 주고 여기로 미리 채우기 (Drawer 형식 미정).
+			.addText((t) => t.setValue(this.v.action).onChange((x) => (this.v.action = x)));
+		if (this.v.from?.length) new Setting(el).setName("출처 (from)").setDesc("허브 frontmatter `from`에 적어요.").controlEl.createEl("code", { text: this.v.from.join(", ") });
+		// TODO(계획 §6 「후보」): Drawer 「프로젝트 후보」를 Project Folders 후보 열에도 보여 주기 (별도 작업).
 
 		const errors = el.createEl("ul", { cls: "mylogs-projects-modal-errors" });
 		new Setting(el)

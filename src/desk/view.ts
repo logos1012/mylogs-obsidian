@@ -26,6 +26,7 @@ import {
 import { createDeskMonth, deskMonthPath, logDeskChange } from "./actions.ts";
 import { askThirdMove, pickDate, pickMonth, promptText } from "./modals.ts";
 import { askForm, confirmDelete } from "../ui/modals.ts";
+import { askWhen } from "../drawer/modals.ts";
 import { contentText, getField, normalizeTime, splitContent, TIME_LEAD_RE } from "../line-edit.ts";
 import {
 	movedCount,
@@ -47,7 +48,6 @@ import {
 } from "./ops.ts";
 
 export const VIEW_TYPE_DESK_CALENDAR = "mylogs-desk-calendar";
-export const DRAWER_PATH = "06 Drawer/Drawer.md";
 const PINBOARD_VIEW = "mylogs-pinboard";
 const PINBOARD_COMMAND = "mylogs:open-pinboard";
 const CHANGED_NOTICE = "파일이 바뀌었어요. 다시 그렸어요";
@@ -633,7 +633,7 @@ export class DeskCalendarView extends ItemView {
 			menu.addSeparator();
 			menu.addItem((i) => i.setTitle("다른 날…").setIcon("calendar").onClick(() => void this.chooseOtherDay(it)));
 			menu.addItem((i) => i.setTitle("미래로 (Wall Calendar)…").setIcon("calendar-clock").onClick(() => void this.chooseFuture(it)));
-			menu.addItem((i) => i.setTitle("서랍에").setIcon("archive").onClick(() => void this.exec(planDrawer(it, DRAWER_PATH, ctx.today))));
+			menu.addItem((i) => i.setTitle("서랍에…").setIcon("archive").onClick(() => void this.chooseDrawer(it)));
 			menu.addItem((i) => i.setTitle("쪼개기…").setIcon("scissors").onClick(() => void this.chooseSplit(it)));
 			menu.addItem((i) => i.setTitle("놓아주기…").setIcon("circle-slash").onClick(() => void this.chooseLetGo(it)));
 		}
@@ -783,6 +783,14 @@ export class DeskCalendarView extends ItemView {
 		const ym = await pickMonth(this.app, "미래로 (Wall Calendar)", shiftMonth(it.file, 1), `「${it.item.text}」을(를) 보낼 달을 골라요.`);
 		if (!ym || !parseMonthKey(ym)) return;
 		await this.exec(planFuture(it, ym, this.wallPath(+ym.slice(0, 4)), this.ctx!.today));
+	}
+
+	/** 「서랍에」: a Drawer line needs a `when::` condition (Drawer AGENTS 「4-1」 1); 놓아주기 is offered first. */
+	private async chooseDrawer(it: DeskItem): Promise<void> {
+		const a = await askWhen(this.app, it.item.text);
+		if (!a) return;
+		if (a.kind === "letgo") return this.chooseLetGo(it);
+		await this.exec(planDrawer(it, normalizePath(this.plugin.settings.drawerPath), this.ctx!.today, a.when));
 	}
 
 	private async chooseSplit(it: DeskItem): Promise<void> {
