@@ -6,8 +6,10 @@ import {
 	addIndexChange,
 	cancelWallEvent,
 	cancelWallTask,
+	deleteWallItem,
 	deskLineFor,
 	deskLink,
+	editWallItem,
 	type EditResult,
 	formatNewLine,
 	insertIntoDesk,
@@ -20,7 +22,9 @@ import {
 	type WallTarget,
 } from "./edit.ts";
 import { MonthPickerModal, TextPromptModal } from "./modals.ts";
-import { itemSortKey, parseWallYear, type WallItem, type WallLine, wallYearSkeleton } from "./parse.ts";
+import { askForm, confirmDelete } from "../ui/modals.ts";
+import { contentText, getField } from "../line-edit.ts";
+import { itemSortKey, parseWallYear, splitWallBody, WALL_DATE_RE, type WallItem, type WallLine, wallYearSkeleton } from "./parse.ts";
 
 export const VIEW_TYPE_WALL_CALENDAR = "mylogs-wall-calendar";
 export const INDEX_FILE = "Wall Calendar Index.md";
@@ -266,7 +270,7 @@ export class WallCalendarView extends ItemView {
 		leg("k-task s-cancelled", "놓아줌");
 		leg("k-event s-scheduled", "행사");
 		leg("k-note s-scheduled", "메모");
-		lg.createSpan({ cls: "wc-lg wc-hint", text: "항목을 다른 달로 끌어 옮길 수 있어요 · 항목을 누르면 메뉴" });
+		lg.createSpan({ cls: "wc-lg wc-hint", text: "항목을 다른 달로 끌어 옮길 수 있어요 · 항목을 누르면 메뉴 (수정·삭제)" });
 	}
 
 	private renderMonth(grid: HTMLElement, month: number, lines: WallLine[], hasHeading: boolean): void {
@@ -534,6 +538,17 @@ export class WallCalendarView extends ItemView {
 					.onClick(() => void this.apply(`${this.ym(month)} 행사 취소: ${it.text}`, (d) => cancelWallEvent(d, this.year, target))),
 			);
 		}
+		if (canEdit && it.kind !== null) {
+			menu.addSeparator();
+			menu.addItem((m) => m.setTitle("수정…").setIcon("pencil").onClick(() => void this.editItem(month, l, target)));
+			menu.addItem((m) =>
+				m
+					.setTitle("삭제…")
+					.setIcon("trash-2")
+					.setWarning(true)
+					.onClick(() => void this.deleteItem(month, l, target)),
+			);
+		}
 		menu.addSeparator();
 		menu.addItem((m) =>
 			m
@@ -547,6 +562,90 @@ export class WallCalendarView extends ItemView {
 		);
 		if (!canEdit) menu.addItem((m) => m.setTitle("지난 달은 기록으로 남겨요 (읽기 전용)").setDisabled(true));
 		menu.showAtMouseEvent(e);
+	}
+
+	// ── edit / delete ──
+
+	private async editItem(month: number, l: WallLine, target: WallTarget): Promise<void> {
+		const it = l.item;
+		const body = l.line.replace(/^\s*[-*+]\s+/, "");
+		const months: [string, string][] = [];
+		for (let m = 1; m <= 12; m++) if (this.editable(m)) months.push([String(m), `${m}월`]);
+		const hasWhy = it.status === "cancelled" || !!getField(body, "why");
+		const oldDate = splitWallBody(body).date.trim();
+		const v = await askForm(this.app, {
+			title: `${KIND_LABEL[it.kind ?? "note"] ?? "항목"} 수정`,
+			desc: "다른 필드와 태그는 그대로 둬요. 날짜나 달을 바꾸면 그 자리로 옮겨요.",
+			fields: [
+				{ key: "text", label: "내용", type: "text", value: contentText(body, WALL_DATE_RE) },
+				...(it.kind !== "note"
+					? [{ key: "date", label: "날짜", type: "text" as const, value: oldDate, desc: "MM/DD, 기간은 MM/DD~MM/DD, 시각은 MM/DD 14:00. 비우면 이달 중", placeholder: `${pad2(month)}/DD` }]
+					: []),
+				{ key: "month", label: "달", type: "select", value: String(month), options: months },
+				{ key: "goal", label: "목표 (goal::)", type: "text", value: getField(body, "goal"), placeholder: "G-2026-01.2" },
+				{ key: "project", label: "프로젝트 (project::)", type: "text", value: getField(body, "project"), placeholder: "P-…" },
+				...(hasWhy ? [{ key: "why", label: "이유 (why::)", type: "text" as const, value: getField(body, "why") }] : []),
+			],
+			validate: (x) => {
+				const out: string[] = [];
+				if (!x.text) out.push("내용을 적어 주세요.");
+				// An unchanged date follows a new month by itself (same day), like 「다른 달로 옮기기」.
+				if (x.date && x.date !== oldDate) {
+					const n = normalizeDateInput(x.date, this.year, +x.month);
+					if (!n.ok) out.push(n.reason);
+				}
+				if (hasWhy && it.status === "cancelled" && it.kind === "task" && !x.why) out.push("놓아준 할 일에는 이유(why::)가 있어야 해요.");
+				return out;
+			},
+		});
+		if (!v) return;
+		const toMonth = +v.month;
+		let date: string | undefined;
+		if (it.kind !== "note" && v.date !== oldDate) {
+			if (v.date) {
+				const n = normalizeDateInput(v.date, this.year, toMonth);
+				if (!n.ok) return void new Notice(n.reason);
+				date = n.date;
+			} else date = "";
+		}
+		const fields: Record<string, string> = { goal: v.goal, project: v.project };
+		if (hasWhy) fields.why = v.why;
+		const what = `${this.ym(month)}${toMonth !== month ? ` → ${this.ym(toMonth)}` : ""} 수정: ${it.text}${v.text !== it.text ? ` → ${v.text}` : ""}`;
+		const res = editWallItem(this.text ?? "", this.year, target, { text: v.text, date, month: toMonth, fields });
+		if (!res.ok && res.reason === "need-date") {
+			new Notice(`${toMonth}월에는 같은 날이 없어요. 날짜를 새로 적어 주세요.`);
+			return;
+		}
+		await this.apply(what, (d) => editWallItem(d, this.year, target, { text: v.text, date, month: toMonth, fields }));
+	}
+
+	private async deleteItem(month: number, l: WallLine, target: WallTarget): Promise<void> {
+		const it = l.item;
+		const notes: string[] = [];
+		if (it.movedTo) notes.push(`이 줄은 ${it.movedTo}(으)로 보낸 기록이에요. 보낸 곳에 옮겨 적은 줄은 지우지 않고 그대로 남아요.`);
+		if (it.goal) notes.push(`목표 ${it.goal}에 연결된 줄이에요. 목표 노트는 바꾸지 않아요.`);
+		const task = it.kind === "task" && it.status === "scheduled";
+		const event = it.kind === "event" && it.status === "scheduled";
+		const ans = await confirmDelete(this.app, {
+			title: `${KIND_LABEL[it.kind ?? "note"] ?? "항목"} 삭제`,
+			removes: [`${this.yearPath()} · ${this.ym(month)}`, l.line.trim()],
+			notes,
+			footer: "잘못 넣은 줄, 중복, 테스트 데이터를 지울 때 써요.",
+			alt: task
+				? { label: "놓아주기 (기록 남김)", desc: "하지 않기로 한 일이면 지우지 말고 놓아주기로 남길 수 있어요: [-] … (why:: 이유)." }
+				: event
+					? { label: "행사 취소 (취소선)", desc: "취소된 행사면 지우지 말고 취소선으로 남길 수 있어요: ~~…~~." }
+					: undefined,
+		});
+		if (ans === "delete") {
+			await this.apply(`${this.ym(month)} 삭제: ${l.line.trim()}`, (d) => deleteWallItem(d, this.year, target));
+		} else if (ans === "alt" && task) {
+			const why = await new TextPromptModal(this.app, { title: "놓아주는 이유", desc: `${it.text} · (why:: 이유)로 남겨요.`, placeholder: "예: 지금 목표와 관계없음", cta: "놓아주기" }).ask();
+			if (why === null) return;
+			await this.apply(`${this.ym(month)} 할 일 놓아줌: ${it.text}`, (d) => cancelWallTask(d, this.year, target, why));
+		} else if (ans === "alt" && event) {
+			await this.apply(`${this.ym(month)} 행사 취소: ${it.text}`, (d) => cancelWallEvent(d, this.year, target));
+		}
 	}
 
 	// ── add form ──
@@ -663,6 +762,10 @@ export class WallCalendarView extends ItemView {
 			case "not-cancellable":
 			case "not-scheduled":
 				return "이 항목은 지금 상태에서 바꿀 수 없어요.";
+			case "need-date":
+				return "그 달에는 같은 날이 없어요. 날짜를 새로 적어 주세요.";
+			case "empty-text":
+				return "내용이 비어 있어요.";
 			default:
 				return `바꾸지 못했어요 (${reason}).`;
 		}

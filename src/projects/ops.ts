@@ -73,6 +73,80 @@ export function setFmValue(text: string, key: string, value: string): string {
 	return lines.join("");
 }
 
+/** A frontmatter list (block `- a` items or inline `[a, b]`), unquoted. Empty when absent. */
+export function getFmList(text: string, key: string): string[] {
+	const lines = splitLinesKeepEol(text);
+	const i = fmLineIndex(lines, key);
+	if (i === -1) return [];
+	const raw = splitComment(stripEol(lines[i]).replace(/^[^:]*:/, "")).value.trim();
+	const unq = (x: string) => x.trim().replace(/^(["'])(.*)\1$/, "$2");
+	if (raw.startsWith("[")) {
+		const inner = raw.replace(/^\[|\]$/g, "").trim();
+		return inner ? splitInline(inner).map(unq).filter(Boolean) : [];
+	}
+	if (raw) return [unq(raw)];
+	const end = frontmatterEnd(lines);
+	const out: string[] = [];
+	for (let j = i + 1; j < end - 1; j++) {
+		const m = /^\s*-\s+(.*)$/.exec(stripEol(lines[j]));
+		if (!m) break;
+		out.push(unq(m[1]));
+	}
+	return out.filter(Boolean);
+}
+
+/** Split `a, "b, c", [[x]]` on top-level commas. */
+function splitInline(s: string): string[] {
+	const out: string[] = [];
+	let cur = "";
+	let q: string | null = null;
+	let depth = 0;
+	for (const ch of s) {
+		if (q) {
+			if (ch === q) q = null;
+		} else if (ch === '"' || ch === "'") q = ch;
+		else if (ch === "[") depth++;
+		else if (ch === "]") depth--;
+		else if (ch === "," && depth === 0) {
+			out.push(cur);
+			cur = "";
+			continue;
+		}
+		cur += ch;
+	}
+	out.push(cur);
+	return out;
+}
+
+/**
+ * Write a frontmatter list: `key: []` when empty, otherwise a block list (`  - value`, YAML-quoted
+ * when needed). Replaces the old value (inline or block); adds the key when absent.
+ */
+export function setFmList(text: string, key: string, values: string[]): string {
+	const lines = splitLinesKeepEol(text);
+	const end = frontmatterEnd(lines);
+	if (end === 0) return text;
+	const eol = detectEol(text);
+	const i = fmLineIndex(lines, key);
+	let indent = "  ";
+	let count = 0;
+	if (i !== -1) {
+		for (let j = i + 1; j < end - 1; j++) {
+			const m = /^(\s*)-\s/.exec(stripEol(lines[j]));
+			if (!m) break;
+			if (count === 0 && m[1]) indent = m[1];
+			count++;
+		}
+	}
+	const block = values.length ? [`${key}:${eol}`, ...values.map((v) => `${indent}- ${yamlScalar(v)}${eol}`)] : [`${key}: []${eol}`];
+	if (i === -1) lines.splice(end - 1, 0, ...block);
+	else {
+		if (getFmList(text, key).join("\u0000") === values.join("\u0000")) return text;
+		lines.splice(i, 1 + count, ...block);
+	}
+	return lines.join("");
+}
+
 // ───────────────────────── hub ─────────────────────────
 
 export interface HubChange {

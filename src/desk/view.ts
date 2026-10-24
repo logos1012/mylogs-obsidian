@@ -8,6 +8,7 @@ import {
 	type DeskItem,
 	type DeskWeek,
 	findPairAlloc,
+	isoWeekNo,
 	type MonthData,
 	parseMonthFile,
 	parseMonthKey,
@@ -24,12 +25,18 @@ import {
 } from "./model.ts";
 import { createDeskMonth, deskMonthPath, logDeskChange } from "./actions.ts";
 import { askThirdMove, pickDate, pickMonth, promptText } from "./modals.ts";
+import { askForm, confirmDelete } from "../ui/modals.ts";
+import { contentText, getField, normalizeTime, splitContent, TIME_LEAD_RE } from "../line-edit.ts";
 import {
 	movedCount,
+	pairedCopies,
 	type Plan,
 	planAssignDay,
 	planAssignWeek,
+	planCancelEvent,
+	planDelete,
 	planDrawer,
+	planEdit,
 	planFuture,
 	planLetGo,
 	planMoveDay,
@@ -300,7 +307,7 @@ export class DeskCalendarView extends ItemView {
 		const a = lg.createSpan();
 		a.createEl("b", { text: "→" });
 		a.appendText("분배 칸에서 배정한 날짜·주");
-		lg.createSpan({ text: "끌어다 놓기: 이달 중 → 이번 주 할 일 → 날짜 칸 · ⋯ 또는 오른쪽 클릭: 못 한 일 처리" });
+		lg.createSpan({ text: "끌어다 놓기: 이달 중 → 이번 주 할 일 → 날짜 칸 · ⋯ 또는 오른쪽 클릭: 못 한 일 처리, 수정, 삭제" });
 	}
 
 	private renderEmpty(root: HTMLElement): void {
@@ -630,9 +637,113 @@ export class DeskCalendarView extends ItemView {
 			menu.addItem((i) => i.setTitle("쪼개기…").setIcon("scissors").onClick(() => void this.chooseSplit(it)));
 			menu.addItem((i) => i.setTitle("놓아주기…").setIcon("circle-slash").onClick(() => void this.chooseLetGo(it)));
 		}
+		if (it.item.kind === "event" && it.item.status === "scheduled") {
+			menu.addItem((i) => i.setTitle("행사 취소 (취소선)").setIcon("x").onClick(() => void this.exec(planCancelEvent(it, ctx.today))));
+		}
+		menu.addSeparator();
+		menu.addItem((i) => i.setTitle("수정…").setIcon("pencil").onClick(() => void this.editItem(it)));
+		menu.addItem((i) =>
+			i
+				.setTitle("삭제…")
+				.setIcon("trash-2")
+				.setWarning(true)
+				.onClick(() => void this.deleteItem(it)),
+		);
 		menu.addSeparator();
 		menu.addItem((i) => i.setTitle("파일에서 보기").setIcon("file-text").onClick(() => void this.openAt(it.file, it.index)));
 		menu.showAtMouseEvent(e);
+	}
+
+	// ── 수정 / 삭제 ──
+
+	private sectionLabel(it: DeskItem): string {
+		if (it.section === "during") return "이달 중";
+		if (it.section === "alloc") return "이번 주 할 일";
+		return it.date ?? "";
+	}
+
+	private async editItem(it: DeskItem): Promise<void> {
+		const ctx = this.ctx!;
+		const body = it.line.replace(/^\s*[-*+]\s+/, "");
+		const copies = pairedCopies(it, ctx.months);
+		const hasWhy = it.item.status === "cancelled" || !!getField(body, "why");
+		const isDay = it.section === "day";
+		const v = await askForm(this.app, {
+			title: `${KIND_LABEL[it.item.kind ?? "note"]} 수정 · ${this.sectionLabel(it)}`,
+			desc: copies.length
+				? `배정으로 짝이 된 줄 ${copies.length}개(${copies.map((x) => this.sectionLabel(x)).join(", ")})도 같은 내용·목표·프로젝트로 고쳐요. 다른 필드와 태그는 그대로 둬요.`
+				: "다른 필드와 태그는 그대로 둬요.",
+			fields: [
+				{ key: "text", label: "내용", type: "text", value: contentText(body, TIME_LEAD_RE) },
+				{ key: "time", label: "시각", type: "text", value: splitContent(body, TIME_LEAD_RE).lead.trim(), placeholder: "14:00 (비우면 없음)" },
+				...(isDay ? [{ key: "date", label: "날짜", type: "date" as const, value: it.date!, desc: "잘못 적은 날을 고칠 때. 미루는 것은 「다른 날…」이에요." }] : []),
+				{ key: "goal", label: "목표 (goal::)", type: "text", value: getField(body, "goal"), placeholder: "G-2026-01.2" },
+				{ key: "project", label: "프로젝트 (project::)", type: "text", value: getField(body, "project"), placeholder: "P-…" },
+				...(hasWhy ? [{ key: "why", label: "이유 (why::)", type: "text" as const, value: getField(body, "why") }] : []),
+			],
+			validate: (x) => {
+				const out: string[] = [];
+				if (!x.text) out.push("내용을 적어 주세요.");
+				if (normalizeTime(x.time) === null) out.push("시각은 HH:MM 형식이에요 (예: 09:30, 14:00~15:00).");
+				if (isDay && !/^\d{4}-\d{2}-\d{2}$/.test(x.date)) out.push("날짜를 골라 주세요.");
+				if (hasWhy && it.item.status === "cancelled" && it.item.kind === "task" && !x.why) out.push("놓아준 할 일에는 이유(why::)가 있어야 해요.");
+				return out;
+			},
+		});
+		if (!v) return;
+		const fields: Record<string, string> = { goal: v.goal, project: v.project };
+		if (hasWhy) fields.why = v.why;
+		const time = normalizeTime(v.time) ?? undefined;
+		const date = isDay && v.date !== it.date ? v.date : undefined;
+		if (date && !dayExists(ctx, date) && !this.fileAt(this.monthPath(date.slice(0, 7)))) {
+			new Notice(`${date.slice(0, 7)} Desk Calendar 파일이 없어요. 먼저 새 달을 만들어 주세요.`);
+			return;
+		}
+		const alloc = date ? findPairAlloc(it, ctx.months) : null;
+		const change = {
+			text: v.text !== contentText(body, TIME_LEAD_RE) ? v.text : undefined,
+			time: time !== splitContent(body, TIME_LEAD_RE).lead.trim() ? time : undefined,
+			fields,
+			date,
+		};
+		await this.exec(planEdit(it, change, copies, alloc, ctx.today));
+	}
+
+	private async deleteItem(it: DeskItem): Promise<void> {
+		const ctx = this.ctx!;
+		const notes: string[] = [];
+		const copies = pairedCopies(it, ctx.months);
+		if (it.section === "day") {
+			const alloc = findPairAlloc(it, ctx.months);
+			if (alloc) notes.push(`이번 주 할 일 「${alloc.item.text}」의 → ${+it.date!.slice(5, 7)}/${+it.date!.slice(8, 10)} 배정도 지워요.`);
+			const pad = normalizePath(`${this.plugin.settings.dailyPadFolder}/${it.date!.slice(0, 4)}/${it.date}.md`);
+			if (this.fileAt(pad)) notes.push(`${it.date} Daily Pad가 이 날짜 칸을 embed로 보여 줘요. 거기서도 사라져요.`);
+		} else if (it.section === "alloc") {
+			const parents = copies.filter((x) => x.section === "during");
+			if (parents.length) notes.push(`이달 중 「${parents[0].item.text}」의 → W${String(isoWeekNo(it.monday!)).padStart(2, "0")} 배정도 지워요.`);
+			const days = copies.filter((x) => x.section === "day");
+			if (days.length) notes.push(`날짜 칸에 옮겨 적은 줄 ${days.length}개(${days.map((x) => x.date).join(", ")})는 지우지 않고 남겨요.`);
+		} else {
+			const down = copies.filter((x) => x.section !== "during");
+			if (down.length) notes.push(`이번 주 할 일·날짜 칸에 옮겨 적은 줄 ${down.length}개는 지우지 않고 남겨요.`);
+		}
+		if (getField(it.line, "from") === "Wall Calendar") notes.push("Wall Calendar에서 온 줄이에요. Wall Calendar의 원래 줄(→ [[…]] 표시)은 기록으로 남아요.");
+		const task = isOpenTask(it) && it.section === "day";
+		const event = it.item.kind === "event" && it.item.status === "scheduled";
+		const ans = await confirmDelete(this.app, {
+			title: `${KIND_LABEL[it.item.kind ?? "note"]} 삭제`,
+			removes: [`${this.monthPath(it.file)} · ${this.sectionLabel(it)}`, it.line.trim()],
+			notes,
+			footer: "잘못 넣은 줄, 중복, 테스트 데이터를 지울 때 써요.",
+			alt: task
+				? { label: "놓아주기 (기록 남김)", desc: "하지 않기로 한 일이면 지우지 말고 놓아주기로 남길 수 있어요: [-] … (why:: 이유)." }
+				: event
+					? { label: "행사 취소 (취소선)", desc: "취소된 행사면 지우지 말고 취소선으로 남길 수 있어요: ~~…~~." }
+					: undefined,
+		});
+		if (ans === "delete") await this.exec(planDelete(it, ctx.months, ctx.today));
+		else if (ans === "alt" && task) await this.chooseLetGo(it);
+		else if (ans === "alt" && event) await this.exec(planCancelEvent(it, ctx.today));
 	}
 
 	/** The third-postpone check. Returns false when the move should not go ahead. */

@@ -8,8 +8,10 @@ import {
 	addIndexChange,
 	cancelWallEvent,
 	cancelWallTask,
+	deleteWallItem,
 	deskLineFor,
 	deskLink,
+	editWallItem,
 	formatNewLine,
 	insertIntoDesk,
 	insertIntoMonth,
@@ -272,4 +274,83 @@ test("index: prepend change log entry, set updated", () => {
 	assert.ok(out.startsWith("---\ntype: index\nfolder: 02 Wall Calendar\nupdated: 2026-10-25\n---"));
 	const back = out.replace("- 2026-10-25: 2026-11에 할 일 추가: 보고 (플러그인)\n", "").replace("updated: 2026-10-25", "updated: 2026-10-24");
 	assert.equal(back, index);
+});
+
+// ───────────────────────── edit / delete ─────────────────────────
+
+function lineDiff(a: string, b: string): { removed: string[]; added: string[] } {
+	const x = a.split("\n");
+	const y = b.split("\n");
+	return { removed: x.filter((l) => !y.includes(l)), added: y.filter((l) => !x.includes(l)) };
+}
+
+test("edit: text and fields in place, other fields and tags kept", () => {
+	const t = target(y2026, 2026, 11, "- [ ] 11/14 Claude Code");
+	const r = editWallItem(y2026, 2026, t, { text: "Claude Code 강의 1~6강 완성", fields: { goal: "G-2026-01.1", project: "P-lecture" } });
+	assert.ok(r.ok);
+	assert.deepEqual(lineDiff(y2026, r.text), {
+		removed: ["- [ ] 11/14 Claude Code 강의 1~5강 완성 (goal:: G-2026-01.2) #test"],
+		added: ["- [ ] 11/14 Claude Code 강의 1~6강 완성 (goal:: G-2026-01.1) (project:: P-lecture) #test"],
+	});
+	// same line count, same position
+	assert.equal(r.text.split("\n").length, y2026.split("\n").length);
+	assert.equal(r.text.split("\n").indexOf(r.line!), y2026.split("\n").indexOf(t.line));
+});
+
+test("edit: removing a field drops only that field", () => {
+	const t = target(y2026, 2026, 12, "- [ ] 12/20");
+	const r = editWallItem(y2026, 2026, t, { fields: { goal: "" } });
+	assert.ok(r.ok);
+	assert.equal(r.line, "- [ ] 12/20 체중 중간 점검 #건강 #test");
+});
+
+test("edit: new date re-sorts within the month; new month moves the line", () => {
+	const t = target(y2026, 2026, 11, "- 11/21 가족 생일");
+	const r = editWallItem(y2026, 2026, t, { date: "11/02" });
+	assert.ok(r.ok);
+	const nov = parseWallYear(r.text, 2026).months[10].lines.map((l) => l.line);
+	assert.equal(nov[0], "- 11/02 가족 생일 #가족 #test");
+	assert.equal(nov.length, 4);
+
+	const t2 = target(y2026, 2026, 11, "- 11/21 가족 생일");
+	const r2 = editWallItem(y2026, 2026, t2, { month: 12 });
+	assert.ok(r2.ok);
+	const y = parseWallYear(r2.text, 2026);
+	assert.equal(y.months[10].lines.length, 3);
+	assert.ok(y.months[11].lines.some((l) => l.line === "- 12/21 가족 생일 #가족 #test"));
+	// 12/21 sorts after 12/20 and before 12/24
+	const dec = y.months[11].lines.map((l) => l.line);
+	assert.ok(dec.indexOf("- 12/21 가족 생일 #가족 #test") === dec.findIndex((l) => l.startsWith("- [ ] 12/20")) + 1);
+
+	// clearing the date makes it 이달 중 (end of the month)
+	const r3 = editWallItem(y2026, 2026, target(y2026, 2026, 11, "- [ ] 11/14"), { date: "" });
+	assert.ok(r3.ok);
+	const nov3 = parseWallYear(r3.text, 2026).months[10].lines.map((l) => l.line);
+	assert.equal(nov3[nov3.length - 1], "- [ ] Claude Code 강의 1~5강 완성 (goal:: G-2026-01.2) #test");
+});
+
+test("edit: struck-through event keeps its strike; empty text and missing day fail", () => {
+	const t = target(y2026, 2026, 5, "- ~~05/09");
+	const r = editWallItem(y2026, 2026, t, { text: "팀 워크숍" });
+	assert.ok(r.ok);
+	assert.equal(r.line, "- ~~05/09 팀 워크숍~~ #test");
+	assert.deepEqual(editWallItem(y2026, 2026, t, { text: "  " }), { ok: false, reason: "empty-text" });
+	const src = y2026.replace("## 2026-10\n", "## 2026-10\n- 10/31 할로윈\n");
+	const t2 = target(src, 2026, 10, "- 10/31 할로윈");
+	assert.deepEqual(editWallItem(src, 2026, t2, { month: 11 }), { ok: false, reason: "need-date" });
+});
+
+test("delete: removes exactly one line; stale target fails", () => {
+	const t = target(y2026, 2026, 12, "- 연말 감사 인사");
+	const r = deleteWallItem(y2026, 2026, t);
+	assert.ok(r.ok);
+	assert.deepEqual(lineDiff(y2026, r.text), { removed: ["- 연말 감사 인사 보낼 사람 정리 #test"], added: [] });
+	assert.equal(r.text.split("\n").length, y2026.split("\n").length - 1);
+	const gone = deleteWallItem(r.text, 2026, t);
+	assert.deepEqual(gone, { ok: false, reason: "not-found" });
+	// last line of a file without a final newline
+	const noEol = y2026.replace(/\n$/, "");
+	const r2 = deleteWallItem(noEol, 2026, target(noEol, 2026, 12, "- 연말 감사 인사"));
+	assert.ok(r2.ok);
+	assert.ok(r2.text.endsWith("- [ ] 12/31 2026 Yearly 리뷰 #test"));
 });
