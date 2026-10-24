@@ -17,6 +17,10 @@ export interface MyLogsSettings {
 	pinboardFolder: string;
 	/** Wall Calendar year files: <folder>/<YYYY>.md and <folder>/Wall Calendar Index.md. */
 	wallCalendarFolder: string;
+	/** Project Folders: `<folder>/<개인|회사>/<프로젝트명>/`, registry and templates in `<folder>/99 작업실/`. */
+	projectFoldersFolder: string;
+	/** Completed projects: `<folder>/<개인|회사>/<프로젝트명>/`. */
+	projectArchiveFolder: string;
 	sections: SectionNames;
 	/** Show `#test` markers on test data. */
 	showTestMarkers: boolean;
@@ -28,6 +32,8 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	deskCalendarFolder: "03 Desk Calendar",
 	pinboardFolder: "01 Pinboard",
 	wallCalendarFolder: "02 Wall Calendar",
+	projectFoldersFolder: "05 Project Folders",
+	projectArchiveFolder: "10 Archive Box/Projects",
 	sections: {
 		pending: "결정 대기",
 		today: "오늘 할 일",
@@ -71,7 +77,7 @@ export class MyLogsSettingTab extends PluginSettingTab {
 		const s = this.plugin.settings;
 
 		new Setting(containerEl).setName("폴더").setHeading();
-		const folder = (name: string, desc: string, key: "dailyPadFolder" | "deskCalendarFolder" | "pinboardFolder" | "wallCalendarFolder") =>
+		const folder = (name: string, desc: string, key: "dailyPadFolder" | "deskCalendarFolder" | "pinboardFolder" | "wallCalendarFolder" | "projectFoldersFolder" | "projectArchiveFolder") =>
 			new Setting(containerEl)
 				.setName(name)
 				.setDesc(desc)
@@ -88,6 +94,8 @@ export class MyLogsSettingTab extends PluginSettingTab {
 		folder("Desk Calendar 폴더", "달 파일 위치: <폴더>/<YYYY>/<YYYY-MM>.md", "deskCalendarFolder");
 		folder("Pinboard 폴더", "목표 노트 위치: <폴더>/<YYYY>/*.md · 인덱스: <폴더>/Pinboard Index.md", "pinboardFolder");
 		folder("Wall Calendar 폴더", "연도 파일 위치: <폴더>/<YYYY>.md", "wallCalendarFolder");
+		folder("Project Folders 폴더", "프로젝트 위치: <폴더>/<개인|회사>/<프로젝트명>/ · 등록부·템플릿: <폴더>/99 작업실/", "projectFoldersFolder");
+		folder("완료 프로젝트 보관 폴더", "완료된 프로젝트를 옮기는 곳: <폴더>/<개인|회사>/<프로젝트명>/", "projectArchiveFolder");
 
 		new Setting(containerEl).setName("Daily Pad 섹션 이름").setHeading();
 		const section = (name: string, key: keyof SectionNames, desc?: string) => {
