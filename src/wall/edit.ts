@@ -8,9 +8,10 @@
  * Pure module (no Obsidian imports) so it can be unit-tested with `node --test`.
  */
 
+import { replaceContent, setFields, spliceLine } from "../line-edit.ts";
 import { findDaySection, LIST_LINE_RE, pad2, splitLinesKeepEol, stripEol, TASK_LINE_RE } from "../parser.ts";
 import { detectEol, findSection, sectionLineRange, setFrontmatterScalar } from "../writer.ts";
-import { itemSortKey, type MonthSection, parseWallItem, parseWallYear, safeDate, splitWallBody, type WallItem } from "./parse.ts";
+import { itemSortKey, type MonthSection, parseWallItem, parseWallYear, safeDate, splitWallBody, WALL_DATE_RE, type WallItem } from "./parse.ts";
 
 export type EditResult = { ok: true; text: string; line?: string } | { ok: false; reason: string };
 
@@ -268,6 +269,53 @@ export function moveWallItem(text: string, year: number, t: WallTarget, toMonth:
 	// Removing the file's last line: drop the now-dangling terminator of the previous line.
 	if (!l.eol && l.idx > 0 && l.idx === l.lines.length) rest = rest.replace(/\r?\n$/, "");
 	return insertIntoMonth(rest, year, toMonth, line);
+}
+
+// ───────────────────────── edit / delete ─────────────────────────
+
+export interface WallChange {
+	/** New content text (the words after the date). */
+	text?: string;
+	/** New date prefix (normalized `MM/DD…`, "" = 이달 중). `undefined` = keep. */
+	date?: string;
+	/** New month (same year file). `undefined` = keep. */
+	month?: number;
+	/** Inline fields to set (`""` removes one). Others stay as written. */
+	fields?: Record<string, string | undefined>;
+}
+
+/**
+ * 수정: change the text, fields, date or month of one line. Every other part (checkbox, arrow,
+ * other fields, tags) stays as written. A new date or month moves the line to its place in date
+ * order (like 「다른 달로 옮기기」); otherwise it is edited in place.
+ */
+export function editWallItem(text: string, year: number, t: WallTarget, c: WallChange): EditResult {
+	const l = locate(text, year, t);
+	if ("reason" in l) return { ok: false, reason: l.reason };
+	let body = l.body;
+	if (c.text !== undefined) {
+		if (!c.text.trim()) return { ok: false, reason: "empty-text" };
+		body = replaceContent(body, c.text, WALL_DATE_RE);
+	}
+	if (c.fields) body = setFields(body, c.fields);
+	const toMonth = c.month ?? t.month;
+	const oldDate = splitWallBody(l.body).date.trim();
+	const dateChanged = c.date !== undefined && c.date.trim() !== oldDate;
+	if (!dateChanged && toMonth === t.month) return replaceLine(l, body);
+	let moved: string | null;
+	if (dateChanged) moved = replaceLeadingDate(body, c.date!.trim());
+	else moved = retargetDate(body, year, toMonth);
+	if (moved === null) return { ok: false, reason: "need-date" };
+	const line = `${l.indent}${l.marker} ${moved}`;
+	const rest = spliceLine(l.lines, l.idx);
+	return insertIntoMonth(rest, year, toMonth, line);
+}
+
+/** 삭제: remove the line (no record kept). */
+export function deleteWallItem(text: string, year: number, t: WallTarget): EditResult {
+	const l = locate(text, year, t);
+	if ("reason" in l) return { ok: false, reason: l.reason };
+	return { ok: true, text: spliceLine(l.lines, l.idx), line: "" };
 }
 
 // ───────────────────────── send to Desk Calendar ─────────────────────────
