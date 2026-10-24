@@ -9,9 +9,10 @@
  * Pure module (no Obsidian imports) so it can be unit-tested with `node --test`.
  */
 
+import { replaceContent, setFields, setLead, strikeContent, TIME_LEAD_RE } from "../line-edit.ts";
 import { frontmatterEnd, splitLinesKeepEol, stripEol, TASK_LINE_RE } from "../parser.ts";
 import { detectEol, findSection, locateLine, setFrontmatterScalar } from "../writer.ts";
-import { type DeskItem, mmdd, monthKey, parseMonthFile } from "./model.ts";
+import { type DeskItem, isoWeekNo, mmdd, mondayOf, monthKey, type MonthData, parseMonthFile } from "./model.ts";
 
 export type EditResult = { ok: true; text: string } | { ok: false; reason: string };
 
@@ -120,6 +121,17 @@ function editDateList(line: string, fn: (list: string[]) => string[]): string {
 
 function collapseEnds(s: string): string {
 	return s.replace(/[ \t]{2,}/g, " ").replace(/\s+$/, "");
+}
+
+/** Remove a week from `→ W..`; the arrow goes too when the list becomes empty. */
+export function removeWeekAssign(line: string, weekNo: number): string {
+	return mapBody(line, (body) => {
+		const m = WEEK_LIST_RE.exec(body);
+		if (!m) return body;
+		const list = m[4].split(",").map((x) => x.trim()).filter((x) => +x.slice(1) !== weekNo);
+		if (!list.length) return collapseEnds(body.slice(0, m.index) + body.slice(m.index + m[0].length));
+		return body.slice(0, m.index) + m[1] + m[2] + m[3] + list.join(", ") + body.slice(m.index + m[0].length);
+	});
 }
 
 /** Add a date (ISO) to an allocation line's `→ MM/DD` list, keeping it in date order. */
@@ -504,6 +516,157 @@ export function planToggle(src: DeskItem, today: string): Plan {
 				return mm && (mm[2] === " " || mm[2] === "x" || mm[2] === "X") ? setCheckbox(l, to) : l;
 			}),
 		),
+	]);
+}
+
+// ───────────────────────── 수정 / 삭제 ─────────────────────────
+
+/**
+ * The copies paired with an item by the 3-step allocation (「3-3」: 짝은 내용 글자가 같은지로 맞춘다):
+ * 이달 중 `→ Wnn` ↔ that week's 이번 주 line ↔ its `→ MM/DD` day lines. Excludes `src`.
+ */
+export function pairedCopies(src: DeskItem, months: Iterable<MonthData>): DeskItem[] {
+	const all: DeskItem[] = [];
+	for (const m of months) {
+		all.push(...m.during);
+		for (const w of m.weeks.values()) all.push(...(w.alloc ?? []));
+		for (const d of m.days.values()) all.push(...d);
+	}
+	const same = (a: DeskItem, b: DeskItem) => a.file === b.file && a.index === b.index;
+	const linked = (a: DeskItem, b: DeskItem): boolean => {
+		if (a.key !== b.key) return false;
+		const pair = (x: DeskItem, y: DeskItem) =>
+			(x.section === "during" && y.section === "alloc" && !!y.monday && x.item.assignWeek.includes(isoWeekNo(y.monday))) ||
+			(x.section === "alloc" && y.section === "day" && !!y.date && x.monday === y.monday && x.assign.includes(y.date));
+		return pair(a, b) || pair(b, a);
+	};
+	const seen: DeskItem[] = [src];
+	const queue = [src];
+	while (queue.length) {
+		const cur = queue.shift()!;
+		for (const x of all) {
+			if (seen.some((s) => same(s, x)) || !linked(cur, x)) continue;
+			seen.push(x);
+			queue.push(x);
+		}
+	}
+	return seen.slice(1);
+}
+
+export interface DeskChange {
+	/** New content text (copies follow: 한쪽 내용을 고치면 다른 쪽도 똑같이 고친다). */
+	text?: string;
+	/** New time (`HH:MM`, "" removes). This line only. */
+	time?: string;
+	/** goal / project follow to the copies; other fields (why, from, moved) stay on this line. */
+	fields?: Record<string, string | undefined>;
+	/** Day items only: move the line to another day (ISO). A correction, not a postponement: no `[>]`, no `moved`. */
+	date?: string;
+}
+
+const SHARED_FIELDS = ["goal", "project"];
+
+/** 수정: one line (and its paired copies' text / goal / project), every other part kept as written. */
+export function planEdit(src: DeskItem, c: DeskChange, copies: DeskItem[], alloc: DeskItem | null, today: string): Plan {
+	const ref = refOf(src);
+	const shared: Record<string, string | undefined> = {};
+	for (const k of SHARED_FIELDS) if (c.fields?.[k] !== undefined) shared[k] = c.fields[k];
+	const own = (l: string) =>
+		mapBody(l, (body) => {
+			let b = body;
+			if (c.text !== undefined) b = replaceContent(b, c.text, TIME_LEAD_RE);
+			if (c.time !== undefined) b = setLead(b, c.time, TIME_LEAD_RE);
+			if (c.fields) b = setFields(b, c.fields);
+			return b;
+		});
+	const copy = (l: string) =>
+		mapBody(l, (body) => {
+			let b = body;
+			if (c.text !== undefined) b = replaceContent(b, c.text, TIME_LEAD_RE);
+			return setFields(b, shared);
+		});
+	const label = c.text !== undefined && c.text.trim() !== src.item.text ? `「${src.item.text}」 → 「${c.text.trim()}」` : `「${src.item.text}」`;
+	const edits: FileEdit[] = [];
+	const moving = c.date !== undefined && src.section === "day" && c.date !== src.date;
+	if (c.text !== undefined && !c.text.trim()) edits.push({ file: src.file, month: true, apply: () => fail("empty-text") });
+	if (moving) {
+		const newLine = own(src.line);
+		edits.push(monthEdit(src.file, today, (t, y, m) => removeLine(t, y, m, ref)));
+		edits.push(monthEdit(c.date!.slice(0, 7), today, (t, y, m) => appendLines(t, y, m, { kind: "day", date: c.date! }, [newLine.replace(/^\s+/, "")])));
+		if (alloc) {
+			const aref = refOf(alloc);
+			const sameWeek = alloc.monday === mondayOf(c.date!);
+			edits.push(
+				monthEdit(alloc.file, today, (t, y, m) => editLine(t, y, m, aref, (l) => (sameWeek ? replaceDateAssign(l, src.date!, c.date!) : removeDateAssign(l, src.date!)))),
+			);
+		}
+	} else {
+		edits.push(monthEdit(src.file, today, (t, y, m) => editLine(t, y, m, ref, own)));
+	}
+	if (c.text !== undefined || Object.keys(shared).length) {
+		for (const x of copies) {
+			if (moving && alloc && x.file === alloc.file && x.index === alloc.index) {
+				// The allocation's date list is rewritten above; chain its text edit after that.
+				const xref = refOf(x);
+				edits.push(monthEdit(x.file, today, (t, y, m) => editLine(t, y, m, { ...xref, line: allocAfterMove(x.line, src.date!, c.date!, alloc) }, copy)));
+				continue;
+			}
+			const xref = refOf(x);
+			edits.push(monthEdit(x.file, today, (t, y, m) => editLine(t, y, m, xref, copy)));
+		}
+	}
+	const more = copies.length && c.text !== undefined ? ` (짝 ${copies.length}줄도)` : "";
+	const moved = moving ? `, ${mmdd(src.date!)} → ${mmdd(c.date!)}` : "";
+	return finish(`${label} 수정${moved}${more}`, edits);
+}
+
+function allocAfterMove(line: string, oldIso: string, newIso: string, alloc: DeskItem): string {
+	return alloc.monday === mondayOf(newIso) ? replaceDateAssign(line, oldIso, newIso) : removeDateAssign(line, oldIso);
+}
+
+/**
+ * 삭제: remove the line. The `→` that pointed at it goes too (a day line's date in its 이번 주 line;
+ * an 이번 주 line's week in its 이달 중 line). Copies further down are left as they are: a day line
+ * without an allocation is valid (「3-3」 3단계 2).
+ */
+export function planDelete(src: DeskItem, months: Iterable<MonthData>, today: string): Plan {
+	const ref = refOf(src);
+	const list = [...months];
+	const edits: FileEdit[] = [monthEdit(src.file, today, (t, y, m) => removeLine(t, y, m, ref))];
+	if (src.section === "day") {
+		const alloc = findPairAllocIn(src, list);
+		if (alloc) {
+			const aref = refOf(alloc);
+			edits.push(monthEdit(alloc.file, today, (t, y, m) => editLine(t, y, m, aref, (l) => removeDateAssign(l, src.date!))));
+		}
+	} else if (src.section === "alloc" && src.monday) {
+		const no = isoWeekNo(src.monday);
+		for (const m of list) {
+			for (const d of m.during) {
+				if (d.key !== src.key || !d.item.assignWeek.includes(no)) continue;
+				const dref = refOf(d);
+				edits.push(monthEdit(d.file, today, (t, y, mm) => editLine(t, y, mm, dref, (l) => removeWeekAssign(l, no))));
+			}
+		}
+	}
+	const at = src.section === "day" ? mmdd(src.date!) : src.section === "alloc" ? "이번 주 할 일" : "이달 중";
+	return finish(`「${src.item.text}」 삭제 (${at})`, edits);
+}
+
+function findPairAllocIn(it: DeskItem, months: MonthData[]): DeskItem | null {
+	if (!it.date || !it.monday) return null;
+	for (const data of months) {
+		const hit = data.weeks.get(it.monday)?.alloc?.find((a) => a.key === it.key && a.assign.includes(it.date!));
+		if (hit) return hit;
+	}
+	return null;
+}
+
+/** 행사 취소 (「3-4」): `- ~~14:00 회의~~ #회사`. */
+export function planCancelEvent(src: DeskItem, today: string): Plan {
+	const ref = refOf(src);
+	return finish(`「${src.item.text}」 행사 취소`, [
+		monthEdit(src.file, today, (t, y, m) => editLine(t, y, m, ref, (l) => mapBody(l, (b) => strikeContent(b, TIME_LEAD_RE)))),
 	]);
 }
 

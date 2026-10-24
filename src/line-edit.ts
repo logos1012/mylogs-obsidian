@@ -166,3 +166,11 @@ export function spliceLine(lines: string[], idx: number): string {
 	if (!hadEol && idx > 0 && idx === lines.length) lines[idx - 1] = lines[idx - 1].replace(/\r?\n$/, "");
 	return lines.join("");
 }
+
+/** `14:00 회의 #회사` → `~~14:00 회의~~ #회사` (cancelled event, root 「6」). Already struck: unchanged. */
+export function strikeContent(body: string, leadRe: RegExp | null = null): string {
+	const p = splitContent(body, leadRe);
+	if (p.pre.endsWith("~~")) return body;
+	const post = p.post.replace(/^\s+/, "");
+	return `${p.pre}~~${p.lead}${p.content}~~${post ? ` ${post}` : ""}`;
+}
