@@ -823,7 +823,7 @@ export class PinboardView extends ItemView {
 			id: g.id,
 			title: ng.title !== g.title ? ng.title : undefined,
 			due: main || ng.due === g.due ? undefined : ng.due || "미정",
-			path: main ? undefined : indexPathCell(ng),
+			path: main || (["baseline", "target", "unit", "measure"] as const).every((k) => ng[k] === g[k]) ? undefined : indexPathCell(ng),
 			progress: !main && ng.progress !== null && ng.progress !== g.progress ? indexProgressCell(ng.progress) : undefined,
 		};
 		await this.updateIndexWith(d, (t) => setIndexCells(t, String(d.year), [row]), `${g.id} 수정${parts.length ? `: ${parts.join(", ")}` : ""} (플러그인)`);
