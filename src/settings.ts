@@ -21,6 +21,8 @@ export interface MyLogsSettings {
 	projectFoldersFolder: string;
 	/** Completed projects: `<folder>/<개인|회사>/<프로젝트명>/`. */
 	projectArchiveFolder: string;
+	/** The Drawer file (one file is the whole Drawer: `06 Drawer/AGENTS.md` 「3」). */
+	drawerPath: string;
 	sections: SectionNames;
 	/** Show `#test` markers on test data. */
 	showTestMarkers: boolean;
@@ -34,6 +36,7 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	wallCalendarFolder: "02 Wall Calendar",
 	projectFoldersFolder: "05 Project Folders",
 	projectArchiveFolder: "10 Archive Box/Projects",
+	drawerPath: "06 Drawer/Drawer.md",
 	sections: {
 		pending: "결정 대기",
 		today: "오늘 할 일",
@@ -96,6 +99,19 @@ export class MyLogsSettingTab extends PluginSettingTab {
 		folder("Wall Calendar 폴더", "연도 파일 위치: <폴더>/<YYYY>.md", "wallCalendarFolder");
 		folder("Project Folders 폴더", "프로젝트 위치: <폴더>/<개인|회사>/<프로젝트명>/ · 등록부·템플릿: <폴더>/99 작업실/", "projectFoldersFolder");
 		folder("완료 프로젝트 보관 폴더", "완료된 프로젝트를 옮기는 곳: <폴더>/<개인|회사>/<프로젝트명>/", "projectArchiveFolder");
+		new Setting(containerEl)
+			.setName("Drawer 파일")
+			.setDesc("보류 · 아이디어 · 프로젝트 후보와 변경 기록이 들어 있는 파일 하나")
+			.addText((t) =>
+				t
+					.setPlaceholder(DEFAULT_SETTINGS.drawerPath)
+					.setValue(s.drawerPath)
+					.onChange(async (v) => {
+						const p = cleanFolder(v);
+						s.drawerPath = p ? (p.endsWith(".md") ? p : `${p}.md`) : DEFAULT_SETTINGS.drawerPath;
+						await this.plugin.saveSettings();
+					}),
+			);
 
 		new Setting(containerEl).setName("Daily Pad 섹션 이름").setHeading();
 		const section = (name: string, key: keyof SectionNames, desc?: string) => {

@@ -344,6 +344,8 @@ export interface NewProjectInput {
 	aliases: string;
 	/** User's own 「지금 가장 효과적인 한 가지 행동」, optional. */
 	action: string;
+	/** Sources that led here (hub `from`), e.g. the Drawer item's `from::` sessions (Drawer 「4-3」 1). Optional. */
+	from?: string[];
 }
 
 /** Folder/file-safe project name (no path separators or characters Obsidian rejects). */

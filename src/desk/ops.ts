@@ -13,6 +13,7 @@ import { replaceContent, setFields, setLead, strikeContent, TIME_LEAD_RE } from 
 import { frontmatterEnd, splitLinesKeepEol, stripEol, TASK_LINE_RE } from "../parser.ts";
 import { detectEol, findSection, locateLine, setFrontmatterScalar } from "../writer.ts";
 import { type DeskItem, isoWeekNo, mmdd, mondayOf, monthKey, type MonthData, parseMonthFile } from "./model.ts";
+import { drawerTemplate, putItem } from "../drawer/ops.ts";
 
 export type EditResult = { ok: true; text: string } | { ok: false; reason: string };
 
@@ -472,18 +473,24 @@ export function planSplit(src: DeskItem, parts: string[], today: string): Plan {
 	]);
 }
 
-/** 「서랍에」: `[>] … → Drawer` and `- [ ] text (from:: Desk Calendar YYYY-MM-DD) #tags` in the Drawer. */
-export function planDrawer(src: DeskItem, drawerPath: string, today: string): Plan {
+/**
+ * 「서랍에」 (Drawer AGENTS 「4-1」 second entrance): `[>] … → Drawer` here, and a full Drawer line in
+ * `## 보류` — `(when:: 조건) (from:: Desk Calendar YYYY-MM-DD) (added::) (reviewed::)` — plus the
+ * 「변경 기록」 line. `when` is the condition the user gave ("" → `미정`, the user insisted).
+ * A line with the same text already in the Drawer only gains the source (「4-1」 2).
+ */
+export function planDrawer(src: DeskItem, drawerPath: string, today: string, when = ""): Plan {
 	const ref = refOf(src);
-	const tags = src.item.tags.map((t) => ` #${t}`).join("") + (src.item.test ? " #test" : "");
-	const line = `- [ ] ${src.item.text} (from:: Desk Calendar ${src.date})${tags}`;
 	return finish(`「${src.item.text}」 서랍으로 (→ Drawer)`, [
 		monthEdit(src.file, today, (t, y, m) => editLine(t, y, m, ref, (l) => markMoved(l, "Drawer"))),
 		{
 			file: drawerPath,
 			month: false,
-			create: () => drawerSkeleton(today),
-			apply: (t) => ({ ok: true, text: setFrontmatterScalar(appendAtEnd(t, line), "updated", today) }),
+			create: () => drawerTemplate(today),
+			apply: (t) => {
+				const r = putItem(t, { text: src.item.text, when, from: [`Desk Calendar ${src.date}`], section: "보류", tags: src.item.tags, test: src.item.test }, today);
+				return r.ok ? { ok: true, text: r.text } : r;
+			},
 		},
 	]);
 }
@@ -684,17 +691,6 @@ export function runPlan(plan: Plan, files: Record<string, string | undefined>): 
 }
 
 // ───────────────────────── other files ─────────────────────────
-
-function appendAtEnd(text: string, line: string): string {
-	const eol = detectEol(text);
-	let base = text;
-	if (base.length && !base.endsWith("\n")) base += eol;
-	return base + line + eol;
-}
-
-export function drawerSkeleton(today: string): string {
-	return `---\ntype: drawer\nupdated: ${today}\n---\n\n# Drawer\n\n`;
-}
 
 export function wallYearSkeleton(year: number, today: string): string {
 	const months = Array.from({ length: 12 }, (_, i) => `## ${monthKey(year, i + 1)}\n`).join("\n");
