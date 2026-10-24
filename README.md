@@ -30,25 +30,9 @@
 
 ## BRAT로 설치하기
 
-이 저장소는 **비공개(private)** 입니다. BRAT가 비공개 저장소에서 내려받으려면 GitHub 토큰이 필요합니다.
+공개 저장소라서 GitHub 토큰은 필요 없습니다. Obsidian → 설정 → 커뮤니티 플러그인에서 **BRAT**(Obsidian42 - BRAT)를 설치하고 켠 뒤 아래대로 추가합니다.
 
-### 1. GitHub 토큰 만들기 (처음 한 번)
-
-1. GitHub → 오른쪽 위 프로필 → **Settings** → 맨 아래 **Developer settings** → **Personal access tokens** → **Fine-grained tokens** → **Generate new token**
-2. 아래처럼 정합니다.
-   - Token name: 예) `obsidian-brat`
-   - Expiration: 원하는 기간
-   - Resource owner: `logos1012`
-   - **Repository access**: *Only select repositories* → `logos1012/mylogs-obsidian`
-   - **Permissions → Repository permissions → Contents: Read-only** (Metadata: Read-only는 자동으로 들어갑니다)
-3. **Generate token**을 누르고 나온 토큰(`github_pat_…`)을 복사합니다. 이 화면을 닫으면 다시 볼 수 없습니다.
-
-### 2. BRAT에 토큰 넣기
-
-1. Obsidian → 설정 → 커뮤니티 플러그인에서 **BRAT**(Obsidian42 - BRAT)를 설치하고 켭니다.
-2. 설정 → **BRAT** → **Personal access token**(GitHub 토큰) 칸에 복사한 토큰을 붙여 넣습니다.
-
-### 3. 플러그인 추가
+### 플러그인 추가
 
 1. 설정 → **BRAT** → **Add Beta plugin**
 2. 저장소에 `logos1012/mylogs-obsidian`을 입력합니다. 버전은 최신(0.1.0)을 고릅니다.
