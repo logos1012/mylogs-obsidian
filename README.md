@@ -4,7 +4,7 @@
 화면에서 고치면 볼트의 마크다운 파일에 바로 반영됩니다. 정본은 언제나 `.md` 파일이고, 플러그인은 그 파일을 읽고 쓰는 **창**입니다. 플러그인을 꺼도 데이터는 그대로 남습니다.
 
 > 현재 버전 **0.2.0**: Daily Pad, Pinboard, Wall Calendar, Desk Calendar 화면이 들어 있습니다.
-> Logbook, Drawer, Shelf 화면은 파일 형식이 정해지면 추가합니다.
+> My Life(기록), Drawer, Shelf 화면은 파일 형식이 정해지면 추가합니다.
 
 ## 화면과 명령
 
