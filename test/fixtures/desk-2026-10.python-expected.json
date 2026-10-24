@@ -1,0 +1,1241 @@
+[
+ {
+  "line": 14,
+  "raw": "- [ ] 연말정산 서류 미리 모으기 → W44 #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "연말정산 서류 미리 모으기",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [
+   44
+  ],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 15,
+  "raw": "- [ ] 부모님 선물 고르기 #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "부모님 선물 고르기",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 16,
+  "raw": "- [x] 혼팀 인스타 프로필 링크 정리 (goal:: G-2026-03.1) #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "혼팀 인스타 프로필 링크 정리",
+  "tags": [],
+  "fields": [
+   [
+    "goal",
+    "G-2026-03.1"
+   ]
+  ],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": "G-2026-03.1"
+ },
+ {
+  "line": 23,
+  "raw": "- [x] 강의 커리큘럼 최종 확정 (goal:: G-2026-01.2) #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "강의 커리큘럼 최종 확정",
+  "tags": [],
+  "fields": [
+   [
+    "goal",
+    "G-2026-01.2"
+   ]
+  ],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": "G-2026-01.2"
+ },
+ {
+  "line": 26,
+  "raw": "- 14:00 회사 월간 회의 #회사 #test",
+  "kind": "event",
+  "status": "scheduled",
+  "time": "14:00",
+  "text": "회사 월간 회의",
+  "tags": [
+   "회사"
+  ],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 29,
+  "raw": "- 가족 등산 (북한산) #행사 #가족 #test",
+  "kind": "event",
+  "status": "scheduled",
+  "time": "",
+  "text": "가족 등산 (북한산)",
+  "tags": [
+   "가족"
+  ],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 32,
+  "raw": "- [x] 주간 리뷰 #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "주간 리뷰",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 37,
+  "raw": "- [ ] 강의 1강 촬영 → 10/06 (goal:: G-2026-01.2) #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "강의 1강 촬영",
+  "tags": [],
+  "fields": [
+   [
+    "goal",
+    "G-2026-01.2"
+   ]
+  ],
+  "assignRaw": [
+   [
+    10,
+    6
+   ]
+  ],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": "G-2026-01.2"
+ },
+ {
+  "line": 38,
+  "raw": "- [ ] 혼팀 릴스 업로드 → 10/07, 10/09 (goal:: G-2026-03.1) #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "혼팀 릴스 업로드",
+  "tags": [],
+  "fields": [
+   [
+    "goal",
+    "G-2026-03.1"
+   ]
+  ],
+  "assignRaw": [
+   [
+    10,
+    7
+   ],
+   [
+    10,
+    9
+   ]
+  ],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": "G-2026-03.1"
+ },
+ {
+  "line": 39,
+  "raw": "- [ ] 웨이트 운동 → 10/05, 10/07, 10/10 (goal:: G-2026-02.1) #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "웨이트 운동",
+  "tags": [],
+  "fields": [
+   [
+    "goal",
+    "G-2026-02.1"
+   ]
+  ],
+  "assignRaw": [
+   [
+    10,
+    5
+   ],
+   [
+    10,
+    7
+   ],
+   [
+    10,
+    10
+   ]
+  ],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": "G-2026-02.1"
+ },
+ {
+  "line": 42,
+  "raw": "- 10:00 회사 주간 회의 #회사 #test",
+  "kind": "event",
+  "status": "scheduled",
+  "time": "10:00",
+  "text": "회사 주간 회의",
+  "tags": [
+   "회사"
+  ],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 43,
+  "raw": "- [x] 웨이트 운동 #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "웨이트 운동",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 46,
+  "raw": "- [x] 강의 1강 촬영 #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "강의 1강 촬영",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 49,
+  "raw": "- [x] 혼팀 릴스 업로드 #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "혼팀 릴스 업로드",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 50,
+  "raw": "- [x] 웨이트 운동 #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "웨이트 운동",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 53,
+  "raw": "- 1강 편집 외주 견적 받아보기 #test",
+  "kind": "note",
+  "status": "scheduled",
+  "time": "",
+  "text": "1강 편집 외주 견적 받아보기",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 56,
+  "raw": "- 한글날 #행사 #test",
+  "kind": "event",
+  "status": "scheduled",
+  "time": "",
+  "text": "한글날",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 57,
+  "raw": "- [x] 혼팀 릴스 업로드 #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "혼팀 릴스 업로드",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 60,
+  "raw": "- [x] 웨이트 운동 #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "웨이트 운동",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 63,
+  "raw": "- 18:00 부모님 저녁 #가족 #test",
+  "kind": "event",
+  "status": "scheduled",
+  "time": "18:00",
+  "text": "부모님 저녁",
+  "tags": [
+   "가족"
+  ],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 64,
+  "raw": "- [x] 주간 리뷰 #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "주간 리뷰",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 69,
+  "raw": "- [ ] 강의 2강 촬영 → 10/13 (goal:: G-2026-01.2) #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "강의 2강 촬영",
+  "tags": [],
+  "fields": [
+   [
+    "goal",
+    "G-2026-01.2"
+   ]
+  ],
+  "assignRaw": [
+   [
+    10,
+    13
+   ]
+  ],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": "G-2026-01.2"
+ },
+ {
+  "line": 70,
+  "raw": "- [ ] 혼팀 릴스 업로드 → 10/14 (goal:: G-2026-03.1) #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "혼팀 릴스 업로드",
+  "tags": [],
+  "fields": [
+   [
+    "goal",
+    "G-2026-03.1"
+   ]
+  ],
+  "assignRaw": [
+   [
+    10,
+    14
+   ]
+  ],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": "G-2026-03.1"
+ },
+ {
+  "line": 71,
+  "raw": "- [ ] 웨이트 운동 → 10/12, 10/18 (goal:: G-2026-02.1) #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "웨이트 운동",
+  "tags": [],
+  "fields": [
+   [
+    "goal",
+    "G-2026-02.1"
+   ]
+  ],
+  "assignRaw": [
+   [
+    10,
+    12
+   ],
+   [
+    10,
+    18
+   ]
+  ],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": "G-2026-02.1"
+ },
+ {
+  "line": 72,
+  "raw": "- [ ] 부산 출장 보고서 작성 → 10/18 #회사 #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "부산 출장 보고서 작성",
+  "tags": [
+   "회사"
+  ],
+  "fields": [],
+  "assignRaw": [
+   [
+    10,
+    18
+   ]
+  ],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 75,
+  "raw": "- 10:00 회사 주간 회의 #회사 #test",
+  "kind": "event",
+  "status": "scheduled",
+  "time": "10:00",
+  "text": "회사 주간 회의",
+  "tags": [
+   "회사"
+  ],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 76,
+  "raw": "- [x] 웨이트 운동 #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "웨이트 운동",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 79,
+  "raw": "- [x] 강의 2강 촬영 #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "강의 2강 촬영",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 82,
+  "raw": "- [>] 혼팀 릴스 업로드 → W43 #test",
+  "kind": "task",
+  "status": "moved",
+  "time": "",
+  "text": "혼팀 릴스 업로드",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "W43",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 85,
+  "raw": "- 부산 출장 (~10/17) #행사 #회사 (from:: Wall Calendar) #test",
+  "kind": "event",
+  "status": "scheduled",
+  "time": "",
+  "text": "부산 출장 (~10/17)",
+  "tags": [
+   "회사"
+  ],
+  "fields": [
+   [
+    "from",
+    "Wall Calendar"
+   ]
+  ],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 88,
+  "raw": "- 출장 중이라 운동 쉼 #test",
+  "kind": "note",
+  "status": "scheduled",
+  "time": "",
+  "text": "출장 중이라 운동 쉼",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 92,
+  "raw": "- [x] 부산 출장 보고서 작성 #회사 #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "부산 출장 보고서 작성",
+  "tags": [
+   "회사"
+  ],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 93,
+  "raw": "- [x] 웨이트 운동 #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "웨이트 운동",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 94,
+  "raw": "- [x] 주간 리뷰 #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "주간 리뷰",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 99,
+  "raw": "- [ ] 강의 3강 촬영 → 10/21 (goal:: G-2026-01.2) #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "강의 3강 촬영",
+  "tags": [],
+  "fields": [
+   [
+    "goal",
+    "G-2026-01.2"
+   ]
+  ],
+  "assignRaw": [
+   [
+    10,
+    21
+   ]
+  ],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": "G-2026-01.2"
+ },
+ {
+  "line": 100,
+  "raw": "- [ ] 혼팀 릴스 업로드 → 10/19, 10/23 (goal:: G-2026-03.1) #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "혼팀 릴스 업로드",
+  "tags": [],
+  "fields": [
+   [
+    "goal",
+    "G-2026-03.1"
+   ]
+  ],
+  "assignRaw": [
+   [
+    10,
+    19
+   ],
+   [
+    10,
+    23
+   ]
+  ],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": "G-2026-03.1"
+ },
+ {
+  "line": 101,
+  "raw": "- [ ] 웨이트 운동 → 10/20, 10/22, 10/24 (goal:: G-2026-02.1) #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "웨이트 운동",
+  "tags": [],
+  "fields": [
+   [
+    "goal",
+    "G-2026-02.1"
+   ]
+  ],
+  "assignRaw": [
+   [
+    10,
+    20
+   ],
+   [
+    10,
+    22
+   ],
+   [
+    10,
+    24
+   ]
+  ],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": "G-2026-02.1"
+ },
+ {
+  "line": 102,
+  "raw": "- [ ] 호치민 출장 자료 준비 #회사 #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "호치민 출장 자료 준비",
+  "tags": [
+   "회사"
+  ],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 103,
+  "raw": "- [ ] 강의 썸네일 시안 받기 (goal:: G-2026-01.2) #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "강의 썸네일 시안 받기",
+  "tags": [],
+  "fields": [
+   [
+    "goal",
+    "G-2026-01.2"
+   ]
+  ],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": "G-2026-01.2"
+ },
+ {
+  "line": 106,
+  "raw": "- 10:00 회사 주간 회의 #회사 #test",
+  "kind": "event",
+  "status": "scheduled",
+  "time": "10:00",
+  "text": "회사 주간 회의",
+  "tags": [
+   "회사"
+  ],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 107,
+  "raw": "- [x] 혼팀 릴스 업로드 #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "혼팀 릴스 업로드",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 110,
+  "raw": "- [x] 웨이트 운동 #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "웨이트 운동",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 113,
+  "raw": "- [x] 강의 3강 촬영 #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "강의 3강 촬영",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 116,
+  "raw": "- [x] 웨이트 운동 #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "웨이트 운동",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 117,
+  "raw": "- ~~19:00 대학 동기 모임~~ #test",
+  "kind": "event",
+  "status": "cancelled",
+  "time": "19:00",
+  "text": "대학 동기 모임",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 120,
+  "raw": "- 15:00 마케팅팀 미팅 #회사 #test",
+  "kind": "event",
+  "status": "scheduled",
+  "time": "15:00",
+  "text": "마케팅팀 미팅",
+  "tags": [
+   "회사"
+  ],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 121,
+  "raw": "- [x] 혼팀 릴스 업로드 #test",
+  "kind": "task",
+  "status": "done",
+  "time": "",
+  "text": "혼팀 릴스 업로드",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 124,
+  "raw": "- [ ] 웨이트 운동 #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "웨이트 운동",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 125,
+  "raw": "- 18:30 가족 외식 #가족 #test",
+  "kind": "event",
+  "status": "scheduled",
+  "time": "18:30",
+  "text": "가족 외식",
+  "tags": [
+   "가족"
+  ],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 126,
+  "raw": "- 출장용 상비약 챙기기 #test",
+  "kind": "note",
+  "status": "scheduled",
+  "time": "",
+  "text": "출장용 상비약 챙기기",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 129,
+  "raw": "- [ ] 주간 리뷰 #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "주간 리뷰",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 134,
+  "raw": "- [ ] 강의 4강 촬영 → 10/28 (goal:: G-2026-01.2) #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "강의 4강 촬영",
+  "tags": [],
+  "fields": [
+   [
+    "goal",
+    "G-2026-01.2"
+   ]
+  ],
+  "assignRaw": [
+   [
+    10,
+    28
+   ]
+  ],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": "G-2026-01.2"
+ },
+ {
+  "line": 135,
+  "raw": "- [ ] 혼팀 릴스 업로드 → 10/27, 10/30 (goal:: G-2026-03.1) #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "혼팀 릴스 업로드",
+  "tags": [],
+  "fields": [
+   [
+    "goal",
+    "G-2026-03.1"
+   ]
+  ],
+  "assignRaw": [
+   [
+    10,
+    27
+   ],
+   [
+    10,
+    30
+   ]
+  ],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": "G-2026-03.1"
+ },
+ {
+  "line": 136,
+  "raw": "- [ ] 웨이트 운동 → 10/26, 10/29, 11/01 (goal:: G-2026-02.1) #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "웨이트 운동",
+  "tags": [],
+  "fields": [
+   [
+    "goal",
+    "G-2026-02.1"
+   ]
+  ],
+  "assignRaw": [
+   [
+    10,
+    26
+   ],
+   [
+    10,
+    29
+   ],
+   [
+    11,
+    1
+   ]
+  ],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": "G-2026-02.1"
+ },
+ {
+  "line": 137,
+  "raw": "- [ ] 10월 Monthly 리뷰 → 10/31 #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "10월 Monthly 리뷰",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [
+   [
+    10,
+    31
+   ]
+  ],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 138,
+  "raw": "- [ ] 출장 짐 싸기 → 11/01 #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "출장 짐 싸기",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [
+   [
+    11,
+    1
+   ]
+  ],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 139,
+  "raw": "- [ ] 연말정산 서류 미리 모으기 #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "연말정산 서류 미리 모으기",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 142,
+  "raw": "- 10:00 회사 주간 회의 #회사 #test",
+  "kind": "event",
+  "status": "scheduled",
+  "time": "10:00",
+  "text": "회사 주간 회의",
+  "tags": [
+   "회사"
+  ],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 143,
+  "raw": "- [ ] 웨이트 운동 #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "웨이트 운동",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 146,
+  "raw": "- [ ] 혼팀 릴스 업로드 #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "혼팀 릴스 업로드",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 149,
+  "raw": "- [ ] 강의 4강 촬영 #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "강의 4강 촬영",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 152,
+  "raw": "- 14:00 3분기 실적 보고 #회사 #test",
+  "kind": "event",
+  "status": "scheduled",
+  "time": "14:00",
+  "text": "3분기 실적 보고",
+  "tags": [
+   "회사"
+  ],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 153,
+  "raw": "- [ ] 웨이트 운동 #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "웨이트 운동",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 156,
+  "raw": "- [ ] 혼팀 릴스 업로드 #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "혼팀 릴스 업로드",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 159,
+  "raw": "- [ ] 10월 Monthly 리뷰 #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "10월 Monthly 리뷰",
+  "tags": [],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 160,
+  "raw": "- [ ] 시사회 보고문 제출 #회사 (from:: Wall Calendar) #test",
+  "kind": "task",
+  "status": "scheduled",
+  "time": "",
+  "text": "시사회 보고문 제출",
+  "tags": [
+   "회사"
+  ],
+  "fields": [
+   [
+    "from",
+    "Wall Calendar"
+   ]
+  ],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ },
+ {
+  "line": 161,
+  "raw": "- 조카 할로윈 파티 #행사 #가족 #test",
+  "kind": "event",
+  "status": "scheduled",
+  "time": "",
+  "text": "조카 할로윈 파티",
+  "tags": [
+   "가족"
+  ],
+  "fields": [],
+  "assignRaw": [],
+  "assignWeek": [],
+  "movedTo": "",
+  "test": true,
+  "goal": ""
+ }
+]

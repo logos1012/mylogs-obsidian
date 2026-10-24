@@ -1,0 +1,877 @@
+/* ==========================================================================
+   MyLogs — Daily Pad view
+   Design follows 03 Desk Calendar/_build/desk_calendar.template.html:
+   white paper, hairline rules, restrained teal accent, quiet typography.
+   Everything is scoped under .mylogs-daily-pad and built on Obsidian's
+   CSS variables, so it follows light and dark themes.
+   ========================================================================== */
+
+.mylogs-daily-pad-container {
+	padding: 0 !important;
+	background: var(--background-primary);
+}
+
+.mylogs-daily-pad {
+	/* tokens */
+	--ml-bg: var(--background-primary);
+	--ml-ink: var(--text-normal);
+	--ml-ink-2: color-mix(in srgb, var(--text-normal) 72%, var(--background-primary));
+	--ml-muted: var(--text-muted);
+	--ml-faint: var(--text-faint);
+	--ml-line: color-mix(in srgb, var(--text-normal) 8%, var(--background-primary));
+	--ml-line-strong: color-mix(in srgb, var(--text-normal) 16%, var(--background-primary));
+	--ml-hover: color-mix(in srgb, var(--text-normal) 3.5%, var(--background-primary));
+	--ml-accent: #0f766e;
+	--ml-accent-soft: #e8f3f1;
+	--ml-accent-ink: #ffffff;
+	--ml-sat: #3d6fb6;
+	--ml-sun: #c8473d;
+	--ml-moved: #3d6fb6;
+	--ml-warn: #a35a00;
+	--ml-warn-bg: #fff3df;
+	--ml-radius: 6px;
+	--ml-font: Pretendard, "Pretendard Variable", var(--font-interface), "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Noto Sans KR", sans-serif;
+	--m-check: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M2.1 5.3 4.2 7.3 7.9 2.8' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+	--m-arrow: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M1.8 5h6.2M5.3 2.3 8 5 5.3 7.7' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+
+	container-type: inline-size;
+	box-sizing: border-box;
+	max-width: 1240px;
+	margin: 0 auto;
+	padding: 40px 36px 64px;
+	color: var(--ml-ink);
+	background: var(--ml-bg);
+	font-family: var(--ml-font);
+	font-size: 13.5px;
+	line-height: 1.5;
+	letter-spacing: -0.005em;
+	-webkit-font-smoothing: antialiased;
+}
+
+.theme-dark .mylogs-daily-pad {
+	--ml-accent: #5cc0b3;
+	--ml-accent-soft: #1d2a29;
+	--ml-accent-ink: #10201e;
+	--ml-sat: #84a9e0;
+	--ml-sun: #e48a80;
+	--ml-moved: #84a9e0;
+	--ml-warn: #f0b45c;
+	--ml-warn-bg: #3a2c17;
+}
+
+.mylogs-daily-pad *,
+.mylogs-daily-pad *::before,
+.mylogs-daily-pad *::after {
+	box-sizing: border-box;
+}
+
+.mylogs-daily-pad .ml-time,
+.mylogs-daily-pad .ml-goal,
+.mylogs-daily-pad .ml-assign,
+.mylogs-daily-pad .ml-moved,
+.mylogs-daily-pad .ml-date-input {
+	font-variant-numeric: tabular-nums;
+}
+
+/* ── buttons ─────────────────────────────────────────────────────────────── */
+
+.mylogs-daily-pad button.ml-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	height: 28px;
+	padding: 0 11px;
+	margin: 0;
+	border: 1px solid var(--ml-line-strong);
+	border-radius: var(--ml-radius);
+	background: var(--ml-bg);
+	box-shadow: none;
+	color: var(--ml-ink-2);
+	font: 500 12px/1 var(--ml-font);
+	letter-spacing: 0;
+	cursor: pointer;
+	transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.mylogs-daily-pad button.ml-btn:hover {
+	background: var(--ml-hover);
+	border-color: color-mix(in srgb, var(--text-normal) 26%, var(--background-primary));
+	color: var(--ml-ink);
+}
+.mylogs-daily-pad button.ml-btn:focus-visible {
+	outline: 2px solid var(--ml-accent);
+	outline-offset: 1px;
+}
+.mylogs-daily-pad button.ml-btn.is-active {
+	color: var(--ml-accent);
+	border-color: color-mix(in srgb, var(--ml-accent) 45%, var(--background-primary));
+	background: var(--ml-accent-soft);
+}
+.mylogs-daily-pad button.ml-btn-icon {
+	width: 28px;
+	padding: 0;
+	font-size: 10px;
+}
+.mylogs-daily-pad button.ml-btn-icon svg {
+	width: 14px;
+	height: 14px;
+}
+.mylogs-daily-pad button.ml-btn-ghost {
+	height: 24px;
+	padding: 0 8px;
+	border-color: transparent;
+	background: transparent;
+	color: var(--ml-muted);
+	font-size: 11.5px;
+}
+.mylogs-daily-pad button.ml-btn-ghost:hover {
+	border-color: var(--ml-line);
+	background: var(--ml-hover);
+}
+.mylogs-daily-pad button.ml-btn-primary {
+	height: 34px;
+	padding: 0 18px;
+	border-color: var(--ml-accent);
+	background: var(--ml-accent);
+	color: var(--ml-accent-ink);
+	font-size: 13px;
+	font-weight: 600;
+}
+.mylogs-daily-pad button.ml-btn-primary:hover {
+	border-color: var(--ml-accent);
+	background: color-mix(in srgb, var(--ml-accent) 88%, black);
+	color: var(--ml-accent-ink);
+}
+.mylogs-daily-pad button.ml-btn:disabled {
+	opacity: 0.55;
+	cursor: default;
+}
+.mylogs-daily-pad button.ml-link-btn {
+	all: unset;
+	cursor: pointer;
+	color: var(--ml-accent);
+	font-weight: 600;
+	font-size: 12px;
+}
+.mylogs-daily-pad button.ml-link-btn:hover {
+	text-decoration: underline;
+}
+.mylogs-daily-pad button.ml-link-btn-quiet {
+	color: var(--ml-muted);
+	font-weight: 500;
+	margin-left: auto;
+}
+.mylogs-daily-pad button.ml-link-btn:focus-visible {
+	outline: 2px solid var(--ml-accent);
+	outline-offset: 2px;
+	border-radius: 2px;
+}
+
+/* ── header ──────────────────────────────────────────────────────────────── */
+
+.mylogs-daily-pad .ml-top {
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 16px 24px;
+	padding-bottom: 20px;
+	border-bottom: 1px solid var(--ml-ink);
+}
+.mylogs-daily-pad .ml-eyebrow {
+	margin-bottom: 8px;
+	color: var(--ml-muted);
+	font-size: 11px;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+}
+.mylogs-daily-pad h1.ml-date {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 4px 14px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	color: var(--ml-ink);
+	font-family: var(--ml-font);
+	font-size: 34px;
+	font-weight: 700;
+	line-height: 1.08;
+	letter-spacing: -0.03em;
+}
+.mylogs-daily-pad .ml-weekday {
+	color: var(--ml-ink-2);
+	font-size: 0.62em;
+	font-weight: 300;
+	letter-spacing: -0.01em;
+}
+.mylogs-daily-pad .ml-weekday.wd-6 {
+	color: var(--ml-sat);
+}
+.mylogs-daily-pad .ml-weekday.wd-7 {
+	color: var(--ml-sun);
+}
+.mylogs-daily-pad .ml-rel {
+	align-self: center;
+	padding: 2px 9px;
+	border-radius: 999px;
+	background: var(--ml-hover);
+	color: var(--ml-muted);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0;
+	line-height: 1.5;
+}
+.mylogs-daily-pad .ml-rel.is-today {
+	background: var(--ml-accent-soft);
+	color: var(--ml-accent);
+}
+.mylogs-daily-pad .ml-nav {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.mylogs-daily-pad input.ml-date-input {
+	height: 28px;
+	padding: 0 8px;
+	border: 1px solid var(--ml-line-strong);
+	border-radius: var(--ml-radius);
+	background: var(--ml-bg);
+	box-shadow: none;
+	color: var(--ml-ink-2);
+	font: 500 12px/1 var(--ml-font);
+}
+.mylogs-daily-pad input.ml-date-input:focus {
+	border-color: var(--ml-accent);
+	box-shadow: 0 0 0 3px var(--ml-accent-soft);
+	outline: none;
+}
+.mylogs-daily-pad .ml-open-file {
+	margin-left: 4px;
+}
+
+/* ── panels (shared) ─────────────────────────────────────────────────────── */
+
+.mylogs-daily-pad .ml-panel {
+	min-width: 0;
+	padding: 14px 0 18px;
+	border-top: 1px solid var(--ml-line-strong);
+}
+.mylogs-daily-pad .ml-panel-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	min-height: 26px;
+	margin-bottom: 8px;
+}
+.mylogs-daily-pad .ml-panel-titles {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 2px 10px;
+	min-width: 0;
+}
+.mylogs-daily-pad h3.ml-panel-title {
+	margin: 0;
+	color: var(--ml-ink);
+	font-family: var(--ml-font);
+	font-size: 13px;
+	font-weight: 700;
+	line-height: 1.4;
+	letter-spacing: 0.01em;
+}
+.mylogs-daily-pad .ml-panel-hint {
+	color: var(--ml-faint);
+	font-size: 11px;
+}
+.mylogs-daily-pad .ml-panel-tools {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: 0 0 auto;
+}
+.mylogs-daily-pad .ml-save-status {
+	color: var(--ml-faint);
+	font-size: 11px;
+	transition: opacity 0.2s ease;
+}
+.mylogs-daily-pad .ml-save-status.is-error {
+	color: var(--ml-warn);
+	font-weight: 600;
+}
+.mylogs-daily-pad .ml-gentle {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 4px 10px;
+	padding: 6px 0;
+	color: var(--ml-muted);
+	font-size: 12.5px;
+}
+.mylogs-daily-pad .ml-gentle code {
+	padding: 0;
+	background: none;
+	color: var(--ml-faint);
+	font-family: var(--font-monospace);
+	font-size: 11px;
+}
+
+/* ── Desk Calendar panel (fixed, on top) ─────────────────────────────────── */
+
+.mylogs-daily-pad .ml-desk {
+	margin-top: 22px;
+	padding: 14px 0 16px;
+	border-top: 2px solid var(--ml-accent);
+}
+.mylogs-daily-pad .ml-desk h3.ml-panel-title {
+	color: var(--ml-accent);
+}
+
+/* ── 결정 대기 ───────────────────────────────────────────────────────────── */
+
+.mylogs-daily-pad .ml-pending {
+	margin-top: 4px;
+	padding: 12px 14px 12px 16px;
+	border: 1px solid var(--ml-line-strong);
+	border-left: 2px solid var(--ml-warn);
+	border-radius: 4px;
+}
+.mylogs-daily-pad .ml-pending + .ml-grid {
+	margin-top: 18px;
+}
+.mylogs-daily-pad .ml-pending h3.ml-panel-title {
+	color: var(--ml-warn);
+}
+.mylogs-daily-pad .ml-pending .ml-item:last-child {
+	border-bottom: 0;
+}
+
+/* ── item list (Desk Calendar + 결정 대기) ───────────────────────────────── */
+
+.mylogs-daily-pad ul.ml-items {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.mylogs-daily-pad .ml-item {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	margin: 0;
+	padding: 7px 0 7px calc(var(--ml-indent, 0) * 6px);
+	border-bottom: 1px solid var(--ml-line);
+	font-size: 13.5px;
+	line-height: 1.45;
+	transition: opacity 0.15s ease;
+}
+.mylogs-daily-pad .ml-item:last-child {
+	border-bottom: 0;
+}
+.mylogs-daily-pad .ml-item.is-pending {
+	opacity: 0.5;
+}
+.mylogs-daily-pad .ml-body {
+	flex: 1;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.mylogs-daily-pad .ml-main {
+	margin-right: 8px;
+}
+.mylogs-daily-pad .ml-time {
+	margin-right: 7px;
+	color: var(--ml-muted);
+	font-size: 12px;
+	font-weight: 500;
+}
+
+/* symbols: event = dot, note = short dash, raw = nothing */
+.mylogs-daily-pad .ml-sym {
+	position: relative;
+	flex: 0 0 16px;
+	width: 16px;
+	height: 20px;
+}
+.mylogs-daily-pad .ml-sym::before {
+	content: "";
+	position: absolute;
+}
+.mylogs-daily-pad .k-event .ml-sym::before {
+	left: 5px;
+	top: 7.5px;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--ml-accent);
+}
+.mylogs-daily-pad .k-note .ml-sym::before {
+	left: 4px;
+	top: 9.5px;
+	width: 8px;
+	height: 1.5px;
+	border-radius: 1px;
+	background: var(--ml-muted);
+}
+.mylogs-daily-pad .k-event.s-moved .ml-sym::before,
+.mylogs-daily-pad .k-event.s-cancelled .ml-sym::before {
+	background: var(--ml-faint);
+}
+
+/* checkbox */
+.mylogs-daily-pad .ml-check {
+	all: unset;
+	display: inline-block;
+	position: relative;
+	flex: 0 0 16px;
+	width: 16px;
+	height: 16px;
+	margin-top: 2px;
+	border: 1.5px solid var(--ml-ink-2);
+	border-radius: 4px;
+	background: var(--ml-bg);
+	cursor: pointer;
+	transition: background-color 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
+}
+.mylogs-daily-pad button.ml-check:hover {
+	border-color: var(--ml-accent);
+	background: var(--ml-accent-soft);
+}
+.mylogs-daily-pad button.ml-check:active {
+	transform: scale(0.92);
+}
+.mylogs-daily-pad button.ml-check:focus-visible {
+	outline: 2px solid var(--ml-accent);
+	outline-offset: 2px;
+}
+.mylogs-daily-pad .ml-check::after {
+	content: "";
+	position: absolute;
+	inset: 1.5px;
+}
+.mylogs-daily-pad .s-done .ml-check {
+	border-color: var(--ml-accent);
+	background: var(--ml-accent);
+}
+.mylogs-daily-pad .s-done button.ml-check:hover {
+	background: color-mix(in srgb, var(--ml-accent) 85%, black);
+}
+.mylogs-daily-pad .s-done .ml-check::after {
+	-webkit-mask: var(--m-check) center / 100% 100% no-repeat;
+	mask: var(--m-check) center / 100% 100% no-repeat;
+	background: var(--ml-accent-ink);
+}
+.mylogs-daily-pad .s-moved .ml-check {
+	border-color: var(--ml-faint);
+	cursor: default;
+}
+.mylogs-daily-pad .s-moved .ml-check::after {
+	-webkit-mask: var(--m-arrow) center / 100% 100% no-repeat;
+	mask: var(--m-arrow) center / 100% 100% no-repeat;
+	background: var(--ml-moved);
+}
+.mylogs-daily-pad .s-cancelled .ml-check {
+	border-color: var(--ml-faint);
+	cursor: default;
+}
+.mylogs-daily-pad .s-cancelled .ml-check::after {
+	inset: auto;
+	left: 3.5px;
+	top: 5.75px;
+	width: 6px;
+	height: 1.5px;
+	border-radius: 1px;
+	background: var(--ml-muted);
+}
+
+/* text by kind / status */
+.mylogs-daily-pad .k-event .ml-txt {
+	font-weight: 600;
+}
+.mylogs-daily-pad .k-note .ml-txt {
+	color: var(--ml-ink-2);
+}
+.mylogs-daily-pad .s-done .ml-txt,
+.mylogs-daily-pad .s-done .ml-time {
+	color: var(--ml-muted);
+	font-weight: 400;
+}
+.mylogs-daily-pad .s-moved .ml-txt {
+	color: var(--ml-muted);
+	font-weight: 400;
+}
+.mylogs-daily-pad .s-cancelled .ml-txt {
+	color: var(--ml-faint);
+	font-weight: 400;
+	text-decoration: line-through;
+}
+.mylogs-daily-pad .s-done .ml-meta,
+.mylogs-daily-pad .s-moved .ml-meta,
+.mylogs-daily-pad .s-cancelled .ml-meta {
+	opacity: 0.65;
+}
+.mylogs-daily-pad .ml-raw .ml-txt {
+	color: var(--ml-ink-2);
+}
+
+/* meta: goal chips, tags, fields, test */
+.mylogs-daily-pad .ml-meta {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 3px 7px;
+	vertical-align: 1px;
+}
+.mylogs-daily-pad .ml-goal {
+	padding: 0 6px;
+	border-radius: 3px;
+	background: var(--ml-accent-soft);
+	color: var(--ml-accent);
+	font-size: 10.5px;
+	font-weight: 600;
+	letter-spacing: 0.01em;
+	line-height: 17px;
+}
+.mylogs-daily-pad .ml-tag,
+.mylogs-daily-pad .ml-field {
+	color: var(--ml-muted);
+	font-size: 11.5px;
+	line-height: 17px;
+}
+.mylogs-daily-pad .ml-field-why {
+	font-style: italic;
+}
+.mylogs-daily-pad .ml-field-moved {
+	padding: 0 5px;
+	border: 1px solid var(--ml-line-strong);
+	border-radius: 3px;
+	font-size: 10.5px;
+	line-height: 15px;
+}
+.mylogs-daily-pad .ml-moved,
+.mylogs-daily-pad .ml-assign {
+	color: var(--ml-moved);
+	font-size: 11.5px;
+	font-weight: 500;
+	line-height: 17px;
+}
+.mylogs-daily-pad .ml-test {
+	padding: 0 3px;
+	border: 1px dotted var(--ml-faint);
+	border-radius: 3px;
+	color: var(--ml-faint);
+	font-size: 8.5px;
+	letter-spacing: 0.08em;
+	line-height: 13px;
+	text-transform: uppercase;
+}
+.mylogs-daily-pad .ml-problems {
+	margin-top: 2px;
+	color: var(--ml-warn);
+	font-size: 11px;
+}
+
+/* ── section grid ───────────────────────────────────────────────────────── */
+
+.mylogs-daily-pad .ml-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	column-gap: 32px;
+	margin-top: 8px;
+}
+
+@container (min-width: 700px) {
+	.mylogs-daily-pad .ml-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+	.mylogs-daily-pad .ml-section-refs {
+		grid-column: 1 / -1;
+	}
+}
+
+@container (min-width: 1080px) {
+	.mylogs-daily-pad .ml-grid {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+	.mylogs-daily-pad .ml-section-scribble {
+		grid-column: span 2;
+	}
+	.mylogs-daily-pad .ml-section-refs {
+		grid-column: auto;
+	}
+}
+
+/* ── section panels ─────────────────────────────────────────────────────── */
+
+.mylogs-daily-pad .ml-section .ml-edit-btn {
+	opacity: 0;
+}
+.mylogs-daily-pad .ml-section:hover .ml-edit-btn,
+.mylogs-daily-pad .ml-section:focus-within .ml-edit-btn,
+.mylogs-daily-pad .ml-section.is-editing .ml-edit-btn {
+	opacity: 1;
+}
+@media (hover: none) {
+	.mylogs-daily-pad .ml-section .ml-edit-btn {
+		opacity: 1;
+	}
+}
+.mylogs-daily-pad .ml-section.is-editing .ml-edit-btn {
+	color: var(--ml-accent);
+}
+
+.mylogs-daily-pad .ml-section .ml-panel-body {
+	min-height: 56px;
+	margin: 0 -10px;
+	padding: 4px 10px;
+	border-radius: var(--ml-radius);
+	cursor: text;
+	transition: background-color 0.12s ease;
+}
+.mylogs-daily-pad .ml-section:not(.is-editing) .ml-panel-body:hover {
+	background: var(--ml-hover);
+}
+.mylogs-daily-pad .ml-section.is-editing .ml-panel-body {
+	padding: 0 10px;
+}
+.mylogs-daily-pad .ml-panel-empty {
+	padding: 10px 0;
+	color: var(--ml-faint);
+	font-size: 12.5px;
+}
+
+/* rendered markdown inside a panel */
+.mylogs-daily-pad .ml-md {
+	color: var(--ml-ink);
+	font-size: 13.5px;
+	line-height: 1.6;
+}
+.mylogs-daily-pad .ml-md > :first-child {
+	margin-top: 0;
+}
+.mylogs-daily-pad .ml-md > :last-child {
+	margin-bottom: 0;
+}
+.mylogs-daily-pad .ml-md p {
+	margin: 0 0 0.6em;
+}
+.mylogs-daily-pad .ml-md ul,
+.mylogs-daily-pad .ml-md ol {
+	margin: 0;
+	padding-inline-start: 1.25em;
+}
+.mylogs-daily-pad .ml-md li {
+	margin: 0;
+	padding: 2px 0;
+}
+.mylogs-daily-pad .ml-md li::marker {
+	color: var(--ml-faint);
+}
+.mylogs-daily-pad .ml-md ul > li.task-list-item {
+	list-style: none;
+	margin-inline-start: -1.25em;
+	padding-inline-start: 0;
+}
+.mylogs-daily-pad .ml-md input.task-list-item-checkbox {
+	width: 15px;
+	height: 15px;
+	margin: 0 9px 0 0;
+	vertical-align: -2px;
+	border-radius: 4px;
+	cursor: pointer;
+}
+.mylogs-daily-pad .ml-md input.task-list-item-checkbox:checked {
+	background-color: var(--ml-accent);
+	border-color: var(--ml-accent);
+}
+.mylogs-daily-pad .ml-md li.task-list-item.is-checked {
+	color: var(--ml-muted);
+	text-decoration: none;
+}
+.mylogs-daily-pad .ml-md a.tag {
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--ml-muted);
+	font-size: 0.86em;
+}
+.mylogs-daily-pad .ml-md a.tag[href="#test"] {
+	color: var(--ml-faint);
+	font-size: 0.78em;
+}
+
+/* editor */
+.mylogs-daily-pad textarea.ml-editor {
+	display: block;
+	width: 100%;
+	min-height: 96px;
+	margin: 0;
+	padding: 10px 12px;
+	border: 1px solid var(--ml-line-strong);
+	border-radius: var(--ml-radius);
+	background: var(--ml-bg);
+	box-shadow: none;
+	color: var(--ml-ink);
+	font-family: var(--font-text, var(--ml-font));
+	font-size: 13.5px;
+	line-height: 1.6;
+	resize: vertical;
+	overflow: hidden;
+	tab-size: 4;
+}
+.mylogs-daily-pad textarea.ml-editor:focus {
+	border-color: var(--ml-accent);
+	box-shadow: 0 0 0 3px var(--ml-accent-soft);
+	outline: none;
+}
+.mylogs-daily-pad textarea.ml-editor::placeholder {
+	color: var(--ml-faint);
+}
+
+/* conflict bar */
+.mylogs-daily-pad .ml-conflict-bar {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin: 0 0 8px;
+	padding: 6px 10px;
+	border-radius: var(--ml-radius);
+	background: var(--ml-warn-bg);
+	color: var(--ml-warn);
+	font-size: 12px;
+}
+.mylogs-daily-pad .ml-conflict-icon {
+	display: inline-flex;
+}
+.mylogs-daily-pad .ml-conflict-icon svg {
+	width: 13px;
+	height: 13px;
+}
+.mylogs-daily-pad .ml-conflict-sep {
+	color: var(--ml-faint);
+}
+
+/* quick add (오늘 할 일) */
+.mylogs-daily-pad .ml-quick-add {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 8px;
+	padding: 6px 0 0;
+	border-top: 1px dashed var(--ml-line-strong);
+}
+.mylogs-daily-pad .ml-quick-add-icon {
+	display: inline-flex;
+	color: var(--ml-faint);
+}
+.mylogs-daily-pad .ml-quick-add-icon svg {
+	width: 14px;
+	height: 14px;
+}
+.mylogs-daily-pad input.ml-quick-add-input {
+	flex: 1;
+	min-width: 0;
+	height: 28px;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	color: var(--ml-ink);
+	font: 13.5px/1.4 var(--ml-font);
+}
+.mylogs-daily-pad input.ml-quick-add-input:focus {
+	outline: none;
+	box-shadow: none;
+}
+.mylogs-daily-pad input.ml-quick-add-input::placeholder {
+	color: var(--ml-faint);
+}
+.mylogs-daily-pad .ml-quick-add:focus-within {
+	border-top-color: var(--ml-accent);
+	border-top-style: solid;
+}
+.mylogs-daily-pad .ml-quick-add:focus-within .ml-quick-add-icon {
+	color: var(--ml-accent);
+}
+
+/* ── empty state ────────────────────────────────────────────────────────── */
+
+.mylogs-daily-pad .ml-empty-state {
+	margin-top: 22px;
+}
+.mylogs-daily-pad .ml-empty-card {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 6px;
+	padding: 44px 24px 40px;
+	border: 1px dashed var(--ml-line-strong);
+	border-radius: 10px;
+	text-align: center;
+}
+.mylogs-daily-pad .ml-empty-icon {
+	display: inline-flex;
+	margin-bottom: 6px;
+	color: var(--ml-faint);
+}
+.mylogs-daily-pad .ml-empty-icon svg {
+	width: 28px;
+	height: 28px;
+	stroke-width: 1.5;
+}
+.mylogs-daily-pad .ml-empty-title {
+	color: var(--ml-ink);
+	font-size: 16px;
+	font-weight: 700;
+	letter-spacing: -0.01em;
+}
+.mylogs-daily-pad .ml-empty-desc {
+	color: var(--ml-muted);
+	font-size: 12.5px;
+}
+.mylogs-daily-pad .ml-empty-path {
+	margin: 2px 0 14px;
+	color: var(--ml-faint);
+	font-family: var(--font-monospace);
+	font-size: 11px;
+}
+
+/* ── narrow panes (sidebar, phone) ─────────────────────────────────────── */
+
+@container (max-width: 560px) {
+	.mylogs-daily-pad h1.ml-date {
+		font-size: 26px;
+	}
+	.mylogs-daily-pad .ml-top {
+		align-items: flex-start;
+		padding-bottom: 16px;
+	}
+	.mylogs-daily-pad .ml-nav {
+		flex-wrap: wrap;
+	}
+	.mylogs-daily-pad .ml-panel-hint {
+		display: none;
+	}
+}
+
+@media (max-width: 600px) {
+	.mylogs-daily-pad {
+		padding: 22px 16px 48px;
+	}
+}
+
+.is-mobile .mylogs-daily-pad {
+	padding: 20px 16px 64px;
+}
+.is-mobile .mylogs-daily-pad .ml-item {
+	padding-top: 9px;
+	padding-bottom: 9px;
+}
+.is-mobile .mylogs-daily-pad .ml-check {
+	flex-basis: 20px;
+	width: 20px;
+	height: 20px;
+	margin-top: 0;
+}
