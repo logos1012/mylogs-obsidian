@@ -4465,3 +4465,15 @@
 	min-width: 240px;
 }
 /* ===== /Project Folders view ===== */
+
+/* ───────────── shared: edit form + delete confirmation ───────────── */
+.mylogs-modal .mylogs-modal-desc { color: var(--text-muted); font-size: var(--font-ui-small); margin: 0 0 var(--size-4-2); }
+.mylogs-form-modal .mylogs-form-wide { width: 100%; min-width: 16em; }
+.mylogs-form-modal textarea.mylogs-form-wide { min-height: 5em; font-family: inherit; }
+.mylogs-form-modal .mylogs-form-errors { color: var(--text-error); font-size: var(--font-ui-small); margin: var(--size-4-2) 0 0; padding-left: 1.2em; }
+.mylogs-form-modal .mylogs-form-errors:empty { display: none; }
+.mylogs-delete-modal .mylogs-delete-list { margin: 0 0 var(--size-4-3); padding-left: 1.2em; }
+.mylogs-delete-modal .mylogs-delete-list li { margin: 2px 0; word-break: break-all; }
+.mylogs-delete-modal .mylogs-delete-notes { background: var(--background-modifier-error-rgb, transparent); background: rgba(var(--color-orange-rgb), 0.08); border-left: 3px solid var(--color-orange); border-radius: var(--radius-s); padding: var(--size-4-2) var(--size-4-3); margin: 0 0 var(--size-4-3); }
+.mylogs-delete-modal .mylogs-delete-notes p { margin: 2px 0; font-size: var(--font-ui-small); }
+.mylogs-delete-modal .mylogs-delete-alt { font-style: italic; }
