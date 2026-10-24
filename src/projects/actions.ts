@@ -9,7 +9,13 @@ import { toIsoDate } from "../parser.ts";
 import { cleanFolder, type MyLogsSettings } from "../settings.ts";
 import { planNewProject, TEMPLATE_FILES, type TemplateKey, type Templates } from "./create.ts";
 import type { CompleteAnswer } from "./modals.ts";
-import { archiveFolder, hubPath, logIndexPath, monthlyLogPath, type NewProjectInput, type Project, WORK_DIR } from "./model.ts";
+import { archiveFolder, hubLocation, hubPath, LOG_DIR, logIndexPath, monthlyLogPath, type NewProjectInput, parseProject, type Project, WORK_DIR } from "./model.ts";
+import { goalUnlinkTexts, hubWithoutGoals, planProjectEdit, type ProjectEdit, removeRegistryRow, renameInProjectText, applyHubEdit } from "./edit.ts";
+import { linkProject, unlinkProject } from "../pinboard/goal-edit.ts";
+import { INDEX_FILE as PINBOARD_INDEX, prependChangeLog } from "../pinboard/index-writer.ts";
+import { valueToString } from "../pinboard/model.ts";
+import { setFrontmatterScalar } from "../writer.ts";
+import type { LogEntry } from "./ops.ts";
 import {
 	activeRowOf,
 	appendLogEntry,
@@ -20,6 +26,7 @@ import {
 	newLogIndex,
 	newMonthlyLog,
 	parseRegistry,
+	PLUGIN_MARK,
 	REGISTRY_FILE,
 	type RegistryResult,
 	statusChangeTexts,
@@ -272,4 +279,227 @@ export async function createProject(host: ProjectsHost, input: NewProjectInput):
 	if (problem) new Notice(`MyLogs: 프로젝트는 만들었지만 등록부에 올리지 못했어요 (${problem}). 등록부에 행을 추가해 주세요.`);
 	else new Notice(`「${plan.name}」 프로젝트를 만들었어요.`);
 	return hubPath(plan.folder, plan.name);
+}
+
+// ───────────────────────── 수정 / 삭제 ─────────────────────────
+
+/** 「3-4」 1, 3 (+ AGENTS.md `latest_log`) for any entry. Returns the names of the files that failed. */
+async function writeRecord(host: ProjectsHost, folder: string, name: string, entry: LogEntry, recent: string, today: string, templates: Templates): Promise<string[]> {
+	const { app } = host;
+	const failed: string[] = [];
+	const ym = today.slice(0, 7);
+	const text = formatLogEntry(entry);
+	const step = async (label: string, fn: () => Promise<void>) => {
+		try {
+			await fn();
+		} catch (err) {
+			console.error(`[MyLogs] Project Folders: ${label} failed`, err);
+			failed.push(label);
+		}
+	};
+	await step("월별 로그", async () => {
+		const path = normalizePath(monthlyLogPath(folder, name, ym));
+		const f = fileAt(app, path);
+		if (f) await app.vault.process(f, (t) => appendLogEntry(t, text));
+		else {
+			await ensureFolder(app, path.slice(0, path.lastIndexOf("/")));
+			await app.vault.create(path, newMonthlyLog(templates.monthlyLog, name, ym, text));
+		}
+	});
+	await step("로그 인덱스", async () => {
+		const path = normalizePath(logIndexPath(folder, name));
+		const f = fileAt(app, path);
+		const args = { name, ym, today, recent };
+		if (f) await app.vault.process(f, (t) => updateLogIndex(t, args));
+		else await app.vault.create(path, newLogIndex(templates.logIndex, args));
+	});
+	await step("프로젝트 AGENTS.md", async () => {
+		const f = fileAt(app, `${folder}/AGENTS.md`);
+		if (f) await app.vault.process(f, (t) => updateProjectAgents(t, { name, ym, today }));
+	});
+	return failed;
+}
+
+/** Sub Goal note files of the given ids (Pinboard, any year). */
+function goalFiles(host: ProjectsHost, ids: string[]): Map<string, TFile> {
+	const root = cleanFolder(host.settings.pinboardFolder);
+	const out = new Map<string, TFile>();
+	if (!ids.length) return out;
+	for (const f of host.app.vault.getMarkdownFiles()) {
+		if (!f.path.startsWith(`${root}/`)) continue;
+		const id = valueToString(host.app.metadataCache.getFileCache(f)?.frontmatter?.id);
+		if (ids.includes(id)) out.set(id, f);
+	}
+	return out;
+}
+
+/** `Pinboard Index.md`: 변경 기록 + `updated` (Pinboard 「8. 인덱스 규칙」 3–4). */
+async function logPinboard(host: ProjectsHost, entry: string, today: string): Promise<void> {
+	const f = fileAt(host.app, `${cleanFolder(host.settings.pinboardFolder)}/${PINBOARD_INDEX}`);
+	if (!f) return;
+	await host.app.vault.process(f, (t) => setFrontmatterScalar(prependChangeLog(t, today, entry), "updated", today));
+}
+
+/** The 별칭 cell of a project's registry row. */
+async function registryAliases(host: ProjectsHost, id: string): Promise<string> {
+	const reg = fileAt(host.app, registryPath(host));
+	if (!reg) return "";
+	return parseRegistry(await host.app.vault.read(reg)).active.find((r) => r.id === id)?.aliases ?? "";
+}
+
+export async function aliasesOf(host: ProjectsHost, p: Project): Promise<string> {
+	return registryAliases(host, p.id);
+}
+
+/**
+ * 수정: hub, folder / file names (개인↔회사, 이름), registry row, the 「3-4」 record, and the Pinboard
+ * side of goal links (Pinboard 「3-6」: Sub Goal `projects` / `project_ids`).
+ */
+export async function editProject(host: ProjectsHost, p: Project, e: ProjectEdit): Promise<void> {
+	const { app } = host;
+	if (p.archived) {
+		new Notice("완료되어 Archive Box에 보관된 프로젝트는 여기서 바꾸지 않아요.");
+		return;
+	}
+	const today = toIsoDate(new Date());
+	const logDir = app.vault.getAbstractFileByPath(normalizePath(`${p.folder}/${WORK_DIR}/${LOG_DIR}`));
+	const monthlyLogs = logDir instanceof TFolder ? logDir.children.filter((c) => c instanceof TFile).map((c) => c.name) : [];
+	const plan = planProjectEdit(p, e, { activeRoot: activeRoot(host), today, registryAliases: await registryAliases(host, p.id), monthlyLogs });
+	if (!plan.changes.length) {
+		new Notice("바뀐 것이 없어요.");
+		return;
+	}
+	const failed: string[] = [];
+	if (plan.folder) {
+		const target = normalizePath(plan.folder.to);
+		const folder = app.vault.getAbstractFileByPath(normalizePath(plan.folder.from));
+		if (app.vault.getAbstractFileByPath(target)) {
+			new Notice(`같은 이름의 프로젝트 폴더가 이미 있어요. 아무것도 바꾸지 않았어요.\n${target}`);
+			return;
+		}
+		if (!(folder instanceof TFolder)) {
+			new Notice(`프로젝트 폴더를 찾지 못했어요: ${p.folder}`);
+			return;
+		}
+		try {
+			await ensureFolder(app, target.slice(0, target.lastIndexOf("/")));
+			await app.fileManager.renameFile(folder, target);
+		} catch (err) {
+			console.error("[MyLogs] Project Folders: folder move failed", err);
+			new Notice("MyLogs: 프로젝트 폴더를 옮기지 못했어요. 아무것도 바꾸지 않았어요.");
+			return;
+		}
+	}
+	for (const r of plan.files) {
+		const f = fileAt(app, r.from);
+		if (!f || app.vault.getAbstractFileByPath(normalizePath(r.to))) continue;
+		try {
+			await app.fileManager.renameFile(f, normalizePath(r.to));
+		} catch (err) {
+			console.error("[MyLogs] Project Folders: rename failed", err);
+			failed.push(r.from.split("/").pop()!);
+		}
+	}
+	const hub = fileAt(app, hubPath(plan.newFolder, plan.newName)) ?? fileAt(app, hubPath(plan.newFolder, p.name));
+	if (hub) await app.vault.process(hub, (t) => applyHubEdit(t, plan.hub)).catch(() => failed.push("허브"));
+	else failed.push("허브");
+	if (plan.newName !== p.name) {
+		for (const path of [`${plan.newFolder}/AGENTS.md`, logIndexPath(plan.newFolder, plan.newName)]) {
+			const f = fileAt(app, path);
+			if (f) await app.vault.process(f, (t) => renameInProjectText(t, p.name, plan.newName)).catch(() => failed.push(path.split("/").pop()!));
+		}
+	}
+	failed.push(...(await writeRecord(host, plan.newFolder, plan.newName, plan.entry, plan.recent, today, await loadTemplates(host))));
+	const problem = await editRegistry(host, (t) => upsertActiveRow(t, plan.registry), plan.change, today).catch((err) => {
+		console.error("[MyLogs] Project Folders registry update failed", err);
+		return "등록부 갱신 실패";
+	});
+	if (problem) failed.push(`등록부 (${problem})`);
+	// Pinboard side of the goal links.
+	const relink = plan.hubLinkOld !== plan.hubLinkNew ? p.goals.filter((g) => !plan.goalsRemoved.includes(g)) : [];
+	const touched = [...plan.goalsAdded, ...plan.goalsRemoved, ...relink];
+	if (touched.length) {
+		const files = goalFiles(host, touched);
+		for (const id of touched) {
+			const f = files.get(id);
+			if (!f) continue;
+			await app.vault
+				.process(f, (t) => {
+					let out = t;
+					if (plan.goalsRemoved.includes(id) || relink.includes(id)) out = unlinkProject(out, p.id, p.name, today);
+					if (plan.goalsAdded.includes(id) || relink.includes(id)) out = linkProject(out, p.id, `[[${plan.hubLinkNew}]]`, today);
+					return out;
+				})
+				.catch(() => failed.push(id));
+		}
+		const parts = [];
+		if (plan.goalsAdded.length) parts.push(`${plan.goalsAdded.join(", ")} ↔ ${p.id} 연결`);
+		if (plan.goalsRemoved.length) parts.push(`${plan.goalsRemoved.join(", ")} ↔ ${p.id} 연결 해제`);
+		if (relink.length) parts.push(`${relink.join(", ")}의 프로젝트 링크를 ${plan.hubLinkNew}로`);
+		await logPinboard(host, `${parts.join(", ")} (플러그인)`, today).catch(() => failed.push(PINBOARD_INDEX));
+	}
+	report(failed, `「${plan.newName}」 수정: ${plan.changes.join(", ")}`);
+}
+
+/**
+ * 삭제: the project folder goes to the trash (recoverable), its registry row is removed, and the
+ * Pinboard Sub Goals that pointed at it drop the link (Pinboard 「10. 연결 규칙」).
+ */
+export async function deleteProject(host: ProjectsHost, p: Project): Promise<void> {
+	const { app } = host;
+	const folder = app.vault.getAbstractFileByPath(normalizePath(p.folder));
+	if (!(folder instanceof TFolder)) {
+		new Notice(`프로젝트 폴더를 찾지 못했어요: ${p.folder}`);
+		return;
+	}
+	const today = toIsoDate(new Date());
+	try {
+		await app.vault.trash(folder, true);
+	} catch (err) {
+		console.error("[MyLogs] Project Folders: trash failed", err);
+		new Notice("MyLogs: 프로젝트 폴더를 휴지통으로 옮기지 못했어요. 등록부는 바꾸지 않았어요.");
+		return;
+	}
+	const failed: string[] = [];
+	const problem = await editRegistry(
+		host,
+		(t) => {
+			const r = removeRegistryRow(t, p.id);
+			return { ok: true, text: r.text, added: false };
+		},
+		`${p.id} 「${p.title}」 삭제 (폴더는 휴지통으로) ${PLUGIN_MARK}`,
+		today,
+	).catch(() => "등록부 갱신 실패");
+	if (problem) failed.push(`등록부 (${problem})`);
+	if (p.goals.length) {
+		const files = goalFiles(host, p.goals);
+		for (const [id, f] of files) await app.vault.process(f, (t) => unlinkProject(t, p.id, p.name, today)).catch(() => failed.push(id));
+		await logPinboard(host, `${[...files.keys()].join(", ")}에서 프로젝트 ${p.id} 연결 해제 (프로젝트 삭제) (플러그인)`, today).catch(() => failed.push(PINBOARD_INDEX));
+	}
+	report(failed, `「${p.title}」 폴더를 휴지통으로 옮기고 등록부에서 지웠어요.`);
+}
+
+/** Pinboard goals were deleted: remove their ids from the hubs that list them (「3-4」 record each). */
+export async function removeGoalsFromProjects(host: ProjectsHost, ids: string[]): Promise<void> {
+	const { app } = host;
+	const act = activeRoot(host);
+	const arc = archiveRoot(host);
+	const today = toIsoDate(new Date());
+	const templates = await loadTemplates(host);
+	for (const f of app.vault.getMarkdownFiles()) {
+		const loc = hubLocation(f.path, act, arc);
+		if (!loc || loc.archived) continue;
+		const cache = app.metadataCache.getFileCache(f);
+		if (valueToString(cache?.frontmatter?.type) !== "project") continue;
+		const text = await app.vault.read(f);
+		const p = parseProject(cache?.frontmatter, text.slice(cache?.frontmatterPosition?.end.offset ?? 0), loc, f.path);
+		const removed = p ? p.goals.filter((g) => ids.includes(g)) : [];
+		if (!p || !removed.length) continue;
+		await app.vault.process(f, (t) => hubWithoutGoals(t, removed, today));
+		const t = goalUnlinkTexts(p, removed, today);
+		const failed = await writeRecord(host, p.folder, p.name, t.entry, t.recent, today, templates);
+		const goals = p.goals.filter((g) => !removed.includes(g)).join(", ");
+		await editRegistry(host, (x) => upsertActiveRow(x, { id: p.id, goals, updated: today }), t.change, today).catch(() => failed.push("등록부"));
+		if (failed.length) new Notice(`MyLogs: ${p.title}의 ${failed.join(", ")} 갱신에 실패했어요.`);
+	}
 }

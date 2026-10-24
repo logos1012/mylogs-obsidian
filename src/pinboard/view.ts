@@ -18,6 +18,7 @@ import { toIsoDate } from "../parser.ts";
 import { cleanFolder } from "../settings.ts";
 import { askForm, confirmDelete } from "../ui/modals.ts";
 import { nameProblem } from "../projects/model.ts";
+import { removeGoalsFromProjects } from "../projects/actions.ts";
 import { setFrontmatterScalar } from "../writer.ts";
 import {
 	applyMainRollup,
@@ -915,9 +916,14 @@ export class PinboardView extends ItemView {
 		new Notice(`${done.join(", ")} 노트를 휴지통으로 옮겼어요.`);
 	}
 
-	/** Hook for other folders that point at deleted goal ids (project hubs' `goals`). */
-	protected async afterGoalsDeleted(_ids: string[]): Promise<void> {
-		// filled in by the Project Folders integration
+	/** Pinboard 「10. 연결 규칙」: project hubs that listed the deleted goals drop the ids. */
+	private async afterGoalsDeleted(ids: string[]): Promise<void> {
+		try {
+			await removeGoalsFromProjects(this.plugin, ids);
+		} catch (err) {
+			console.error("[MyLogs] Pinboard → Project Folders unlink failed", err);
+			new Notice("MyLogs: 프로젝트 허브의 goals에서 목표 id를 빼지 못했어요.");
+		}
 	}
 
 	private async editLog(s: Goal, l: ProgressEntry, d: Loaded): Promise<void> {

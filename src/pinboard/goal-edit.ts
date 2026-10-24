@@ -164,7 +164,9 @@ export function linkProject(text: string, projectId: string, hubLink: string, to
 	const links = getFmList(text, "projects");
 	if (ids.includes(projectId)) return text;
 	let out = setFmList(text, "project_ids", [...ids, projectId]);
-	if (!links.includes(hubLink)) out = setFmList(out, "projects", [...links, hubLink]);
+	const base = hubLink.replace(/^\[\[|\]\]$/g, "").split("/").pop()!;
+	const has = links.some((l) => l === hubLink || l.endsWith(`/${base}]]`) || l === `[[${base}]]`);
+	if (!has) out = setFmList(out, "projects", [...links, hubLink]);
 	return setFmValue(out, "updated", today);
 }
 
