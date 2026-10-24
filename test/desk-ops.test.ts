@@ -9,7 +9,6 @@ import {
 	addWeekAssign,
 	appendUnderWallMonth,
 	copyTask,
-	drawerSkeleton,
 	markCancelled,
 	markMoved,
 	movedCount,
@@ -33,6 +32,7 @@ import {
 	runPlan,
 	wallYearSkeleton,
 } from "../src/desk/ops.ts";
+import { drawerTemplate } from "../src/drawer/ops.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fx = (p: string) => readFileSync(join(here, "fixtures/desk", p), "utf8");
@@ -309,17 +309,25 @@ test("쪼개기: [>] → 쪼갬 and the smaller tasks on the same day (end of fi
 	assert.equal(out, UPD(exp));
 });
 
-test("서랍에: [>] → Drawer and a new Drawer.md (type: drawer)", () => {
+test("서랍에: [>] → Drawer and a full Drawer line in ## 보류 (new file from the template, or existing)", () => {
 	const { oct } = load();
-	const plan = planDrawer(dayItem(oct, "2026-10-24", "웨이트 운동"), "06 Drawer/Drawer.md", TODAY);
+	const plan = planDrawer(dayItem(oct, "2026-10-24", "웨이트 운동"), "06 Drawer/Drawer.md", TODAY, "95kg 도달 시");
 	const out = run(plan, { "2026-10": OCT });
 	assert.equal(out["2026-10"], UPD(rep(OCT, "### 2026-10-24\n- [ ] 웨이트 운동 #test", "### 2026-10-24\n- [>] 웨이트 운동 → Drawer #test")));
-	assert.equal(out["06 Drawer/Drawer.md"], drawerSkeleton(TODAY) + "- [ ] 웨이트 운동 (from:: Desk Calendar 2026-10-24) #test\n");
+	// No Drawer yet: the template, the line in ## 보류, one 변경 기록 line.
+	const line = `- [ ] 웨이트 운동 (when:: 95kg 도달 시) (from:: Desk Calendar 2026-10-24) (added:: ${TODAY}) (reviewed:: ${TODAY}) #test`;
+	assert.equal(out["06 Drawer/Drawer.md"], drawerTemplate(TODAY).replace("## 보류\n", `## 보류\n${line}\n`) + `- ${TODAY}: 넣음 「웨이트 운동」 (from:: Desk Calendar 2026-10-24)\n`);
 	assert.ok(out["06 Drawer/Drawer.md"].startsWith("---\ntype: drawer\n"));
-	// Existing drawer: appended at the end, nothing else changes except `updated`.
-	const existing = "---\ntype: drawer\nupdated: 2026-10-01\n---\n\n# Drawer\n\n- [ ] 다른 일\n";
+	// Existing drawer: appended at the end of ## 보류; registry line; `updated`. Nothing else changes.
+	const existing = "---\ntype: drawer\nupdated: 2026-10-01\n---\n# Drawer\n\n## 보류\n- [ ] 다른 일 (when:: x) (added:: 2026-10-01) (reviewed:: 2026-10-01)\n\n## 아이디어\n\n## 변경 기록\n- 2026-10-01: 넣음 「다른 일」\n";
 	const out2 = run(plan, { "2026-10": OCT, "06 Drawer/Drawer.md": existing });
-	assert.equal(out2["06 Drawer/Drawer.md"], existing.replace("2026-10-01", TODAY) + "- [ ] 웨이트 운동 (from:: Desk Calendar 2026-10-24) #test\n");
+	assert.equal(
+		out2["06 Drawer/Drawer.md"],
+		`---\ntype: drawer\nupdated: ${TODAY}\n---\n# Drawer\n\n## 보류\n- [ ] 다른 일 (when:: x) (added:: 2026-10-01) (reviewed:: 2026-10-01)\n${line}\n\n## 아이디어\n\n## 변경 기록\n- 2026-10-01: 넣음 「다른 일」\n- ${TODAY}: 넣음 「웨이트 운동」 (from:: Desk Calendar 2026-10-24)\n`,
+	);
+	// The user insisted without a condition → (when:: 미정).
+	const out3 = run(planDrawer(dayItem(oct, "2026-10-24", "웨이트 운동"), "06 Drawer/Drawer.md", TODAY), { "2026-10": OCT });
+	assert.ok(out3["06 Drawer/Drawer.md"].includes("- [ ] 웨이트 운동 (when:: 미정) (from:: Desk Calendar 2026-10-24)"));
 });
 
 test("미래로: [>] → Wall Calendar (moved:: n+1) and the line under ## YYYY-MM", () => {
