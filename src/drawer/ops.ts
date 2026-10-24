@@ -11,9 +11,8 @@
  */
 
 import { cleanFieldValue, cleanText, replaceContent, setField } from "../line-edit.ts";
-import { LIST_LINE_RE, splitLinesKeepEol, stripEol } from "../parser.ts";
+import { LIST_LINE_RE, splitLinesKeepEol, stripEol, TASK_LINE_RE } from "../parser.ts";
 import { appendToSection, detectEol, findSection, locateLine, sectionLineRange, setFrontmatterScalar } from "../writer.ts";
-import { setCheckbox } from "../desk/ops.ts";
 import { insertBeforeMeta } from "../wall/edit.ts";
 import {
 	CHANGELOG_SECTION,
@@ -111,6 +110,12 @@ export function destinationLine(it: Pick<DrawerItem, "text" | "when" | "tags" | 
 }
 
 // ───────────────────────── locating ─────────────────────────
+
+/** Replace the checkbox character of a task line (same as `desk/ops.ts`; kept local to avoid an import cycle). */
+function setCheckbox(line: string, ch: string): string {
+	const m = TASK_LINE_RE.exec(line);
+	return m ? m[1] + ch + m[3] : line;
+}
 
 interface Located {
 	lines: string[];
