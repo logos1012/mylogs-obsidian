@@ -1,9 +1,11 @@
-import { debounce, ItemView, Keymap, Menu, normalizePath, setIcon, type TAbstractFile, TFile, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
+import { debounce, ItemView, Keymap, Menu, normalizePath, setIcon, type TAbstractFile, TFile, TFolder, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { toIsoDate } from "../parser.ts";
 import { valueToString } from "../pinboard/model.ts";
 import { cleanFolder } from "../settings.ts";
-import { activeRoot, archiveRoot, changeStatus, completeProject, createProject, takenIdsAndNames } from "./actions.ts";
+import { activeRoot, aliasesOf, archiveRoot, changeStatus, completeProject, createProject, deleteProject, editProject, takenIdsAndNames } from "./actions.ts";
+import { askForm, confirmDelete } from "../ui/modals.ts";
+import { goalIdProblems, parseGoalIds } from "./edit.ts";
 import { askComplete, askNewProject } from "./modals.ts";
 import { withRo } from "./ops.ts";
 import {
@@ -13,11 +15,14 @@ import {
 	groupByArea,
 	hubLocation,
 	isStale,
+	KINDS,
+	nameProblem,
 	parseProject,
 	type Project,
 	PROJECT_STATUSES,
 	type ProjectStatus,
 	type Scope,
+	SCOPES,
 	type ScopeFilter,
 	STALE_DAYS,
 	timelineBars,
@@ -223,6 +228,76 @@ export class ProjectFoldersView extends ItemView {
 		const ans = await askComplete(this.app, { title: p.title, started: p.started, ending });
 		if (!ans) return;
 		await this.run(() => completeProject(this.plugin, p, ans));
+	}
+
+	/** Sub Goal ids in Pinboard (for the goals field). */
+	private subGoalIds(): string[] {
+		const pin = cleanFolder(this.plugin.settings.pinboardFolder);
+		const out: string[] = [];
+		for (const f of this.app.vault.getMarkdownFiles()) {
+			if (!f.path.startsWith(`${pin}/`)) continue;
+			const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
+			if (valueToString(fm?.type) === "sub-goal" && valueToString(fm?.id)) out.push(valueToString(fm?.id));
+		}
+		return out.sort();
+	}
+
+	private async editInfo(p: Project): Promise<void> {
+		if (p.archived) return;
+		const projects = this.data?.projects ?? [];
+		const taken = await takenIdsAndNames(this.plugin, projects.filter((x) => x.id !== p.id));
+		const areas = [...new Set([...(this.data?.pinAreas ?? []), ...projects.map((x) => x.area).filter(Boolean)])];
+		const known = this.subGoalIds();
+		const v = await askForm(this.app, {
+			title: `「${p.title}」 정보 수정`,
+			desc: "허브, 등록부 행, updated를 함께 고치고 월별 로그·로그 인덱스에 기록해요. 이름이나 개인/회사를 바꾸면 폴더와 파일 이름도 옮겨요. id는 그대로예요.",
+			fields: [
+				{ key: "name", label: "이름", type: "text", value: p.title },
+				{ key: "aliases", label: "별칭", type: "text", value: await aliasesOf(this.plugin, p), desc: "쉼표로 구분" },
+				{ key: "summary", label: "한 문장 설명", type: "text", value: p.summary },
+				{ key: "scope", label: "개인 / 회사", type: "select", value: p.scope, options: SCOPES.map((x) => [x, x] as [string, string]) },
+				{ key: "area", label: "area", type: "text", value: p.area, list: areas },
+				{ key: "kind", label: "유형", type: "select", value: p.kind, options: [["", "고르기"], ...KINDS.map((k) => [k, k] as [string, string])] },
+				{ key: "action", label: "지금 가장 효과적인 한 가지 행동", type: "text", value: p.action, desc: p.actionDraft ? "지금은 AI 초안이에요. 고치면 사용자 행동으로 적어요." : undefined },
+				{ key: "goals", label: "목표 (Sub Goal id)", type: "text", value: p.goals.join(", "), desc: `쉼표로 구분. Pinboard Sub Goal에도 연결을 적어요.${known.length ? ` 있는 id: ${known.join(", ")}` : ""}` },
+			],
+			validate: (x) => {
+				const out: string[] = [];
+				const np = nameProblem(x.name);
+				if (np) out.push(np);
+				if (x.name !== p.title && x.name !== p.name && taken.names.includes(x.name)) out.push(`이미 있는 프로젝트 이름이에요: ${x.name}`);
+				if (!x.summary) out.push("한 문장 설명을 적어 주세요.");
+				if (!x.area) out.push("area를 적어 주세요.");
+				if (!(KINDS as readonly string[]).includes(x.kind)) out.push("유형을 골라 주세요.");
+				out.push(...goalIdProblems(parseGoalIds(x.goals), known.length ? known : null));
+				return out;
+			},
+		});
+		if (!v) return;
+		await this.run(() => editProject(this.plugin, p, { name: v.name, aliases: v.aliases, summary: v.summary, scope: v.scope as Scope, area: v.area, kind: v.kind, action: v.action, goals: v.goals }));
+	}
+
+	private async remove(p: Project): Promise<void> {
+		if (p.archived) return;
+		const folder = this.app.vault.getAbstractFileByPath(normalizePath(p.folder));
+		let count = 0;
+		const walk = (f: TAbstractFile) => {
+			if (f instanceof TFile) count++;
+			else if (f instanceof TFolder) f.children.forEach(walk);
+		};
+		if (folder) walk(folder);
+		const notes = [`등록부(Project Folders Index.md)의 ${p.id} 행을 지우고 「변경 기록」에 남겨요.`];
+		if (p.goals.length) notes.push(`Pinboard Sub Goal ${p.goals.join(", ")}의 projects·project_ids에서 이 프로젝트를 빼요.`);
+		notes.push("Desk Calendar·Wall Calendar·Daily Pad의 (project:: …) 줄은 바꾸지 않아요.");
+		const ans = await confirmDelete(this.app, {
+			title: "프로젝트 삭제",
+			removes: [`${p.folder}/ (폴더째, 파일 ${count}개)`, `등록부 행: ${p.id} · ${p.title}`],
+			notes,
+			footer: "폴더는 휴지통으로 가서 되살릴 수 있어요. 잘못 만든 프로젝트, 중복, 테스트 데이터를 지울 때 써요.",
+			alt: { label: "종료하고 보관 (기록 남김)", desc: "그만두기로 한 프로젝트면 지우지 말고 종료해서 Archive Box에 보관할 수 있어요." },
+		});
+		if (ans === "alt") return this.complete(p, true);
+		if (ans === "delete") await this.run(() => deleteProject(this.plugin, p));
 	}
 
 	private openHub(p: Project, e?: MouseEvent): void {
@@ -444,6 +519,14 @@ export class ProjectFoldersView extends ItemView {
 				.onClick(() => this.openHub(p)),
 		);
 		if (!p.archived) {
+			menu.addItem((i) => i.setTitle("정보 수정…").setIcon("pencil").onClick(() => void this.editInfo(p)));
+			menu.addItem((i) =>
+				i
+					.setTitle("삭제…")
+					.setIcon("trash-2")
+					.setWarning(true)
+					.onClick(() => void this.remove(p)),
+			);
 			menu.addSeparator();
 			for (const st of PROJECT_STATUSES) {
 				menu.addItem((i) =>

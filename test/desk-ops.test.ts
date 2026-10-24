@@ -13,8 +13,12 @@ import {
 	markCancelled,
 	markMoved,
 	movedCount,
+	pairedCopies,
 	planAssignDay,
 	planAssignWeek,
+	planCancelEvent,
+	planDelete,
+	planEdit,
 	planDrawer,
 	planFuture,
 	planLetGo,
@@ -24,6 +28,7 @@ import {
 	planUnassign,
 	prependChangeLog,
 	removeDateAssign,
+	removeWeekAssign,
 	replaceDateAssign,
 	runPlan,
 	wallYearSkeleton,
@@ -351,4 +356,83 @@ test("Desk Calendar Index: change log entry prepended, updated set, nothing else
 	assert.equal(out, exp);
 	const empty = "---\ntype: index\nupdated: 2026-10-01\n---\n\n# I\n\n## 변경 기록\n";
 	assert.equal(prependChangeLog(empty, TODAY, "x"), `---\ntype: index\nupdated: ${TODAY}\n---\n\n# I\n\n## 변경 기록\n- ${TODAY}: x (플러그인)\n`);
+});
+
+// ───────────────────────── 수정 / 삭제 ─────────────────────────
+
+test("pairs: 이달 중 ↔ 이번 주 ↔ 날짜 칸 copies by text", () => {
+	const { oct, months } = load();
+	const reels = dayItem(oct, "2026-10-27", "혼팀 릴스 업로드");
+	assert.deepEqual(
+		pairedCopies(reels, months).map((x) => `${x.section} ${x.date ?? x.monday}`).sort(),
+		["alloc 2026-10-26", "day 2026-10-30"],
+	);
+	const tax = duringItem(oct, "연말정산 서류 미리 모으기");
+	assert.deepEqual(pairedCopies(tax, months).map((x) => `${x.section} ${x.monday}`), ["alloc 2026-10-26"]);
+	assert.deepEqual(pairedCopies(dayItem(oct, "2026-10-29", "3분기 실적 보고"), months), []);
+});
+
+test("edit: text follows to the paired copies; arrows, fields, tags stay", () => {
+	const { oct, months } = load();
+	const src = dayItem(oct, "2026-10-27", "혼팀 릴스 업로드");
+	const plan = planEdit(src, { text: "혼팀 릴스 2개 업로드", fields: { goal: "G-2026-03.1" } }, pairedCopies(src, months), null, TODAY);
+	const out = run(plan, { "2026-10": OCT, "2026-11": NOV });
+	let exp = rep(OCT, "- [ ] 혼팀 릴스 업로드 → 10/27, 10/30 (goal:: G-2026-03.1) #test", "- [ ] 혼팀 릴스 2개 업로드 → 10/27, 10/30 (goal:: G-2026-03.1) #test");
+	exp = rep(exp, "### 2026-10-27\n- [ ] 혼팀 릴스 업로드 #test", "### 2026-10-27\n- [ ] 혼팀 릴스 2개 업로드 (goal:: G-2026-03.1) #test");
+	exp = rep(exp, "### 2026-10-30\n- [ ] 혼팀 릴스 업로드 #test", "### 2026-10-30\n- [ ] 혼팀 릴스 2개 업로드 (goal:: G-2026-03.1) #test");
+	assert.equal(out["2026-10"], UPD(exp));
+	assert.match(plan.what, /짝 2줄도/);
+});
+
+test("edit: time on one line only; empty text refused", () => {
+	const { oct } = load();
+	const src = dayItem(oct, "2026-10-26", "회사 주간 회의");
+	const out = run(planEdit(src, { time: "09:30" }, [], null, TODAY), { "2026-10": OCT });
+	assert.equal(out["2026-10"], UPD(rep(OCT, "### 2026-10-26\n- 10:00 회사 주간 회의", "### 2026-10-26\n- 09:30 회사 주간 회의")));
+	const bad = runPlan(planEdit(src, { text: " " }, [], null, TODAY), { "2026-10": OCT });
+	assert.deepEqual(bad, { ok: false, file: "2026-10", reason: "empty-text" });
+});
+
+test("edit: a new date moves the day line (no [>], no moved) and fixes the allocation", () => {
+	const { oct, months } = load();
+	const src = dayItem(oct, "2026-10-27", "혼팀 릴스 업로드");
+	const alloc = findPairAlloc(src, months);
+	assert.ok(alloc);
+	const out = run(planEdit(src, { date: "2026-10-28" }, pairedCopies(src, months), alloc, TODAY), { "2026-10": OCT, "2026-11": NOV });
+	let exp = rep(OCT, "→ 10/27, 10/30 (goal:: G-2026-03.1)", "→ 10/28, 10/30 (goal:: G-2026-03.1)");
+	exp = rep(exp, "### 2026-10-27\n- [ ] 혼팀 릴스 업로드 #test\n", "### 2026-10-27\n");
+	exp = rep(exp, "### 2026-10-28\n- [ ] 강의 4강 촬영 #test\n", "### 2026-10-28\n- [ ] 강의 4강 촬영 #test\n- [ ] 혼팀 릴스 업로드 #test\n");
+	assert.equal(out["2026-10"], UPD(exp));
+
+	// to another week: the date leaves the allocation list
+	const out2 = run(planEdit(src, { date: "2026-11-03" }, [], alloc, TODAY), { "2026-10": OCT, "2026-11": NOV });
+	assert.ok(out2["2026-10"].includes("- [ ] 혼팀 릴스 업로드 → 10/30 (goal:: G-2026-03.1) #test"));
+	assert.ok(/### 2026-11-03\n[\s\S]*?- \[ \] 혼팀 릴스 업로드 #test/.test(out2["2026-11"]));
+});
+
+test("delete: day line goes and its date leaves the allocation", () => {
+	const { oct, months } = load();
+	const out = run(planDelete(dayItem(oct, "2026-10-28", "강의 4강 촬영"), months, TODAY), { "2026-10": OCT, "2026-11": NOV });
+	let exp = rep(OCT, "- [ ] 강의 4강 촬영 → 10/28 (goal:: G-2026-01.2) #test", "- [ ] 강의 4강 촬영 (goal:: G-2026-01.2) #test");
+	exp = rep(exp, "### 2026-10-28\n- [ ] 강의 4강 촬영 #test\n", "### 2026-10-28\n");
+	assert.equal(out["2026-10"], UPD(exp));
+});
+
+test("delete: 이번 주 line goes and its week leaves the 이달 중 line; day copies stay", () => {
+	const { oct, months } = load();
+	const out = run(planDelete(allocItem(oct, "2026-10-26", "연말정산 서류 미리 모으기"), months, TODAY), { "2026-10": OCT, "2026-11": NOV });
+	let exp = rep(OCT, "- [ ] 연말정산 서류 미리 모으기 → W44 #test", "- [ ] 연말정산 서류 미리 모으기 #test");
+	exp = rep(exp, "- [ ] 출장 짐 싸기 → 11/01 #test\n- [ ] 연말정산 서류 미리 모으기 #test\n", "- [ ] 출장 짐 싸기 → 11/01 #test\n");
+	assert.equal(out["2026-10"], UPD(exp));
+	const out2 = run(planDelete(allocItem(oct, "2026-10-26", "강의 4강 촬영"), months, TODAY), { "2026-10": OCT });
+	assert.ok(out2["2026-10"].includes("### 2026-10-28\n- [ ] 강의 4강 촬영 #test"));
+	assert.equal(removeWeekAssign("- [ ] a → W44, W45 #t", 44), "- [ ] a → W45 #t");
+});
+
+test("cancel an event: strike through, time inside", () => {
+	const { oct } = load();
+	const out = run(planCancelEvent(dayItem(oct, "2026-10-29", "3분기 실적 보고"), TODAY), { "2026-10": OCT });
+	assert.equal(out["2026-10"], UPD(rep(OCT, "- 14:00 3분기 실적 보고 #회사 #test", "- ~~14:00 3분기 실적 보고~~ #회사 #test")));
+	const parsed = parseMonthFile(out["2026-10"], 2026, 10).days.get("2026-10-29")!.find((x) => x.item.text === "3분기 실적 보고")!;
+	assert.deepEqual([parsed.item.kind, parsed.item.status], ["event", "cancelled"]);
 });
