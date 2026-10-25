@@ -20,6 +20,10 @@ import {
 	requestStamp,
 	rowName,
 	type Skill,
+	LIVE_STATUSES,
+	SKILL_STATUSES,
+	canRequestRun,
+	needsConfirm,
 	skillEditChanges,
 	skillName,
 	type SkillInput,
@@ -279,6 +283,41 @@ test("status toggle: file status + updated; registry 상태 cell; 변경 기록 
 	assert.ok(r2.ok);
 	assert.equal(parseToolboxRegistry(r2.text).skills[0].status, "멈춤");
 	assert.equal(changeText.status("멈춤", "AI 뉴스 브리핑"), "멈춤 「AI 뉴스 브리핑」 (플러그인)");
+});
+
+test("3-state: 멈춤 → 시험 → 사용 each writes file status, registry cell and a 변경 기록 line with the new word", () => {
+	assert.deepEqual([...SKILL_STATUSES], ["멈춤", "시험", "사용", "폐기"]);
+	assert.deepEqual([...LIVE_STATUSES], ["멈춤", "시험", "사용"]);
+	assert.equal(canRequestRun("멈춤"), false);
+	assert.equal(canRequestRun("시험"), true);
+	assert.equal(canRequestRun("사용"), true);
+	assert.equal(canRequestRun("폐기"), false);
+	assert.equal(needsConfirm("멈춤"), false);
+	assert.equal(needsConfirm("시험"), true);
+	assert.equal(needsConfirm("사용"), true);
+	let file = SKILL;
+	let reg = REG;
+	for (const [status, day] of [
+		["시험", "2026-10-27"],
+		["사용", "2026-10-28"],
+		["멈춤", "2026-10-29"],
+	] as const) {
+		file = setSkillStatus(file, status, day);
+		assert.equal(getFmValue(file, "status"), status);
+		assert.equal(getFmValue(file, "updated"), day);
+		const r = upsertSkillRow(reg, { id: "T-01", status });
+		assert.ok(r.ok);
+		reg = logToolboxChange(r.text, day, changeText.status(status, "AI 뉴스 브리핑"));
+		assert.equal(parseToolboxRegistry(reg).skills[0].status, status);
+		assert.match(getSectionContent(reg, "변경 기록") ?? "", new RegExp(`^- ${day}: ${status} 「AI 뉴스 브리핑」 \\(플러그인\\)`));
+		assert.equal(getFmValue(reg, "updated"), day);
+	}
+	// three lines, newest first, above the vault's own lines
+	assert.match(getSectionContent(reg, "변경 기록") ?? "", /^- 2026-10-29: 멈춤 「AI 뉴스 브리핑」 \(플러그인\)\n- 2026-10-28: 사용 「AI 뉴스 브리핑」 \(플러그인\)\n- 2026-10-27: 시험 「AI 뉴스 브리핑」 \(플러그인\)\n- 2026-10-26: /);
+	// the file: only status / updated moved, the body (including its own 변경 기록) is untouched
+	assert.deepEqual(lineDiff(SKILL, file), { removed: ["updated: 2026-10-26"], added: ["updated: 2026-10-29"] });
+	// stale badge is about last_run, not status; 시험 rows are asked too
+	assert.equal(isStaleSkill({ status: "시험", lastRun: "" }, TODAY), true);
 });
 
 test("upsertSkillRow: unknown table → error; missing row added with full", () => {

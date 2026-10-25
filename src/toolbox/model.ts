@@ -10,8 +10,21 @@
 
 import { cleanInline, daysBetween, findSectionText, isIsoDate, parseSections, valueToString } from "../pinboard/model.ts";
 
-export const SKILL_STATUSES = ["사용", "멈춤", "폐기"] as const;
+/** 「3」: 사용 | 시험 | 멈춤 | 폐기. 시험 = not on cron, runs only via 「실행 요청」. */
+export const SKILL_STATUSES = ["멈춤", "시험", "사용", "폐기"] as const;
 export type SkillStatus = (typeof SKILL_STATUSES)[number];
+/** 「4-1」 2-1: the order a skill moves through (the row's 3-way control). */
+export const LIVE_STATUSES = ["멈춤", "시험", "사용"] as const;
+export type LiveStatus = (typeof LIVE_STATUSES)[number];
+
+/** 「4-4」 1: a 「실행 요청」 runs only for 사용·시험. */
+export function canRequestRun(status: string): boolean {
+	return status === "사용" || status === "시험";
+}
+/** 「6」: 시험·사용 need the user's confirmation (멈춤 doesn't). */
+export function needsConfirm(to: string): to is "시험" | "사용" {
+	return to === "시험" || to === "사용";
+}
 export const TRIGGERS = ["cron", "수동", "이벤트"] as const;
 export type Trigger = (typeof TRIGGERS)[number];
 export const OWNERS = ["hermes", "claude-code", "codex"] as const;

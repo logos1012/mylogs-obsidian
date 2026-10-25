@@ -27,6 +27,8 @@ export interface MyLogsSettings {
 	myLifePath: string;
 	/** My Life view: collapsed section names per tab (daily / weekly / monthly / yearly). */
 	myLifeCollapsed: Record<string, string[]>;
+	/** Toolbox folder: skills `<folder>/<이름>.md`, registry `<folder>/Toolbox Index.md`, template `<folder>/_Templates/스킬.md`. */
+	toolboxPath: string;
 	sections: SectionNames;
 	/** Show `#test` markers on test data. */
 	showTestMarkers: boolean;
@@ -43,6 +45,7 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	drawerPath: "06 Drawer/Drawer.md",
 	myLifePath: "08 My Life",
 	myLifeCollapsed: {},
+	toolboxPath: "11 Toolbox",
 	sections: {
 		pending: "결정 대기",
 		today: "오늘 할 일",
@@ -128,6 +131,18 @@ export class MyLogsSettingTab extends PluginSettingTab {
 					.setValue(s.myLifePath)
 					.onChange(async (v) => {
 						s.myLifePath = cleanFolder(v) || DEFAULT_SETTINGS.myLifePath;
+						await this.plugin.saveSettings();
+					}),
+			);
+		new Setting(containerEl)
+			.setName("Toolbox 폴더")
+			.setDesc("스킬 파일 위치: <폴더>/<이름>.md · 등록부: <폴더>/Toolbox Index.md · 템플릿: <폴더>/_Templates/스킬.md")
+			.addText((t) =>
+				t
+					.setPlaceholder(DEFAULT_SETTINGS.toolboxPath)
+					.setValue(s.toolboxPath)
+					.onChange(async (v) => {
+						s.toolboxPath = cleanFolder(v) || DEFAULT_SETTINGS.toolboxPath;
 						await this.plugin.saveSettings();
 					}),
 			);
