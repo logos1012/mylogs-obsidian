@@ -132,8 +132,11 @@ export function parseFrontmatterText(text: string): { data: Record<string, unkno
 	const end = lines.findIndex((l, i) => i > 0 && l.trim() === "---");
 	if (end === -1) return { data: {}, body: t };
 	const scalar = (raw: string): unknown => {
-		const v = raw.trim();
+		let v = raw.trim();
 		if (v.length >= 2 && v[0] === v[v.length - 1] && (v[0] === '"' || v[0] === "'")) return v.slice(1, -1);
+		// A trailing `  # comment` on an unquoted scalar (as YAML and Obsidian read it).
+		const c = /\s+#/.exec(v);
+		if (c) v = v.slice(0, c.index).trim();
 		if (v === "" || v === "~" || v === "null") return null;
 		if (/^-?\d+(\.\d+)?$/.test(v)) return Number(v);
 		if (v === "true" || v === "false") return v === "true";
