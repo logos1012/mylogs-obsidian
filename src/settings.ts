@@ -23,6 +23,10 @@ export interface MyLogsSettings {
 	projectArchiveFolder: string;
 	/** The Drawer file (one file is the whole Drawer: `06 Drawer/AGENTS.md` 「3」). */
 	drawerPath: string;
+	/** My Life root: `<folder>/01 Daily/YYYY/YYYY-MM/`, `02 Weekly/GGGG/`, `03 Monthly/YYYY/`, `04 Yearly/`. */
+	myLifePath: string;
+	/** My Life view: collapsed section names per tab (daily / weekly / monthly / yearly). */
+	myLifeCollapsed: Record<string, string[]>;
 	sections: SectionNames;
 	/** Show `#test` markers on test data. */
 	showTestMarkers: boolean;
@@ -37,6 +41,8 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	projectFoldersFolder: "05 Project Folders",
 	projectArchiveFolder: "10 Archive Box/Projects",
 	drawerPath: "06 Drawer/Drawer.md",
+	myLifePath: "08 My Life",
+	myLifeCollapsed: {},
 	sections: {
 		pending: "결정 대기",
 		today: "오늘 할 일",
@@ -55,6 +61,7 @@ export function mergeSettings(saved: unknown): MyLogsSettings {
 		...DEFAULT_SETTINGS,
 		...s,
 		sections: { ...DEFAULT_SETTINGS.sections, ...(s.sections ?? {}) },
+		myLifeCollapsed: { ...(s.myLifeCollapsed ?? {}) },
 	};
 }
 
@@ -109,6 +116,18 @@ export class MyLogsSettingTab extends PluginSettingTab {
 					.onChange(async (v) => {
 						const p = cleanFolder(v);
 						s.drawerPath = p ? (p.endsWith(".md") ? p : `${p}.md`) : DEFAULT_SETTINGS.drawerPath;
+						await this.plugin.saveSettings();
+					}),
+			);
+		new Setting(containerEl)
+			.setName("My Life 폴더")
+			.setDesc("기록 위치: <폴더>/01 Daily/<YYYY>/<YYYY-MM>/<YYYY-MM-DD>.md · 02 Weekly/<GGGG>/<GGGG-Www>.md · 03 Monthly/<YYYY>/<YYYY-MM>.md · 04 Yearly/<YYYY>.md")
+			.addText((t) =>
+				t
+					.setPlaceholder(DEFAULT_SETTINGS.myLifePath)
+					.setValue(s.myLifePath)
+					.onChange(async (v) => {
+						s.myLifePath = cleanFolder(v) || DEFAULT_SETTINGS.myLifePath;
 						await this.plugin.saveSettings();
 					}),
 			);
