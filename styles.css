@@ -5911,3 +5911,498 @@
 	}
 }
 /* ===== /My Life view ===== */
+
+/* ===== Toolbox view ===== */
+/*
+   Same paper as Project Folders: white background, hairline rules, teal accent. One table —
+   the registry — with the skill files as the source. Scoped under .mylogs-toolbox; class names
+   use the tb- prefix.
+*/
+.view-content.mylogs-toolbox-container {
+	padding: 0;
+	background: #ffffff;
+	container-type: inline-size;
+}
+.theme-dark .view-content.mylogs-toolbox-container {
+	background: #1c1d1f;
+}
+.mylogs-toolbox {
+	--tb-bg: #ffffff;
+	--tb-paper: #ffffff;
+	--tb-ink: #1d1d1f;
+	--tb-ink-2: #4a4a4f;
+	--tb-muted: #8e8e93;
+	--tb-faint: #b9b9be;
+	--tb-line: #ececee;
+	--tb-line-strong: #d6d6da;
+	--tb-hover: #f8f8f6;
+	--tb-accent: #0f766e;
+	--tb-accent-soft: #e8f3f1;
+	--tb-accent-ink: #ffffff;
+	--tb-warn: #a35a00;
+	--tb-warn-bg: #fff3df;
+	--tb-fail: #c8473d;
+	--tb-fail-bg: #fbe9e7;
+	--tb-trial: #6a4fc9;
+	--tb-trial-bg: #efeafe;
+	--tb-chip-bg: #f2f2f4;
+	--tb-code-bg: #f4f4f2;
+
+	min-height: 100%;
+	max-width: 1640px;
+	margin: 0 auto;
+	padding: 44px 40px 56px;
+	background: var(--tb-bg);
+	color: var(--tb-ink);
+	font-family: Pretendard, "Pretendard Variable", "Apple SD Gothic Neo", var(--font-interface), -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Noto Sans KR", sans-serif;
+	font-size: 13px;
+	line-height: 1.45;
+	-webkit-font-smoothing: antialiased;
+	letter-spacing: -0.005em;
+}
+.theme-dark .mylogs-toolbox {
+	--tb-bg: #1c1d1f;
+	--tb-paper: #232427;
+	--tb-ink: #ececee;
+	--tb-ink-2: #c4c4c8;
+	--tb-muted: #8d8d93;
+	--tb-faint: #5d5d63;
+	--tb-line: #2c2d30;
+	--tb-line-strong: #3a3b3f;
+	--tb-hover: #202124;
+	--tb-accent: #5cc0b3;
+	--tb-accent-soft: #1d2a29;
+	--tb-accent-ink: #10201e;
+	--tb-warn: #f0b45c;
+	--tb-warn-bg: #3a2c17;
+	--tb-fail: #e48a80;
+	--tb-fail-bg: #3a2220;
+	--tb-trial: #b7a4ff;
+	--tb-trial-bg: #2a2440;
+	--tb-chip-bg: #2a2b2e;
+	--tb-code-bg: #26272a;
+}
+.mylogs-toolbox *,
+.mylogs-toolbox *::before,
+.mylogs-toolbox *::after {
+	box-sizing: border-box;
+}
+.mylogs-toolbox.is-busy {
+	cursor: progress;
+}
+.mylogs-toolbox.is-busy .tb-table-wrap {
+	opacity: 0.6;
+	pointer-events: none;
+}
+
+/* ── header ── */
+.mylogs-toolbox .tb-top {
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 24px;
+	flex-wrap: wrap;
+	padding-bottom: 22px;
+	border-bottom: 1px solid var(--tb-ink);
+}
+.mylogs-toolbox .tb-eyebrow {
+	font-size: 11px;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+	color: var(--tb-muted);
+	margin-bottom: 6px;
+}
+.mylogs-toolbox h1 {
+	margin: 0;
+	font-size: 40px;
+	line-height: 1.05;
+	font-weight: 700;
+	letter-spacing: -0.03em;
+	color: var(--tb-ink);
+}
+.mylogs-toolbox .tb-controls {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+}
+.mylogs-toolbox .tb-btn {
+	font: inherit;
+	font-size: 12px;
+	height: 28px;
+	padding: 0 10px;
+	border: 1px solid var(--tb-line-strong);
+	border-radius: 6px;
+	background: var(--tb-paper);
+	color: var(--tb-ink-2);
+	box-shadow: none;
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	white-space: nowrap;
+}
+.mylogs-toolbox .tb-btn:hover:not(:disabled) {
+	border-color: var(--tb-accent);
+	color: var(--tb-accent);
+}
+.mylogs-toolbox .tb-btn:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+.mylogs-toolbox .tb-btn-icon {
+	display: inline-flex;
+}
+.mylogs-toolbox .tb-btn.tb-btn-icon {
+	width: 28px;
+	padding: 0;
+	justify-content: center;
+}
+.mylogs-toolbox .tb-btn svg {
+	width: 14px;
+	height: 14px;
+}
+.mylogs-toolbox .tb-btn-primary {
+	background: var(--tb-accent);
+	border-color: var(--tb-accent);
+	color: var(--tb-accent-ink);
+	font-weight: 600;
+}
+.mylogs-toolbox .tb-btn-primary:hover:not(:disabled) {
+	color: var(--tb-accent-ink);
+	opacity: 0.9;
+}
+.mylogs-toolbox .tb-link-btn {
+	font: inherit;
+	font-size: 11px;
+	font-weight: 600;
+	padding: 0;
+	border: 0;
+	background: none;
+	box-shadow: none;
+	color: var(--tb-accent);
+	cursor: pointer;
+	height: auto;
+}
+.mylogs-toolbox .tb-link-btn:hover {
+	text-decoration: underline;
+}
+.mylogs-toolbox .tb-notice {
+	margin-top: 16px;
+	padding: 9px 12px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 12.5px;
+	color: var(--tb-warn);
+	background: var(--tb-warn-bg);
+	border-radius: 6px;
+}
+.mylogs-toolbox .tb-notice-icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* ── table ── */
+.mylogs-toolbox .tb-table-wrap {
+	margin-top: 24px;
+	overflow-x: auto;
+}
+.mylogs-toolbox .tb-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 12.5px;
+}
+.mylogs-toolbox .tb-table th,
+.mylogs-toolbox .tb-table td {
+	text-align: left;
+	vertical-align: top;
+	padding: 10px 10px;
+	border-bottom: 1px solid var(--tb-line);
+}
+.mylogs-toolbox .tb-table th {
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.06em;
+	color: var(--tb-muted);
+	border-bottom: 1px solid var(--tb-line-strong);
+	white-space: nowrap;
+	padding-top: 0;
+}
+.mylogs-toolbox .tb-table .c-name {
+	min-width: 160px;
+}
+.mylogs-toolbox .tb-table .c-purpose {
+	min-width: 180px;
+	max-width: 360px;
+	color: var(--tb-ink-2);
+}
+.mylogs-toolbox .tb-table .c-trigger,
+.mylogs-toolbox .tb-table .c-reviewed,
+.mylogs-toolbox .tb-table .c-run {
+	white-space: nowrap;
+}
+.mylogs-toolbox .tb-table .c-output {
+	max-width: 280px;
+}
+.mylogs-toolbox .tb-table .c-actions {
+	white-space: nowrap;
+	text-align: right;
+}
+.mylogs-toolbox .tb-table .c-actions .tb-btn + .tb-btn {
+	margin-left: 4px;
+}
+.mylogs-toolbox .tb-row:hover td {
+	background: var(--tb-hover);
+}
+.mylogs-toolbox .tb-row.is-stale td {
+	opacity: 0.6;
+}
+.mylogs-toolbox .tb-row.is-stale:hover td {
+	opacity: 1;
+}
+.mylogs-toolbox .tb-row.is-discarded td {
+	opacity: 0.5;
+}
+.mylogs-toolbox .tb-row.is-ghost td {
+	color: var(--tb-muted);
+}
+.mylogs-toolbox .tb-name {
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--tb-ink);
+	text-decoration: none;
+	cursor: pointer;
+}
+.mylogs-toolbox a.tb-name:hover {
+	color: var(--tb-accent);
+	text-decoration: underline;
+}
+.mylogs-toolbox .tb-name.is-struck {
+	text-decoration: line-through;
+	color: var(--tb-muted);
+	cursor: default;
+}
+.mylogs-toolbox .tb-meta {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 8px;
+	margin-top: 3px;
+	font-size: 11px;
+	color: var(--tb-muted);
+}
+.mylogs-toolbox .tb-id {
+	font-family: var(--font-monospace);
+	font-size: 10.5px;
+	letter-spacing: 0.02em;
+}
+.mylogs-toolbox .tb-badge {
+	display: inline-flex;
+	align-items: center;
+	height: 18px;
+	padding: 0 6px;
+	border-radius: 4px;
+	font-size: 10.5px;
+	font-weight: 600;
+	background: var(--tb-chip-bg);
+	color: var(--tb-ink-2);
+	white-space: nowrap;
+}
+.mylogs-toolbox .tb-badge.is-warn {
+	background: var(--tb-warn-bg);
+	color: var(--tb-warn);
+}
+.mylogs-toolbox .tb-badge.is-stale {
+	background: var(--tb-warn-bg);
+	color: var(--tb-warn);
+	font-weight: 500;
+}
+.mylogs-toolbox .tb-badge.is-pending {
+	background: var(--tb-accent-soft);
+	color: var(--tb-accent);
+}
+.mylogs-toolbox .tb-badge.is-done {
+	opacity: 0.55;
+	font-weight: 500;
+}
+.mylogs-toolbox .tb-trigger {
+	display: inline-block;
+	font-weight: 600;
+	color: var(--tb-ink-2);
+	margin-right: 6px;
+}
+.mylogs-toolbox .tb-code {
+	font-family: var(--font-monospace);
+	font-size: 11px;
+	padding: 1px 5px;
+	border-radius: 4px;
+	background: var(--tb-code-bg);
+	color: var(--tb-ink-2);
+}
+.mylogs-toolbox .tb-output {
+	display: inline-block;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	vertical-align: bottom;
+}
+
+/* status 3-way: 멈춤 / 시험 / 사용 */
+.mylogs-toolbox .tb-seg {
+	display: inline-flex;
+}
+.mylogs-toolbox .tb-status {
+	font: inherit;
+	font-size: 11.5px;
+	font-weight: 600;
+	height: 24px;
+	padding: 0 8px;
+	border: 1px solid var(--tb-line-strong);
+	background: var(--tb-paper);
+	color: var(--tb-muted);
+	box-shadow: none;
+	cursor: pointer;
+	margin-left: -1px;
+	border-radius: 0;
+}
+.mylogs-toolbox .tb-seg .tb-status:first-child {
+	border-radius: 6px 0 0 6px;
+	margin-left: 0;
+}
+.mylogs-toolbox .tb-seg .tb-status:last-child {
+	border-radius: 0 6px 6px 0;
+}
+.mylogs-toolbox .tb-status:hover {
+	color: var(--tb-ink);
+	z-index: 1;
+	position: relative;
+}
+.mylogs-toolbox .tb-status.is-active {
+	z-index: 1;
+	position: relative;
+}
+.mylogs-toolbox .tb-status.is-active.st-사용 {
+	background: var(--tb-accent-soft);
+	border-color: var(--tb-accent);
+	color: var(--tb-accent);
+}
+.mylogs-toolbox .tb-status.is-active.st-시험 {
+	background: var(--tb-trial-bg);
+	border-color: var(--tb-trial);
+	color: var(--tb-trial);
+}
+.mylogs-toolbox .tb-status.is-active.st-멈춤 {
+	background: var(--tb-chip-bg);
+	border-color: var(--tb-line-strong);
+	color: var(--tb-ink-2);
+}
+.mylogs-toolbox .tb-status.is-static {
+	cursor: default;
+	border-radius: 6px;
+	margin-left: 0;
+	display: inline-flex;
+	align-items: center;
+}
+.mylogs-toolbox .c-status .tb-badge {
+	margin-left: 6px;
+	vertical-align: middle;
+}
+
+/* 마지막 실행 · 결과 */
+.mylogs-toolbox .tb-run {
+	color: var(--tb-ink-2);
+}
+.mylogs-toolbox .tb-result {
+	margin-left: 8px;
+	color: var(--tb-muted);
+}
+.mylogs-toolbox .tb-fail {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	margin-left: 8px;
+	color: var(--tb-fail);
+	font-weight: 600;
+}
+.mylogs-toolbox .tb-fail-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--tb-fail);
+	flex: none;
+}
+
+/* ── empty, foot ── */
+.mylogs-toolbox .tb-empty {
+	margin-top: 48px;
+	padding: 40px 24px;
+	text-align: center;
+	border: 1px dashed var(--tb-line-strong);
+	border-radius: 8px;
+	color: var(--tb-ink-2);
+}
+.mylogs-toolbox .tb-empty-title {
+	font-size: 18px;
+	font-weight: 600;
+	color: var(--tb-ink);
+	margin-bottom: 6px;
+}
+.mylogs-toolbox .tb-empty p {
+	max-width: 520px;
+	margin: 0 auto 16px;
+	color: var(--tb-muted);
+}
+.mylogs-toolbox .tb-foot {
+	margin-top: 28px;
+	font-size: 11px;
+	color: var(--tb-faint);
+}
+
+/* ── modals ── */
+.mylogs-toolbox-modal .mylogs-toolbox-facts {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 4px 14px;
+	margin: 0 0 var(--size-4-3);
+	font-size: var(--font-ui-small);
+}
+.mylogs-toolbox-modal .mylogs-toolbox-facts dt {
+	color: var(--text-muted);
+}
+.mylogs-toolbox-modal .mylogs-toolbox-facts dd {
+	margin: 0;
+	word-break: break-all;
+}
+.mylogs-toolbox-modal .mylogs-form-errors {
+	color: var(--text-error);
+	font-size: var(--font-ui-small);
+	margin: var(--size-4-2) 0 0;
+	padding-left: 1.2em;
+}
+.mylogs-toolbox-modal .mylogs-form-errors:empty {
+	display: none;
+}
+.mylogs-toolbox-modal .mylogs-form-wide {
+	width: 100%;
+	min-width: 16em;
+}
+
+/* ── narrow (side pane, phone) ── */
+@container (max-width: 760px) {
+	.mylogs-toolbox {
+		padding: 28px 16px 48px;
+	}
+	.mylogs-toolbox h1 {
+		font-size: 28px;
+	}
+	.mylogs-toolbox .tb-table .c-output,
+	.mylogs-toolbox .tb-table .c-reviewed {
+		display: none;
+	}
+	.mylogs-toolbox .tb-table .c-purpose {
+		min-width: 120px;
+	}
+}
+/* ===== /Toolbox view ===== */
