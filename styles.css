@@ -5205,3 +5205,709 @@
 	justify-content: flex-end;
 }
 /* ===== /Drawer view ===== */
+
+/* ===== My Life view ===== */
+/* Read-only record: white paper, a quiet serif-less column of cards. Only 사용자 한마디 is an input.
+   Scoped under .mylogs-my-life; tokens follow the Daily Pad (--ml-*) palette. */
+
+.mylogs-my-life-container {
+	padding: 0 !important;
+	background: var(--background-primary);
+}
+
+.mylogs-my-life {
+	--mlf-bg: var(--background-primary);
+	--mlf-ink: var(--text-normal);
+	--mlf-ink-2: color-mix(in srgb, var(--text-normal) 72%, var(--background-primary));
+	--mlf-muted: var(--text-muted);
+	--mlf-faint: var(--text-faint);
+	--mlf-line: color-mix(in srgb, var(--text-normal) 8%, var(--background-primary));
+	--mlf-line-strong: color-mix(in srgb, var(--text-normal) 16%, var(--background-primary));
+	--mlf-hover: color-mix(in srgb, var(--text-normal) 3.5%, var(--background-primary));
+	--mlf-card: color-mix(in srgb, var(--text-normal) 1.5%, var(--background-primary));
+	--mlf-accent: #0f766e;
+	--mlf-accent-soft: #e8f3f1;
+	--mlf-sat: #3d6fb6;
+	--mlf-sun: #c8473d;
+	--mlf-warn: #a35a00;
+	--mlf-warn-bg: #fff3df;
+	--mlf-sample: #7a5af5;
+	--mlf-sample-bg: #efeafe;
+	--mlf-radius: 8px;
+	--mlf-font: Pretendard, "Pretendard Variable", var(--font-interface), "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Noto Sans KR", sans-serif;
+
+	container-type: inline-size;
+	box-sizing: border-box;
+	max-width: 960px;
+	margin: 0 auto;
+	padding: 40px 36px 72px;
+	color: var(--mlf-ink);
+	background: var(--mlf-bg);
+	font-family: var(--mlf-font);
+	font-size: 13.5px;
+	line-height: 1.55;
+	letter-spacing: -0.005em;
+	-webkit-font-smoothing: antialiased;
+}
+.theme-dark .mylogs-my-life {
+	--mlf-accent: #5cc0b3;
+	--mlf-accent-soft: #1d2a29;
+	--mlf-sat: #84a9e0;
+	--mlf-sun: #e48a80;
+	--mlf-warn: #f0b45c;
+	--mlf-warn-bg: #3a2c17;
+	--mlf-sample: #b7a4ff;
+	--mlf-sample-bg: #2a2440;
+}
+.mylogs-my-life *,
+.mylogs-my-life *::before,
+.mylogs-my-life *::after {
+	box-sizing: border-box;
+}
+
+/* ── buttons ── */
+.mylogs-my-life button.mlf-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 28px;
+	padding: 0 10px;
+	border: 1px solid var(--mlf-line-strong);
+	border-radius: var(--mlf-radius);
+	background: var(--mlf-bg);
+	box-shadow: none;
+	color: var(--mlf-ink-2);
+	font: 500 12px/1 var(--mlf-font);
+	cursor: pointer;
+	transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.mylogs-my-life button.mlf-btn:hover {
+	background: var(--mlf-hover);
+	color: var(--mlf-ink);
+}
+.mylogs-my-life button.mlf-btn.is-active {
+	border-color: var(--mlf-accent);
+	background: var(--mlf-accent-soft);
+	color: var(--mlf-accent);
+}
+.mylogs-my-life button.mlf-btn-icon {
+	width: 28px;
+	padding: 0;
+	justify-content: center;
+	font-size: 10px;
+}
+.mylogs-my-life .mlf-btn-ico {
+	display: inline-flex;
+}
+.mylogs-my-life .mlf-btn-ico svg {
+	width: 14px;
+	height: 14px;
+}
+.mylogs-my-life button.mlf-link-btn {
+	padding: 0;
+	border: 0;
+	background: none;
+	box-shadow: none;
+	color: var(--mlf-accent);
+	font: 600 12px/1.4 var(--mlf-font);
+	cursor: pointer;
+}
+.mylogs-my-life button.mlf-link-btn.is-quiet {
+	color: var(--mlf-muted);
+	font-weight: 500;
+}
+.mylogs-my-life button.mlf-link-btn:hover {
+	text-decoration: underline;
+}
+
+/* ── header ── */
+.mylogs-my-life .mlf-top {
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 16px 24px;
+	padding-bottom: 18px;
+	border-bottom: 1px solid var(--mlf-ink);
+}
+.mylogs-my-life .mlf-eyebrow {
+	margin-bottom: 8px;
+	color: var(--mlf-muted);
+	font-size: 11px;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+}
+.mylogs-my-life h1.mlf-title {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 4px 14px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	color: var(--mlf-ink);
+	font-family: var(--mlf-font);
+	font-size: 32px;
+	font-weight: 700;
+	line-height: 1.08;
+	letter-spacing: -0.03em;
+}
+.mylogs-my-life .mlf-weekday {
+	color: var(--mlf-ink-2);
+	font-size: 0.62em;
+	font-weight: 300;
+}
+.mylogs-my-life .mlf-weekday.wd-6 {
+	color: var(--mlf-sat);
+}
+.mylogs-my-life .mlf-weekday.wd-7 {
+	color: var(--mlf-sun);
+}
+.mylogs-my-life .mlf-rel {
+	align-self: center;
+	padding: 2px 9px;
+	border-radius: 999px;
+	background: var(--mlf-hover);
+	color: var(--mlf-muted);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0;
+	line-height: 1.5;
+}
+.mylogs-my-life .mlf-rel.is-today {
+	background: var(--mlf-accent-soft);
+	color: var(--mlf-accent);
+}
+.mylogs-my-life .mlf-nav {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+.mylogs-my-life input.mlf-date-input {
+	height: 28px;
+	padding: 0 8px;
+	border: 1px solid var(--mlf-line-strong);
+	border-radius: var(--mlf-radius);
+	background: var(--mlf-bg);
+	box-shadow: none;
+	color: var(--mlf-ink-2);
+	font: 500 12px/1 var(--mlf-font);
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-my-life input.mlf-date-input:focus {
+	border-color: var(--mlf-accent);
+	box-shadow: 0 0 0 3px var(--mlf-accent-soft);
+	outline: none;
+}
+.mylogs-my-life .mlf-pad-btn {
+	margin-left: 6px;
+}
+
+/* ── tabs ── */
+.mylogs-my-life .mlf-tabs {
+	display: flex;
+	gap: 2px;
+	margin: 0 0 22px;
+	border-bottom: 1px solid var(--mlf-line-strong);
+	overflow-x: auto;
+}
+.mylogs-my-life button.mlf-tab {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 2px;
+	flex: 0 0 auto;
+	min-width: 0;
+	margin-bottom: -1px;
+	padding: 12px 14px 10px;
+	border: 0;
+	border-bottom: 2px solid transparent;
+	border-radius: 0;
+	background: none;
+	box-shadow: none;
+	color: var(--mlf-muted);
+	font-family: var(--mlf-font);
+	text-align: left;
+	cursor: pointer;
+	transition: color 0.12s ease, border-color 0.12s ease;
+}
+.mylogs-my-life button.mlf-tab:hover {
+	color: var(--mlf-ink);
+}
+.mylogs-my-life button.mlf-tab.is-active {
+	border-bottom-color: var(--mlf-accent);
+	color: var(--mlf-ink);
+}
+.mylogs-my-life .mlf-tab-label {
+	font-size: 13px;
+	font-weight: 700;
+	letter-spacing: 0.01em;
+}
+.mylogs-my-life button.mlf-tab.is-active .mlf-tab-label {
+	color: var(--mlf-accent);
+}
+.mylogs-my-life .mlf-tab-sub {
+	color: var(--mlf-faint);
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+/* ── file meta: title, badge, stat row ── */
+.mylogs-my-life .mlf-meta {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	margin-bottom: 18px;
+}
+.mylogs-my-life .mlf-meta-title {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px 10px;
+}
+.mylogs-my-life h2.mlf-file-title {
+	margin: 0;
+	padding: 0;
+	border: 0;
+	color: var(--mlf-ink);
+	font-family: var(--mlf-font);
+	font-size: 18px;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-my-life .mlf-badge {
+	display: inline-flex;
+	align-items: center;
+	height: 20px;
+	padding: 0 8px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1;
+}
+.mylogs-my-life .mlf-badge-sample {
+	background: var(--mlf-sample-bg);
+	color: var(--mlf-sample);
+}
+.mylogs-my-life .mlf-badge-status.is-draft {
+	background: var(--mlf-warn-bg);
+	color: var(--mlf-warn);
+}
+.mylogs-my-life .mlf-badge-status.is-done {
+	background: var(--mlf-accent-soft);
+	color: var(--mlf-accent);
+}
+.mylogs-my-life .mlf-stats {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0 22px;
+}
+.mylogs-my-life .mlf-stat {
+	display: flex;
+	align-items: baseline;
+	gap: 5px;
+}
+.mylogs-my-life .mlf-stat-value {
+	color: var(--mlf-ink);
+	font-size: 16px;
+	font-weight: 600;
+	letter-spacing: -0.02em;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-my-life .mlf-stat-label {
+	color: var(--mlf-muted);
+	font-size: 11.5px;
+}
+.mylogs-my-life .mlf-written {
+	color: var(--mlf-faint);
+	font-size: 11.5px;
+}
+
+/* ── section cards ── */
+.mylogs-my-life .mlf-cards {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+.mylogs-my-life .mlf-card {
+	border: 1px solid var(--mlf-line);
+	border-radius: var(--mlf-radius);
+	background: var(--mlf-card);
+	overflow: hidden;
+}
+.mylogs-my-life .mlf-card.is-empty {
+	background: transparent;
+	border-style: dashed;
+}
+.mylogs-my-life .mlf-card-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 0 12px 0 0;
+}
+.mylogs-my-life button.mlf-card-toggle {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: 1 1 auto;
+	min-width: 0;
+	height: auto;
+	padding: 11px 14px;
+	border: 0;
+	border-radius: 0;
+	background: none;
+	box-shadow: none;
+	color: var(--mlf-ink);
+	font-family: var(--mlf-font);
+	text-align: left;
+	cursor: pointer;
+}
+.mylogs-my-life button.mlf-card-toggle:hover {
+	background: var(--mlf-hover);
+}
+.mylogs-my-life .mlf-chevron {
+	display: inline-flex;
+	color: var(--mlf-faint);
+	transition: transform 0.15s ease;
+}
+.mylogs-my-life .mlf-chevron svg {
+	width: 14px;
+	height: 14px;
+}
+.mylogs-my-life .mlf-card.is-collapsed .mlf-chevron {
+	transform: rotate(-90deg);
+}
+.mylogs-my-life h3.mlf-card-title {
+	margin: 0;
+	color: var(--mlf-ink);
+	font-family: var(--mlf-font);
+	font-size: 13px;
+	font-weight: 700;
+	letter-spacing: 0.01em;
+}
+.mylogs-my-life .mlf-card.is-empty h3.mlf-card-title {
+	color: var(--mlf-muted);
+}
+.mylogs-my-life .mlf-card-hint {
+	color: var(--mlf-faint);
+	font-size: 11px;
+}
+.mylogs-my-life .mlf-card-tools {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: 0 0 auto;
+}
+.mylogs-my-life .mlf-save-status {
+	color: var(--mlf-faint);
+	font-size: 11px;
+}
+.mylogs-my-life .mlf-save-status.is-error {
+	color: var(--mlf-warn);
+	font-weight: 600;
+}
+.mylogs-my-life .mlf-card-body {
+	padding: 2px 16px 14px 36px;
+}
+.mylogs-my-life .mlf-card.is-collapsed .mlf-card-body {
+	display: none;
+}
+.mylogs-my-life .mlf-card-none {
+	color: var(--mlf-faint);
+	font-size: 12.5px;
+}
+.mylogs-my-life .mlf-card-note {
+	border-color: var(--mlf-accent-soft);
+	border-left: 3px solid var(--mlf-accent);
+}
+.mylogs-my-life .mlf-card-note h3.mlf-card-title {
+	color: var(--mlf-accent);
+}
+
+/* rendered markdown (quotes carry the user's own words) */
+.mylogs-my-life .mlf-md {
+	color: var(--mlf-ink);
+	font-size: 13.5px;
+	line-height: 1.65;
+}
+.mylogs-my-life .mlf-md > :first-child {
+	margin-top: 0;
+}
+.mylogs-my-life .mlf-md > :last-child {
+	margin-bottom: 0;
+}
+.mylogs-my-life .mlf-md p {
+	margin: 0 0 0.6em;
+}
+.mylogs-my-life .mlf-md ul,
+.mylogs-my-life .mlf-md ol {
+	margin: 0;
+	padding-inline-start: 1.25em;
+}
+.mylogs-my-life .mlf-md li {
+	margin: 0;
+	padding: 2px 0;
+}
+.mylogs-my-life .mlf-md li::marker {
+	color: var(--mlf-faint);
+}
+.mylogs-my-life .mlf-md blockquote {
+	margin: 4px 0 6px;
+	padding: 2px 0 2px 12px;
+	border-left: 2px solid var(--mlf-accent);
+	color: var(--mlf-ink);
+	font-size: 14px;
+	line-height: 1.6;
+}
+.mylogs-my-life .mlf-md blockquote p {
+	margin: 0;
+}
+.mylogs-my-life .mlf-md h3,
+.mylogs-my-life .mlf-md h4 {
+	margin: 12px 0 4px;
+	color: var(--mlf-ink-2);
+	font-family: var(--mlf-font);
+	font-size: 12.5px;
+	font-weight: 700;
+	letter-spacing: 0.02em;
+}
+.mylogs-my-life .mlf-md h3:first-child {
+	margin-top: 0;
+}
+.mylogs-my-life .mlf-md table {
+	width: 100%;
+	margin: 4px 0 6px;
+	border-collapse: collapse;
+	font-size: 12.5px;
+}
+.mylogs-my-life .mlf-md th,
+.mylogs-my-life .mlf-md td {
+	padding: 5px 8px;
+	border: 0;
+	border-bottom: 1px solid var(--mlf-line);
+	text-align: left;
+	vertical-align: top;
+}
+.mylogs-my-life .mlf-md th {
+	color: var(--mlf-muted);
+	font-weight: 600;
+	font-size: 11.5px;
+}
+.mylogs-my-life .mlf-md tr:last-child td {
+	border-bottom: 0;
+}
+.mylogs-my-life .mlf-md a.tag {
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--mlf-muted);
+	font-size: 0.86em;
+}
+.mylogs-my-life .mlf-md a.tag[href="#sample"],
+.mylogs-my-life .mlf-md a.tag[href="#test"] {
+	color: var(--mlf-faint);
+	font-size: 0.78em;
+}
+.mylogs-my-life .mlf-md a.internal-link {
+	color: var(--mlf-accent);
+	text-decoration: none;
+}
+.mylogs-my-life .mlf-md a.internal-link:hover {
+	text-decoration: underline;
+}
+
+/* 사용자 한마디 editor */
+.mylogs-my-life .mlf-note-body {
+	padding-top: 6px;
+}
+.mylogs-my-life textarea.mlf-note {
+	display: block;
+	width: 100%;
+	min-height: 72px;
+	padding: 8px 10px;
+	border: 1px solid var(--mlf-line-strong);
+	border-radius: var(--mlf-radius);
+	background: var(--mlf-bg);
+	box-shadow: none;
+	color: var(--mlf-ink);
+	font: 13.5px/1.6 var(--mlf-font);
+	resize: none;
+}
+.mylogs-my-life textarea.mlf-note:focus {
+	border-color: var(--mlf-accent);
+	box-shadow: 0 0 0 3px var(--mlf-accent-soft);
+	outline: none;
+}
+.mylogs-my-life textarea.mlf-note::placeholder {
+	color: var(--mlf-faint);
+}
+.mylogs-my-life .mlf-conflict {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 6px;
+	padding: 6px 10px;
+	border-radius: var(--mlf-radius);
+	background: var(--mlf-warn-bg);
+	color: var(--mlf-warn);
+	font-size: 12px;
+}
+.mylogs-my-life .mlf-conflict-icon {
+	display: inline-flex;
+}
+.mylogs-my-life .mlf-conflict-icon svg {
+	width: 13px;
+	height: 13px;
+}
+.mylogs-my-life .mlf-conflict-sep {
+	color: var(--mlf-faint);
+}
+
+/* ── missing file / empty ── */
+.mylogs-my-life .mlf-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 8px;
+	margin-top: 6px;
+	padding: 28px 24px;
+	border: 1px dashed var(--mlf-line-strong);
+	border-radius: var(--mlf-radius);
+}
+.mylogs-my-life .mlf-empty-title {
+	color: var(--mlf-ink);
+	font-size: 16px;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+}
+.mylogs-my-life code.mlf-empty-path {
+	padding: 0;
+	background: none;
+	color: var(--mlf-muted);
+	font-family: var(--font-monospace);
+	font-size: 11.5px;
+	word-break: break-all;
+}
+.mylogs-my-life .mlf-empty-hint {
+	color: var(--mlf-muted);
+	font-size: 12.5px;
+}
+
+/* ── Diary ── */
+.mylogs-my-life .mlf-diary-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 8px 16px;
+	margin-bottom: 18px;
+}
+.mylogs-my-life .mlf-diary-nav {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.mylogs-my-life h2.mlf-diary-month {
+	min-width: 7.5em;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	color: var(--mlf-ink);
+	font-family: var(--mlf-font);
+	font-size: 18px;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+	text-align: center;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-my-life .mlf-diary-sum {
+	color: var(--mlf-muted);
+	font-size: 12px;
+}
+.mylogs-my-life .mlf-diary {
+	display: flex;
+	flex-direction: column;
+	gap: 22px;
+}
+.mylogs-my-life .mlf-diary-day {
+	display: grid;
+	grid-template-columns: 132px minmax(0, 1fr);
+	gap: 4px 20px;
+	padding-top: 14px;
+	border-top: 1px solid var(--mlf-line-strong);
+}
+.mylogs-my-life .mlf-diary-day.is-monthly {
+	border-top: 2px solid var(--mlf-accent);
+}
+.mylogs-my-life .mlf-diary-date {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 4px;
+	grid-row: 1 / span 10;
+}
+.mylogs-my-life a.mlf-diary-link {
+	color: var(--mlf-ink);
+	font-size: 14px;
+	font-weight: 700;
+	letter-spacing: -0.01em;
+	text-decoration: none;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-my-life .mlf-diary-day.is-monthly a.mlf-diary-link {
+	color: var(--mlf-accent);
+}
+.mylogs-my-life a.mlf-diary-link:hover {
+	text-decoration: underline;
+}
+.mylogs-my-life .mlf-diary-path {
+	color: var(--mlf-faint);
+	font-family: var(--font-monospace);
+	font-size: 10px;
+	line-height: 1.4;
+	word-break: break-all;
+}
+.mylogs-my-life .mlf-diary-entry {
+	grid-column: 2;
+	min-width: 0;
+	padding-bottom: 6px;
+}
+.mylogs-my-life .mlf-diary-section {
+	margin-bottom: 2px;
+	color: var(--mlf-muted);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.06em;
+}
+
+/* ── narrow panes ── */
+@container (max-width: 640px) {
+	.mylogs-my-life {
+		padding: 24px 16px 48px;
+	}
+	.mylogs-my-life h1.mlf-title {
+		font-size: 26px;
+	}
+	.mylogs-my-life .mlf-card-body {
+		padding-left: 16px;
+	}
+	.mylogs-my-life .mlf-diary-day {
+		grid-template-columns: 1fr;
+	}
+	.mylogs-my-life .mlf-diary-date {
+		grid-row: auto;
+		flex-direction: row;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 4px 10px;
+	}
+	.mylogs-my-life .mlf-diary-entry {
+		grid-column: 1;
+	}
+}
+/* ===== /My Life view ===== */

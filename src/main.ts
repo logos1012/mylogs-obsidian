@@ -6,15 +6,18 @@ import { VIEW_TYPE_WALL_CALENDAR, WallCalendarView } from "./wall/view.ts";
 import { refreshDeskCalendars, registerDeskCalendar } from "./desk/register.ts";
 import { refreshProjectFolders, registerProjectFolders } from "./projects/register.ts";
 import { refreshDrawers, registerDrawer } from "./drawer/register.ts";
+import { activateMyLife, refreshMyLife, registerMyLife } from "./mylife/register.ts";
 
 /*
- * MyLogs — Daily Pad, Pinboard, Wall Calendar, Desk Calendar, Project Folders, Drawer views.
+ * MyLogs — Daily Pad, Pinboard, Wall Calendar, Desk Calendar, Project Folders, Drawer, My Life views.
  *
  * Desk Calendar view (`mylogs-desk-calendar`, drag & drop allocation): src/desk/.
  * Project Folders view (`mylogs-project-folders`, kanban / list / 완료 타임라인): src/projects/.
  * Drawer view (`mylogs-drawer`, 후보 띠 / 세 열 / 꺼내기·놓아주기 dock): src/drawer/.
+ * My Life view (`mylogs-my-life`, 날짜 + 오늘/이번 주/이번 달/올해/Diary 탭, read-only but 사용자 한마디): src/mylife/.
  *
  * Still out of scope (see the vault's `MyLogs Plugin 계획.md`):
+ * TODO(My Life AGENTS 「4」): writing or regenerating My Life files (Hermes does that); index editing; Weekly/Monthly charts.
  * TODO(계획 §4 「못 한 일 버튼」): 다른 날 / 미래로 / 서랍에 / 쪼개기 / 놓아주기, moved count, 3rd-move questions.
  * TODO(계획 「기본 방침」 5, 「결정할 것」 1): index updates (Daily Pad Index.md, Desk Calendar Index.md).
  * TODO(계획 §6 「후보」): Drawer 「프로젝트 후보」 in the Project Folders 후보 column (separate task).
@@ -44,6 +47,7 @@ export default class MyLogsPlugin extends Plugin {
 			refreshDeskCalendars(this);
 			refreshProjectFolders(this);
 			refreshDrawers(this);
+			refreshMyLife(this);
 		},
 		600,
 		true,
@@ -80,12 +84,25 @@ export default class MyLogsPlugin extends Plugin {
 		registerDeskCalendar(this);
 		registerProjectFolders(this);
 		registerDrawer(this);
+		registerMyLife(this);
 
 		this.addSettingTab(new MyLogsSettingTab(this.app, this));
 	}
 
 	async activateDailyPad(): Promise<void> {
 		await this.activateView(VIEW_TYPE_DAILY_PAD);
+	}
+
+	/** Daily Pad on a given date (My Life ↔ Daily Pad cross-navigation). */
+	async openDailyPadAt(date: string): Promise<void> {
+		await this.activateDailyPad();
+		const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_DAILY_PAD)[0];
+		if (leaf?.view instanceof DailyPadView) await leaf.view.goTo(date);
+	}
+
+	/** My Life on a given date (its 오늘 tab). */
+	async activateMyLife(date?: string): Promise<void> {
+		await activateMyLife(this, date);
 	}
 
 	async activatePinboard(): Promise<void> {
