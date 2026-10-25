@@ -4,7 +4,7 @@
 화면에서 고치면 볼트의 마크다운 파일에 바로 반영됩니다. 정본은 언제나 `.md` 파일이고, 플러그인은 그 파일을 읽고 쓰는 **창**입니다. 플러그인을 꺼도 데이터는 그대로 남습니다.
 
 > 현재 버전 **0.2.0**: Daily Pad, Pinboard, Wall Calendar, Desk Calendar 화면이 들어 있습니다.
-> My Life(기록), Drawer, Shelf 화면은 파일 형식이 정해지면 추가합니다.
+> Shelf 화면은 파일 형식이 정해지면 추가합니다.
 
 ## 화면과 명령
 
@@ -17,6 +17,7 @@
 | Project Folders | "Project Folders 열기", "새 프로젝트 만들기", "완료 타임라인 열기" | 프로젝트 칸반(후보 → 진행 → 대기 → 보류 → 완료) ↔ 리스트(area별), 개인/회사 필터. 카드를 끌면 허브 `status`·월별 로그·로그 인덱스·등록부를 함께 갱신, 완료는 Archive Box로 옮김. 14일 넘게 멈춘 진행 카드는 계속/보류/종료를 물음. 새 프로젝트는 템플릿으로 생성 (개발 중) |
 | Drawer | "Drawer 열기", "Drawer에 넣기" | `06 Drawer/Drawer.md` 한 파일. 위: 오늘 들어온 후보(Daily Pad 결정 대기의 `#서랍후보`·`#프로젝트후보`, 넣기 / 놓아주기). 가운데: 보류 / 아이디어 / 프로젝트 후보 세 열. 아래: 꺼내기(오늘 / 이달 Desk / Wall·달 선택 / 프로젝트로)와 놓아주기 칸. 카드를 끌어 섹션을 옮기거나 꺼내고(보낸 곳에 `(from:: Drawer)` 줄, Drawer 줄은 `[>] → [[보낸 곳]]`), 놓아주면 `[-] (why::)`. `when::` 칩이 목표 id면 Pinboard로, `reviewed` 90일 지나면 "아직도 원하나요?". 모든 쓰기는 「변경 기록」 한 줄 + `updated` (개발 중) |
 | My Life | "My Life 열기" | 지나간 시간의 기록(`08 My Life/`). 날짜를 고르고 **오늘 / 이번 주 / 이번 달 / 올해 / Diary** 탭으로 그날의 Daily, 그 주의 Weekly(ISO 주), 그 달의 Monthly, 그 해의 Yearly를 섹션 카드로 읽음. frontmatter 숫자(세션·항목·놓아줌·걸러냄·상태)는 한 줄 요약, `#sample`·`sample: true`는 「샘플」 표시, 카드 접기는 탭별로 기억. 파일은 Hermes가 쓰므로 **읽기 전용**이고 「만들기」 버튼이 없음. 예외는 Weekly 이상 `## 사용자 한마디`만 — 여기서 쓰면 그 섹션만 저장. **Diary** 탭은 그 달 Daily 전부의 `## 깨달음·감상`·`## 로그`와 Monthly의 `## 깨달음·감상`을 날짜순으로 모아 원문 그대로 보여 주고(달 이동), 각 항목에서 원본 파일로 감. "Daily Pad 열기"로 같은 날짜의 Daily Pad를, Daily Pad의 책 아이콘으로 다시 My Life를 연다 |
+| Toolbox | "Toolbox 열기", "새 스킬 만들기" | `11 Toolbox/` 스킬 등록부 표 한 장: 이름(파일 열기) · 하는 일(「목적」 첫 줄) · 트리거/schedule · 출력 · 상태 · 마지막 실행·결과 · 마지막 검토. 상태는 행의 **멈춤 / 시험 / 사용** 3단 버튼(시험·사용은 무엇이 켜지는지 보여 주고 확인; 스킬 frontmatter `status`·`updated`, 등록부 상태 칸, 변경 기록 한 줄). **지금 실행**은 등록부 「실행 요청」에 `- [ ] T-NN (requested:: 시각)`을 붙이고(실행은 Hermes), 대기 건은 배지, 처리된 `[x]`는 7일 동안 흐리게. `last_run` 없거나 90일 지남 → 흐리게 + "아직도 쓰나요?", `last_result` 실패 → 빨간 점과 이유, 20개 초과 → 머리 알림. 우클릭: 수정(이름·트리거·schedule·출력·알림; 이름은 파일도 바꿈) / 폐기(폐기일·이유 → 「폐기」 표로, 파일은 그대로). 새 스킬은 `_Templates/스킬.md`로 생성(다음 `T-NN`, `status: 멈춤`, 등록부 행). 파일은 있는데 행이 없으면 "등록부에 없음" + 등록, 행만 있으면 취소선 |
 
 모든 쓰기는 바뀐 줄만 고치고, 쓰기 직전에 파일이 그새 바뀌지 않았는지 확인합니다.
 
@@ -121,6 +122,7 @@ updated: 2026-10-24
 | Project Folders / 완료 보관 폴더 | `05 Project Folders` / `10 Archive Box/Projects` |
 | Drawer 파일 | `06 Drawer/Drawer.md` |
 | My Life 폴더 | `08 My Life` (`01 Daily/<YYYY>/<YYYY-MM>/`, `02 Weekly/<GGGG>/`, `03 Monthly/<YYYY>/`, `04 Yearly/`) |
+| Toolbox 폴더 | `11 Toolbox` (`<이름>.md`, `Toolbox Index.md`, `_Templates/스킬.md`) |
 | 섹션 이름 | `오늘 할 일`, `메모`, `로그`, `끼적임`, `자료`, `결정 대기` |
 | 자동 저장 지연 | 800 ms |
 | 테스트 데이터 표시 | 켬 (`#test` 항목에 작은 표시) |
@@ -151,6 +153,7 @@ npm run dev     # 고칠 때마다 다시 빌드
 - `src/settings.ts`: 설정 탭.
 - `src/desk/`, `src/projects/`, `src/drawer/`: 화면마다 `model.ts`(읽기)·`ops.ts`(순수 쓰기 변환)·`actions.ts`(볼트 쓰기)·`view.ts`·`register.ts`. 순수 모듈만 테스트합니다.
 - `src/mylife/`: My Life 화면. `model.ts`(경로·ISO 주·섹션 파싱·사용자 한마디 쓰기·Diary 모음, 순수)·`view.ts`·`register.ts`. 픽스처는 볼트의 김하루 샘플(`test/fixtures/my-life/`).
+- `src/toolbox/`: Toolbox 화면. `model.ts`(스킬 파싱·다음 id·배지·등록부 행 대조, 순수)·`ops.ts`(등록부 표·실행 요청·상태·폐기·수정 변환, 순수)·`actions.ts`·`modals.ts`·`view.ts`·`register.ts`. 픽스처는 볼트의 `11 Toolbox/` 복사본(`test/fixtures/toolbox/`).
 - `test/fixtures/`: 볼트의 테스트 데이터(`#test`) 복사본과 Python 참고 구현의 출력. 파서가 Python과 똑같이 읽는지 비교합니다.
 
 릴리스: `manifest.json`·`package.json`·`versions.json`의 버전을 올리고, 같은 이름의 태그(예: `0.1.1`, 앞에 `v` 없음)를 push하면 GitHub Actions가 `main.js`, `manifest.json`, `styles.css`를 릴리스에 올립니다.
