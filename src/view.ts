@@ -726,6 +726,9 @@ export class DailyPadView extends ItemView {
 			if (f) void this.app.workspace.getLeaf(Keymap.isModEvent(e)).openFile(f);
 			else new Notice("아직 이 날의 Daily Pad 파일이 없어요.");
 		});
+		const life = nav.createEl("button", { cls: "ml-btn ml-btn-icon ml-open-life", attr: { type: "button", "aria-label": "같은 날짜의 My Life 열기", title: "My Life 열기" } });
+		setIcon(life, "book-open");
+		life.addEventListener("click", () => void this.plugin.activateMyLife(this.date));
 	}
 
 	// ── empty state ──
