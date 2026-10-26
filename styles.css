@@ -7518,3 +7518,59 @@ body.is-mobile .mylogs-modal select,
 body.is-mobile .mylogs-modal textarea {
 	font-size: 16px;
 }
+
+/* ── Daily Pad ── */
+body.is-mobile .mylogs-daily-pad .ml-top {
+	align-items: flex-start;
+	gap: 12px;
+}
+body.is-mobile .mylogs-daily-pad h1.ml-date {
+	font-size: 26px;
+}
+body.is-mobile .mylogs-daily-pad .ml-nav {
+	flex-wrap: wrap;
+	gap: 8px;
+	width: 100%;
+}
+body.is-mobile .mylogs-daily-pad .ml-nav button.ml-btn {
+	min-width: 44px;
+	min-height: 44px;
+	justify-content: center;
+}
+body.is-mobile .mylogs-daily-pad input.ml-date-input {
+	flex: 1 1 140px;
+	height: 44px;
+	padding: 0 12px;
+	font-size: 16px;
+}
+body.is-mobile .mylogs-daily-pad .ml-panel-hint {
+	display: none;
+}
+body.is-mobile .mylogs-daily-pad button.ml-edit-btn {
+	min-height: 44px;
+	min-width: 56px;
+	opacity: 1;
+}
+body.is-mobile .mylogs-daily-pad .ml-check {
+	position: relative;
+}
+/* 44 px hit area around the small checkbox, without moving the layout. */
+body.is-mobile .mylogs-daily-pad button.ml-check::after {
+	content: "";
+	position: absolute;
+	inset: -12px;
+}
+body.is-mobile .mylogs-daily-pad input.ml-quick-add-input {
+	min-height: 44px;
+	font-size: 16px;
+}
+body.is-mobile .mylogs-daily-pad textarea.ml-editor {
+	font-size: 16px;
+}
+body.is-mobile .mylogs-daily-pad .ml-btn-primary {
+	min-height: 48px;
+}
+/* On-screen keyboard: the editing section can still scroll above it (src/ui/mobile.ts trackKeyboard). */
+body.is-mobile .mylogs-daily-pad:has(.ml-section.is-editing) {
+	padding-bottom: calc(45vh + var(--mylogs-kb, 0px));
+}
