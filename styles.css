@@ -7375,3 +7375,146 @@
 	}
 }
 /* ===== /Diary view ===== */
+
+/* ===== mobile ===== */
+/* MyLogs Plugin 계획 「11. 모바일」. Every rule here is scoped under body.is-mobile (Obsidian adds it on
+   phones and tablets); desktop rules above are untouched. Shared kit first, then one block per view. */
+
+/* ── kit: long press, picker, tabs, ⋯, FAB ── */
+body.is-mobile .mylogs-touch [draggable="true"] {
+	-webkit-user-drag: none;
+}
+body.is-mobile .mylogs-touch .dc-it,
+body.is-mobile .mylogs-touch .dr-card,
+body.is-mobile .mylogs-touch .dr-cand,
+body.is-mobile .mylogs-touch .wc-item,
+body.is-mobile .mylogs-touch .pf-card,
+body.is-mobile .mylogs-touch .dy-row,
+body.is-mobile .mylogs-touch .tb-row,
+body.is-mobile .mylogs-touch .pb-kr,
+body.is-mobile .mylogs-touch .pb-goal-head,
+body.is-mobile .mylogs-touch .pb-log li {
+	-webkit-touch-callout: none;
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-tap-highlight-color: transparent;
+}
+body.is-mobile .mylogs-pick-modal .mylogs-pick-title {
+	padding: 14px 16px 6px;
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--text-normal);
+}
+body.is-mobile .mylogs-pick-modal.is-sheet .prompt-input-container {
+	display: none;
+}
+body.is-mobile .mylogs-pick-modal .suggestion-item.mylogs-pick-item {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-height: 48px;
+	padding: 8px 16px;
+}
+body.is-mobile .mylogs-pick-modal .mylogs-pick-icon {
+	display: inline-flex;
+	color: var(--text-muted);
+}
+body.is-mobile .mylogs-pick-modal .mylogs-pick-label {
+	font-size: 16px;
+}
+body.is-mobile .mylogs-pick-modal .mylogs-pick-sub {
+	font-size: 12.5px;
+	color: var(--text-muted);
+}
+body.is-mobile .mylogs-m-tabs {
+	position: sticky;
+	top: 0;
+	z-index: 5;
+	display: flex;
+	gap: 4px;
+	margin: 0 0 12px;
+	padding: 4px;
+	overflow-x: auto;
+	scrollbar-width: none;
+	border-radius: 12px;
+	background: var(--background-secondary);
+	-webkit-overflow-scrolling: touch;
+}
+body.is-mobile .mylogs-m-tabs::-webkit-scrollbar {
+	display: none;
+}
+body.is-mobile button.mylogs-m-tab {
+	flex: 1 0 auto;
+	min-height: 44px;
+	padding: 0 14px;
+	border: 0;
+	border-radius: 9px;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+	font-size: 14.5px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+body.is-mobile button.mylogs-m-tab.is-active {
+	background: var(--background-primary);
+	color: var(--text-normal);
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+body.is-mobile .mylogs-m-tab-n {
+	margin-left: 6px;
+	font-size: 12px;
+	font-weight: 500;
+	opacity: 0.7;
+}
+body.is-mobile button.mylogs-m-more {
+	flex: none;
+	min-width: 44px;
+	min-height: 44px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+	font-size: 20px;
+	line-height: 1;
+	opacity: 1;
+}
+body.is-mobile button.mylogs-m-fab {
+	position: fixed;
+	right: 16px;
+	bottom: calc(16px + env(safe-area-inset-bottom, 0px) + var(--mylogs-kb, 0px));
+	z-index: 20;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 52px;
+	padding: 0 20px;
+	border: 0;
+	border-radius: 26px;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-size: 15px;
+	font-weight: 600;
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+}
+body.is-mobile .mylogs-m-fab-icon {
+	display: inline-flex;
+}
+body.is-mobile input.mylogs-m-file {
+	position: fixed;
+	left: -9999px;
+	width: 1px;
+	height: 1px;
+	opacity: 0;
+}
+/* Inputs ≥ 16 px: iOS zooms the page into anything smaller. */
+body.is-mobile [class^="mylogs-"] input[type="text"],
+body.is-mobile [class^="mylogs-"] input[type="date"],
+body.is-mobile [class^="mylogs-"] input:not([type]),
+body.is-mobile [class^="mylogs-"] select,
+body.is-mobile .mylogs-modal input,
+body.is-mobile .mylogs-modal select,
+body.is-mobile .mylogs-modal textarea {
+	font-size: 16px;
+}
