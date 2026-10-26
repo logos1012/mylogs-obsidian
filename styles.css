@@ -7720,3 +7720,96 @@ body.is-mobile .dy-m-calmodal .dy-m-cal-n {
 	right: 4px;
 	font-size: 10px;
 }
+
+/* ── Desk Calendar: one day per screen + tabs (src/desk/mobile.ts) ── */
+body.is-mobile .mylogs-desk-calendar.dc-m .dc-top {
+	align-items: flex-start;
+	gap: 10px;
+	padding-bottom: 14px;
+}
+body.is-mobile .mylogs-desk-calendar.dc-m h1 {
+	font-size: 28px;
+}
+body.is-mobile .mylogs-desk-calendar.dc-m .dc-right {
+	width: 100%;
+	text-align: left;
+}
+body.is-mobile .mylogs-desk-calendar.dc-m .dc-nav {
+	justify-content: flex-start;
+	flex-wrap: wrap;
+}
+body.is-mobile .mylogs-desk-calendar.dc-m .mylogs-m-tabs {
+	margin-top: 14px;
+}
+body.is-mobile .mylogs-desk-calendar .dc-btn {
+	min-width: 44px;
+	height: 44px;
+	justify-content: center;
+	font-size: 14px;
+}
+body.is-mobile .mylogs-desk-calendar .dc-m-nav {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 4px 0 12px;
+}
+body.is-mobile .mylogs-desk-calendar .dc-m-nav-label {
+	flex: 1;
+	font-size: 17px;
+	font-weight: 600;
+	text-align: center;
+	color: var(--dc-ink);
+}
+body.is-mobile .mylogs-desk-calendar .dc-m-nav-label.is-today {
+	color: var(--dc-accent);
+}
+body.is-mobile .mylogs-desk-calendar .dc-m-cell > .dc-cell {
+	min-height: 0;
+	padding: 12px 14px 14px;
+	border: 1px solid var(--dc-line);
+	border-radius: 12px;
+}
+body.is-mobile .mylogs-desk-calendar .dc-m-cell .dc-dhead .dc-dnum {
+	font-size: 20px;
+}
+body.is-mobile .mylogs-desk-calendar .dc-items {
+	gap: 2px;
+}
+body.is-mobile .mylogs-desk-calendar .dc-it {
+	align-items: center;
+	min-height: 44px;
+	padding: 4px 0;
+	font-size: 15px;
+}
+body.is-mobile .mylogs-desk-calendar .dc-it.dc-m-tappable {
+	cursor: pointer;
+}
+body.is-mobile .mylogs-desk-calendar .dc-body {
+	flex: 1;
+	min-width: 0;
+}
+/* 44 px hit area around the checkbox symbol. */
+body.is-mobile .mylogs-desk-calendar .dc-sym.is-clickable {
+	flex-basis: 28px;
+	width: 28px;
+	height: 28px;
+}
+body.is-mobile .mylogs-desk-calendar .dc-sym.is-clickable::before {
+	transform: translate(8px, 5px) scale(1.4);
+}
+body.is-mobile .mylogs-desk-calendar .dc-more {
+	align-self: center;
+	min-width: 44px;
+	height: 44px;
+	font-size: 18px;
+	line-height: 44px;
+	opacity: 1;
+}
+body.is-mobile .mylogs-desk-calendar .dc-band {
+	margin-top: 0;
+}
+body.is-mobile .mylogs-desk-calendar .dc-m-foot {
+	margin-top: 16px;
+	color: var(--dc-muted);
+	font-size: 12.5px;
+}

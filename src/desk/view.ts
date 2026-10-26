@@ -1,4 +1,4 @@
-import { ItemView, Keymap, Menu, moment, normalizePath, Notice, setIcon, type TAbstractFile, TFile, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
+import { ItemView, Keymap, Menu, moment, normalizePath, Notice, Platform, setIcon, type TAbstractFile, TFile, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { addDays } from "../parser.ts";
 import {
@@ -24,6 +24,8 @@ import {
 	weekMondays,
 } from "./model.ts";
 import { createDeskMonth, deskMonthPath, logDeskChange } from "./actions.ts";
+import { type DeskMobileHost, renderDeskMobile } from "./mobile.ts";
+import { runDeskTarget } from "./mobile-targets.ts";
 import { askThirdMove, pickDate, pickMonth, promptText } from "./modals.ts";
 import { askForm, confirmDelete } from "../ui/modals.ts";
 import { askWhen } from "../drawer/modals.ts";
@@ -217,6 +219,7 @@ export class DeskCalendarView extends ItemView {
 	// ── rendering ──
 
 	private render(): void {
+		if (Platform.isMobile) return renderDeskMobile(this.mobileHost());
 		const root = this.rootEl;
 		const scrollTop = this.contentEl.scrollTop;
 		root.empty();
@@ -258,6 +261,46 @@ export class DeskCalendarView extends ItemView {
 			}
 		}
 		this.contentEl.scrollTop = scrollTop;
+	}
+
+	/** What the mobile layout (`./mobile.ts`) may use: the desktop cells, and the drop zones' calls. */
+	private mobileHost(): DeskMobileHost {
+		const ctx = (): Ctx => this.ctx!;
+		const cur = (): MonthData => this.ctx!.cur!;
+		return {
+			app: this.app,
+			contentEl: this.contentEl,
+			rootEl: this.rootEl,
+			month: this.month,
+			begin: () => {
+				this.rootEl.empty();
+				this.zones = [];
+				const months = [...this.months.values()];
+				const c = this.months.get(this.month) ?? null;
+				this.ctx = { cur: c, months, didx: dayIndex(months), widx: weekAllocIndex(months), today: todayIsoLocal() };
+				return { cur: c, today: this.ctx.today };
+			},
+			goTo: (m) => this.goTo(m),
+			renderHeader: (root) => this.renderHeader(root, ctx()),
+			renderEmpty: (root) => this.renderEmpty(root),
+			renderBands: (root) => this.renderBands(root, cur(), ctx()),
+			renderDayCell: (row, iso) => this.renderDayCell(row, iso, cur(), ctx()),
+			renderAllocCell: (row, monday) => this.renderAllocCell(row, monday, cur(), ctx()),
+			dayItems: (iso) => ctx().months.find((m) => m.key === iso.slice(0, 7))?.days.get(iso) ?? [],
+			allocItems: (monday) => allocWeek(ctx(), monday)?.alloc ?? [],
+			weekSlots: () => weekMondays(cur().year, cur().month).map((monday) => ({ monday, no: isoWeekNo(monday), fileKey: allocFileOf(monday), hasAlloc: !!allocWeek(ctx(), monday) })),
+			daySlots: () => weekMondays(cur().year, cur().month).flatMap((monday) => Array.from({ length: 7 }, (_, i) => addDays(monday, i)).map((iso) => ({ iso, exists: dayExists(ctx(), iso) }))),
+			isOpenTask,
+			// The same calls as the drop zones in renderAllocCell / renderDayCell.
+			move: (t, it) =>
+				runDeskTarget(t, it, {
+					assignWeek: (x, monday, no, fileKey) => this.exec(planAssignWeek(x, monday, no, fileKey, ctx().today)),
+					unassign: (x, monday, fileKey) => this.exec(planUnassign(x, findPairAlloc(x, ctx().months), monday, fileKey, ctx().today)),
+					assignDay: (x, iso) => this.exec(planAssignDay(x, iso, ctx().today)),
+					moveToDay: (x, iso) => this.moveToDay(x, iso),
+				}),
+			register: (cb) => this.register(cb),
+		};
 	}
 
 	private renderHeader(root: HTMLElement, ctx: Ctx): void {

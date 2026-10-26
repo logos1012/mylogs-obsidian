@@ -119,4 +119,4 @@ export function filterPickItems<T extends PickItem>(items: T[], query: string): 
 }
 
 /** Lists this short are shown as an action sheet (no search field, no keyboard popping up). */
-export const SHEET_MAX = 12;
+export const SHEET_MAX = 40;
