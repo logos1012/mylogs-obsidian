@@ -7,6 +7,18 @@ import { parseFrontmatterText } from "../src/pinboard/model.ts";
 import { getFmValue } from "../src/projects/ops.ts";
 import { getSectionContent } from "../src/writer.ts";
 import {
+	descriptionWithPhrase,
+	editDelta,
+	initialStatus,
+	isReviewStale,
+	liveStatuses,
+	parseKind,
+	slugProblem,
+	SLUG_RE,
+	statusForKind,
+	STATUSES_BY_KIND,
+	stubAffected,
+	validStatus,
 	failure,
 	firstLine,
 	isStaleSkill,
@@ -39,7 +51,11 @@ import {
 	fillSkillTemplate,
 	leftoverPlaceholders,
 	logToolboxChange,
+	hasKindTable,
+	kindTable,
 	moveRowToDiscarded,
+	moveRowToKind,
+	stripFrontmatterComments,
 	parseRunRequests,
 	parseToolboxRegistry,
 	setSkillStatus,
@@ -49,8 +65,12 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fx = (p: string) => readFileSync(join(here, "fixtures/toolbox", p), "utf8");
-const SKILL = fx("AI 뉴스 브리핑.md");
-const REG = fx("Toolbox Index.md");
+/** Before AGENTS v2.0 (no `kind`, one 「스킬」 table): the tests below them cover the legacy path. */
+const SKILL = fx("legacy/AI 뉴스 브리핑.md");
+const REG = fx("legacy/Toolbox Index.md");
+/** AGENTS v2.0 copies (`kind`, `slug`, `description`; 「운영」「도구」「작업」 tables). */
+const SKILL2 = fx("AI 뉴스 브리핑.md");
+const REG2 = fx("Toolbox Index.md");
 const TEMPLATE = fx("_Templates/스킬.md");
 const FOLDER = "11 Toolbox";
 const TODAY = "2026-10-26";
@@ -256,7 +276,7 @@ test("create: registry row from the new file + 변경 기록 line", () => {
 	assert.equal(rows[1].lastReviewed, TODAY);
 	// the written row: same column order as the header, code cells in backticks
 	assert.match(out, /^\| T-02 \| \[\[11 Toolbox\/볼트 링크 점검\\\|볼트 링크 점검\]\] \| 매주 볼트의 깨진 위키링크를 찾아 목록을 만든다 \| cron \| `0 5 \* \* 1` \| `07 Shelf\/99 작업실\/받은 자료\/\{YYYY-MM-DD\}_링크 점검\.md` \| hermes \| 멈춤 \|  \|  \| 2026-10-26 \|$/m);
-	assert.match(getSectionContent(out, "변경 기록") ?? "", /^- 2026-10-26: T-02 「볼트 링크 점검」 만듦 \(멈춤, cron 0 5 \* \* 1\) \(플러그인\)\n- 2026-10-26: Toolbox 형식 확정/);
+	assert.match(getSectionContent(out, "변경 기록") ?? "", /^- 2026-10-26: T-02 「볼트 링크 점검」 만듦 \(작업, 멈춤, cron 0 5 \* \* 1\) \(플러그인\)\n- 2026-10-26: Toolbox 형식 확정/);
 	// only the row and the 변경 기록 line were added (`updated` already was today); nothing removed
 	assert.deepEqual(diff.removed, []);
 	assert.equal(diff.added.length, 2, JSON.stringify(diff));
@@ -430,4 +450,295 @@ test("등록: a file without a row gets one from the file; a row without a file 
 	const reg = logToolboxChange(r.text, TODAY, changeText.register("T-05", s.name));
 	assert.equal(reconcile([load(), s], parseToolboxRegistry(reg).skills).every((e) => e.kind === "both"), true);
 	assert.match(reg, /T-05 「고아 스킬」 등록부에 행 추가/);
+});
+
+// ═════════════════════════ AGENTS v2.0: kinds (작업 / 도구 / 운영) ═════════════════════════
+
+const TOOL: SkillInput = {
+	kind: "도구",
+	name: "데일리로그 기록",
+	slug: "daily-log",
+	description: "사용자가 오늘 한 일을 말하면 Daily Pad 로그에 시간순으로 적는다.",
+	purpose: "",
+	phrase: "데일리로그 기록해 줘",
+	owner: "claude-code",
+	trigger: "cron",
+	schedule: "",
+	output: "",
+	notify: "",
+};
+const OPS: SkillInput = {
+	kind: "운영",
+	name: "MyLogs 운영",
+	slug: "mylogs-ops",
+	description: "MyLogs 볼트에서 일을 시작할 때마다 먼저 읽는 계약.",
+	purpose: "",
+	scope: "MyLogs 볼트 전체",
+	trigger: "cron",
+	schedule: "",
+	output: "",
+	notify: "",
+};
+const JOB: SkillInput = { ...INPUT, kind: "작업", slug: "vault-link-check", description: "매주 월요일 깨진 위키링크를 찾아 목록으로 만든다." };
+const NOW = new Date(2026, 9, 26, 9, 5);
+
+/** `## ` headings of a text, in order. */
+function headings(t: string): string[] {
+	return [...t.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
+}
+
+test("kind: parsed from frontmatter; missing or unknown → 작업 (back-compat); slug / description", () => {
+	const s = load(SKILL2);
+	assert.equal(s.kind, "작업");
+	assert.equal(s.slug, "ai-news-briefing");
+	assert.match(s.description, /^매일 새벽 X·링크드인·인스타그램에서/);
+	assert.match(s.description, /"AI 뉴스 브리핑 돌려 줘"$/);
+	assert.equal(s.status, "시험");
+	assert.equal(s.lastRun, "2026-10-26T00:25");
+	// a file from before v2.0 (no kind / slug / description)
+	const old = load(SKILL);
+	assert.equal(old.kind, "작업");
+	assert.equal(old.slug, "");
+	assert.equal(old.description, "");
+	assert.equal(parseKind(undefined), "작업");
+	assert.equal(parseKind("도구"), "도구");
+	assert.equal(parseKind("운영"), "운영");
+	assert.equal(parseKind("스킬"), "작업");
+	// the template's comment-only values read as empty (YAML: `key:   # comment`)
+	const { data } = parseFrontmatterText(TEMPLATE);
+	assert.equal(data.kind, "작업");
+	assert.equal(data.slug, null);
+	assert.equal(data.description, null);
+	assert.equal(getFmValue(TEMPLATE, "slug"), "");
+	assert.equal(getFmValue(TEMPLATE, "status"), "멈춤");
+});
+
+test("registry: 운영 / 도구 / 작업 tables parsed in that order; legacy 「스킬」 read as 작업", () => {
+	const r = parseToolboxRegistry(REG2);
+	assert.equal(r.skills.length, 1);
+	assert.equal(r.skills[0].kind, "작업");
+	assert.equal(r.skills[0].id, "T-01");
+	assert.equal(r.skills[0].status, "시험");
+	assert.equal(r.skills[0].lastResult, "실패: 제외 건수 미집계 및 위키 인덱스 확인 불가 (부분 수집, 뉴스 0건)");
+	assert.deepEqual(r.requests.map((q) => [q.id, q.done]), [["T-01", true]]);
+	assert.equal(kindTable(REG2, "작업"), "작업");
+	// rows in every table
+	let reg = REG2;
+	reg = (upsertSkillRow(reg, { id: "T-02" }, { kind: "도구", id: "T-02", nameCell: nameLink(FOLDER, "데일리로그 기록"), slug: "daily-log", scope: "", phrase: "데일리로그 기록해 줘", purpose: "", trigger: "", schedule: "", output: "", owner: "hermes", status: "사용", lastRun: "", lastResult: "", lastReviewed: TODAY }) as { text: string }).text;
+	reg = (upsertSkillRow(reg, { id: "T-03" }, { kind: "운영", id: "T-03", nameCell: nameLink(FOLDER, "MyLogs 운영"), slug: "`mylogs-ops`", scope: "MyLogs 볼트 전체", phrase: "", purpose: "", trigger: "", schedule: "", output: "", owner: "", status: "사용", lastRun: "", lastResult: "", lastReviewed: TODAY }) as { text: string }).text;
+	assert.match(reg, /^\| T-02 \| \[\[11 Toolbox\/데일리로그 기록\\\|데일리로그 기록\]\] \| daily-log \| 데일리로그 기록해 줘 \| hermes \| 사용 \| 2026-10-26 \|$/m);
+	const p = parseToolboxRegistry(reg);
+	assert.deepEqual(p.skills.map((x) => [x.kind, x.id]), [["운영", "T-03"], ["도구", "T-02"], ["작업", "T-01"]]);
+	assert.equal(p.skills[0].scope, "MyLogs 볼트 전체");
+	assert.equal(p.skills[0].slug, "mylogs-ops", "backticks dropped on read");
+	assert.equal(p.skills[1].phrase, "데일리로그 기록해 줘");
+	assert.equal(p.skills[1].owner, "hermes");
+	assert.equal(p.skills[1].purpose, "", "column the table doesn't have");
+	// legacy: one 「스킬」 table
+	const l = parseToolboxRegistry(REG);
+	assert.deepEqual(l.skills.map((x) => [x.kind, x.id, x.status]), [["작업", "T-01", "멈춤"]]);
+	assert.equal(kindTable(REG, "작업"), "스킬");
+	assert.equal(kindTable(REG, "도구"), "도구");
+});
+
+test("status sets per kind: 작업 멈춤/시험/사용, 도구 멈춤/사용, 운영 사용 only; 지금 실행 and run-stale only for 작업", () => {
+	assert.deepEqual([...STATUSES_BY_KIND.작업], ["멈춤", "시험", "사용", "폐기"]);
+	assert.deepEqual([...STATUSES_BY_KIND.도구], ["멈춤", "사용", "폐기"]);
+	assert.deepEqual([...STATUSES_BY_KIND.운영], ["사용", "폐기"]);
+	assert.deepEqual([...liveStatuses("작업")], ["멈춤", "시험", "사용"]);
+	assert.deepEqual([...liveStatuses("도구")], ["멈춤", "사용"]);
+	assert.deepEqual([...liveStatuses("운영")], [], "no toggle, a badge");
+	assert.equal(validStatus("도구", "시험"), false);
+	assert.equal(validStatus("운영", "멈춤"), false);
+	assert.equal(initialStatus("작업"), "멈춤");
+	assert.equal(initialStatus("도구"), "멈춤");
+	assert.equal(initialStatus("운영"), "사용");
+	assert.equal(statusForKind("도구", "시험"), "멈춤");
+	assert.equal(statusForKind("도구", "사용"), "사용");
+	assert.equal(statusForKind("운영", "멈춤"), "사용");
+	assert.equal(statusForKind("작업", "멈춤"), "멈춤");
+	assert.equal(canRequestRun("사용", "도구"), false);
+	assert.equal(canRequestRun("사용", "운영"), false);
+	assert.equal(canRequestRun("시험", "작업"), true);
+	// stale: last_run only for 작업; last_reviewed ≥ 90 days for all kinds
+	assert.equal(isStaleSkill({ kind: "도구", status: "사용", lastRun: "" }, TODAY), false);
+	assert.equal(isStaleSkill({ kind: "운영", status: "사용", lastRun: "" }, TODAY), false);
+	assert.equal(isStaleSkill({ kind: "작업", status: "사용", lastRun: "" }, TODAY), true);
+	assert.equal(isReviewStale({ status: "사용", lastReviewed: "2026-07-28" }, TODAY), true, "90 days");
+	assert.equal(isReviewStale({ status: "사용", lastReviewed: "2026-07-29" }, TODAY), false, "89 days");
+	assert.equal(isReviewStale({ status: "사용", lastReviewed: "" }, TODAY), true);
+	assert.equal(isReviewStale({ status: "폐기", lastReviewed: "2020-01-01" }, TODAY), false);
+	// a 도구 row toggles in its own table
+	const tool = fillSkillTemplate(TEMPLATE, TOOL, "T-02", NOW);
+	const ts = load(tool, `${FOLDER}/데일리로그 기록.md`);
+	const added = upsertSkillRow(REG2, { id: "T-02" }, skillRowOf(ts, FOLDER));
+	assert.ok(added.ok);
+	const on = upsertSkillRow(added.text, { id: "T-02", status: "사용" });
+	assert.ok(on.ok && !on.added);
+	const p = parseToolboxRegistry(on.text).skills;
+	assert.deepEqual(p.map((x) => [x.kind, x.id, x.status]), [["도구", "T-02", "사용"], ["작업", "T-01", "시험"]]);
+});
+
+test("slug validation: lowercase letters, digits, single hyphens; unique", () => {
+	for (const ok of ["ai-news-briefing", "daily-log", "a", "x2", "mylogs-ops-2"]) assert.ok(SLUG_RE.test(ok), ok);
+	for (const bad of ["", "AI-news", "ai_news", "-ai", "ai-", "ai--news", "ai news", "데일리", "ai.news"]) assert.ok(!SLUG_RE.test(bad), bad);
+	assert.equal(slugProblem("daily-log", []), null);
+	assert.match(slugProblem("daily-log", ["daily-log"]) ?? "", /이미 있는 slug/);
+	assert.match(slugProblem("Daily_Log") ?? "", /영문 소문자/);
+	assert.match(slugProblem("  ") ?? "", /slug를 적어/);
+	const taken = { ids: ["T-01"], names: ["AI 뉴스 브리핑"], slugs: ["ai-news-briefing"] };
+	assert.deepEqual(validateSkillInput(TOOL, "T-02", taken), []);
+	assert.deepEqual(validateSkillInput(OPS, "T-02", taken), []);
+	assert.deepEqual(validateSkillInput(JOB, "T-02", taken), []);
+	assert.ok(validateSkillInput({ ...TOOL, slug: "ai-news-briefing" }, "T-02", taken).some((p) => p.includes("이미 있는 slug")));
+	assert.ok(validateSkillInput({ ...TOOL, slug: "" }, "T-02", taken).some((p) => p.includes("slug")));
+	assert.ok(validateSkillInput({ ...TOOL, phrase: "" }, "T-02", taken).some((p) => p.includes("부르는 말")));
+	assert.ok(validateSkillInput({ ...OPS, scope: "" }, "T-02", taken).some((p) => p.includes("범위")));
+	assert.ok(validateSkillInput({ ...OPS, description: "" }, "T-02", taken).some((p) => p.includes("description")));
+	// 도구 / 운영 don't need 작업 fields
+	assert.ok(!validateSkillInput(TOOL, "T-02", taken).some((p) => p.includes("출력")));
+	// 작업 still needs them
+	assert.ok(validateSkillInput({ ...JOB, output: "" }, "T-02", taken).some((p) => p.includes("출력")));
+});
+
+test("descriptionWithPhrase: the 부르는 말 is appended quoted unless already there", () => {
+	assert.equal(descriptionWithPhrase("오늘 로그를 적는다.", "데일리로그 기록해 줘"), '오늘 로그를 적는다. "데일리로그 기록해 줘"');
+	assert.equal(descriptionWithPhrase('오늘 로그를 적는다. "데일리로그 기록해 줘"', "데일리로그 기록해 줘"), '오늘 로그를 적는다. "데일리로그 기록해 줘"');
+	assert.equal(descriptionWithPhrase("오늘 로그를 적는다.", '"로그 적어 줘", "기록해 줘"'), '오늘 로그를 적는다. "로그 적어 줘", "기록해 줘"');
+	assert.equal(descriptionWithPhrase("오늘 로그를 적는다.", ""), "오늘 로그를 적는다.");
+});
+
+test("create 작업: kind / slug / description written, template comments dropped, row in 「작업」 table", () => {
+	const text = fillSkillTemplate(TEMPLATE, JOB, "T-02", NOW);
+	assert.deepEqual(leftoverPlaceholders(text), []);
+	assert.ok(!/^[a-z_]+:.*\s#/m.test(text.split("\n---")[0]), "no frontmatter comments");
+	assert.equal(getFmValue(text, "kind"), "작업");
+	assert.equal(getFmValue(text, "slug"), "vault-link-check");
+	assert.equal(getFmValue(text, "description"), JOB.description);
+	assert.equal(getFmValue(text, "status"), "멈춤");
+	assert.match(text, /^status: 멈춤$/m);
+	assert.match(text, /^last_reviewed: 2026-10-26$/m);
+	assert.deepEqual(headings(text), ["목적", "입력", "절차", "출력 형식", "금지", "완료 조건", "변경 기록"]);
+	const s = load(text, `${FOLDER}/볼트 링크 점검.md`);
+	const r = upsertSkillRow(REG2, { id: "T-02" }, skillRowOf(s, FOLDER));
+	assert.ok(r.ok && r.added);
+	const out = logToolboxChange(r.text, TODAY, changeText.create("T-02", s.name, JOB));
+	const p = parseToolboxRegistry(out).skills;
+	assert.deepEqual(p.map((x) => [x.kind, x.id]), [["작업", "T-01"], ["작업", "T-02"]]);
+	assert.match(getSectionContent(out, "변경 기록") ?? "", /^- 2026-10-26: T-02 「볼트 링크 점검」 만듦 \(작업, 멈춤, cron 0 5 \* \* 1\) \(플러그인\)/);
+	assert.deepEqual(lineDiff(REG2, out).removed, []);
+	assert.equal(lineDiff(REG2, out).added.length, 2);
+});
+
+test("create 도구: 도구 body sections, no 작업-only keys, 멈춤, description carries the 부르는 말, row in 「도구」 table", () => {
+	const text = fillSkillTemplate(TEMPLATE, TOOL, "T-02", NOW);
+	assert.deepEqual(leftoverPlaceholders(text), []);
+	assert.equal(getFmValue(text, "kind"), "도구");
+	assert.equal(getFmValue(text, "status"), "멈춤");
+	assert.equal(getFmValue(text, "owner"), "claude-code");
+	assert.equal(getFmValue(text, "description"), '사용자가 오늘 한 일을 말하면 Daily Pad 로그에 시간순으로 적는다. "데일리로그 기록해 줘"');
+	for (const k of ["trigger", "schedule", "output", "notify", "last_run", "last_result"]) assert.ok(!new RegExp(`^${k}:`, "m").test(text), k);
+	assert.match(text, /^# 데일리로그 기록$/m);
+	assert.deepEqual(headings(text), ["목적", "트리거", "절차", "금지", "완료 조건", "변경 기록"]);
+	assert.match(getSectionContent(text, "변경 기록") ?? "", /^- 2026-10-26: 만듦\.$/);
+	const s = load(text, `${FOLDER}/데일리로그 기록.md`);
+	assert.equal(s.kind, "도구");
+	assert.equal(s.phrase, "데일리로그 기록해 줘");
+	const r = upsertSkillRow(REG2, { id: "T-02" }, skillRowOf(s, FOLDER));
+	assert.ok(r.ok && r.added);
+	assert.match(r.text, /## 도구\n\n[^\n]*\n\n\| id \| 이름 \| slug \| 부르는 말 \| 담당 \| 상태 \| 마지막 검토 \|\n\|[-|]+\|\n\| T-02 \| \[\[11 Toolbox\/데일리로그 기록\\\|데일리로그 기록\]\] \| daily-log \| 데일리로그 기록해 줘 \| claude-code \| 멈춤 \| 2026-10-26 \|\n\n## 작업/);
+	assert.deepEqual(parseToolboxRegistry(r.text).skills.map((x) => [x.kind, x.id]), [["도구", "T-02"], ["작업", "T-01"]]);
+	assert.equal(changeText.create("T-02", s.name, TOOL), "T-02 「데일리로그 기록」 만듦 (도구, 멈춤) (플러그인)");
+	// legacy registry has no 「도구」 table → refused (the caller reports it)
+	const legacy = upsertSkillRow(REG, { id: "T-02" }, skillRowOf(s, FOLDER));
+	assert.ok(!legacy.ok);
+	assert.equal(hasKindTable(REG, "도구"), false);
+	assert.equal(hasKindTable(REG, "작업"), true);
+	assert.equal(hasKindTable(REG2, "운영"), true);
+});
+
+test("create 운영: 운영 body sections, 사용 from the start, row in 「운영」 table", () => {
+	const text = fillSkillTemplate(TEMPLATE, OPS, "T-02", NOW);
+	assert.deepEqual(leftoverPlaceholders(text), []);
+	assert.equal(getFmValue(text, "kind"), "운영");
+	assert.equal(getFmValue(text, "status"), "사용");
+	assert.equal(getFmValue(text, "slug"), "mylogs-ops");
+	assert.ok(!/^trigger:/m.test(text));
+	assert.deepEqual(headings(text), ["목적", "범위", "시작할 때", "경계", "완료 보고", "변경 기록"]);
+	assert.equal(getSectionContent(text, "범위"), "MyLogs 볼트 전체");
+	const s = load(text, `${FOLDER}/MyLogs 운영.md`);
+	assert.equal(s.scope, "MyLogs 볼트 전체");
+	const r = upsertSkillRow(REG2, { id: "T-02" }, skillRowOf(s, FOLDER));
+	assert.ok(r.ok);
+	assert.match(r.text, /\| id \| 이름 \| slug \| 범위 \| 상태 \| 마지막 검토 \|\n\|[-|]+\|\n\| T-02 \| \[\[11 Toolbox\/MyLogs 운영\\\|MyLogs 운영\]\] \| mylogs-ops \| MyLogs 볼트 전체 \| 사용 \| 2026-10-26 \|\n\n## 도구/);
+	assert.equal(changeText.create("T-02", s.name, OPS), "T-02 「MyLogs 운영」 만듦 (운영, 사용) (플러그인)");
+});
+
+test("stripFrontmatterComments: value comments and comment-only values; quoted values kept", () => {
+	const t = '---\nkind: 작업   # a | b\nslug:      # hint\nschedule: "0 4 * * *"  # c\nname: 가 #나\n---\n# x #y\n';
+	assert.equal(stripFrontmatterComments(t), '---\nkind: 작업\nslug:\nschedule: "0 4 * * *"  # c\nname: 가\n---\n# x #y\n', "YAML: a space before # starts a comment");
+});
+
+test("수정 kind change: file kind + status, 「트리거」 inserted, the row moves 「작업」 → 「도구」", () => {
+	const s = load(SKILL2);
+	const e = { kind: "도구" as const, name: s.name, slug: s.slug, description: s.description, phrase: "AI 뉴스 브리핑 돌려 줘", owner: "hermes", trigger: s.trigger, schedule: s.schedule, output: s.output, notify: s.notify };
+	const d = editDelta(s, e);
+	assert.equal(d.kind, "도구");
+	assert.equal(d.status, "멈춤", "시험 isn't a 도구 status");
+	assert.deepEqual(skillEditChanges(s, e), ["종류 작업 → 도구 (시험 → 멈춤)", "부르는 말 — → AI 뉴스 브리핑 돌려 줘"]);
+	assert.equal(registryAffected(s, e), true);
+	assert.equal(stubAffected(s, e), true);
+	const file = applySkillEdit(SKILL2, s, e, "2026-11-01");
+	assert.equal(getFmValue(file, "kind"), "도구");
+	assert.equal(getFmValue(file, "status"), "멈춤");
+	assert.equal(getFmValue(file, "trigger"), "cron", "작업 keys left for the user");
+	const hs = headings(file);
+	assert.equal(hs[hs.length - 2], "트리거", "inserted right before 변경 기록");
+	assert.equal(getSectionContent(file, "트리거"), "AI 뉴스 브리핑 돌려 줘");
+	assert.match(getSectionContent(file, "변경 기록") ?? "", /- 2026-11-01: 수정: 종류 작업 → 도구 \(시험 → 멈춤\), 부르는 말 — → AI 뉴스 브리핑 돌려 줘 \(플러그인\)$/);
+	const ns = load(file);
+	assert.equal(ns.kind, "도구");
+	assert.equal(ns.phrase, "AI 뉴스 브리핑 돌려 줘");
+	const r = moveRowToKind(REG2, skillRowOf(ns, FOLDER));
+	assert.ok(r.ok);
+	const p = parseToolboxRegistry(r.text);
+	assert.deepEqual(p.skills.map((x) => [x.kind, x.id, x.status, x.phrase]), [["도구", "T-01", "멈춤", "AI 뉴스 브리핑 돌려 줘"]]);
+	assert.match(r.text, /\| T-01 \| \[\[11 Toolbox\/AI 뉴스 브리핑\\\|AI 뉴스 브리핑\]\] \| ai-news-briefing \| AI 뉴스 브리핑 돌려 줘 \| hermes \| 멈춤 \| 2026-10-26 \|\n\n## 작업/);
+	assert.match(r.text, /## 작업\n\n[^\n]*\n\n\| id \| 이름 \| 하는 일 [^\n]*\n\|[-|]+\|\n\n## 실행 요청/, "작업 table left empty, header kept");
+	// and back: 도구 → 작업 keeps 멈춤, the row returns to 「작업」
+	const back = moveRowToKind(r.text, { ...skillRowOf(ns, FOLDER), kind: "작업" });
+	assert.ok(back.ok);
+	assert.deepEqual(parseToolboxRegistry(back.text).skills.map((x) => [x.kind, x.id]), [["작업", "T-01"]]);
+	// 운영: a 멈춤 skill becomes 사용
+	assert.equal(editDelta({ ...s, status: "멈춤" }, { ...e, kind: "운영", scope: "볼트 전체" }).status, "사용");
+	// slug / description only: stub must be re-synced, row cell for slug
+	const e2 = { ...e, kind: "작업" as const, slug: "ai-news", phrase: undefined };
+	assert.deepEqual(skillEditChanges(s, e2), ["slug ai-news-briefing → ai-news"]);
+	assert.equal(stubAffected(s, e2), true);
+	assert.equal(getFmValue(applySkillEdit(SKILL2, s, e2, "2026-11-01"), "slug"), "ai-news");
+});
+
+test("reconcile: a row in another kind's table is misplaced; moving it fixes it", () => {
+	const text = fillSkillTemplate(TEMPLATE, TOOL, "T-02", NOW);
+	const s = load(text, `${FOLDER}/데일리로그 기록.md`);
+	// the row was put into 「작업」 by hand
+	const wrong = upsertSkillRow(REG2, { id: "T-02" }, { ...skillRowOf(s, FOLDER), kind: "작업" });
+	assert.ok(wrong.ok);
+	const es = reconcile([load(SKILL2), s], parseToolboxRegistry(wrong.text).skills);
+	assert.deepEqual(es.map((e) => [e.kind, e.kind === "both" ? e.misplaced : null]), [["both", false], ["both", true]]);
+	const fixed = moveRowToKind(wrong.text, skillRowOf(s, FOLDER));
+	assert.ok(fixed.ok);
+	const es2 = reconcile([load(SKILL2), s], parseToolboxRegistry(fixed.text).skills);
+	assert.ok(es2.every((e) => e.kind === "both" && !e.misplaced));
+	assert.match(changeText.move("T-02", s.name, "작업", "도구"), /^T-02 「데일리로그 기록」 등록부 행을 「작업」 표에서 「도구」 표로 옮김/);
+});
+
+test("폐기 from a kind table: the row leaves 「도구」 for 「폐기」", () => {
+	const s = load(fillSkillTemplate(TEMPLATE, TOOL, "T-02", NOW), `${FOLDER}/데일리로그 기록.md`);
+	const reg = (upsertSkillRow(REG2, { id: "T-02" }, skillRowOf(s, FOLDER)) as { text: string }).text;
+	const r = moveRowToDiscarded(reg, { id: "T-02", nameCell: nameLink(FOLDER, s.name), date: TODAY, reason: "안 씀" });
+	assert.ok(r.ok);
+	const p = parseToolboxRegistry(r.text);
+	assert.deepEqual(p.skills.map((x) => x.id), ["T-01"]);
+	assert.deepEqual(p.discarded.map((x) => x.id), ["T-02"]);
 });
