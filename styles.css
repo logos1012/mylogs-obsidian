@@ -7955,3 +7955,114 @@ body.is-mobile .mylogs-projects .pf-tl {
 body.is-mobile .mylogs-projects .pf-tl-nav button {
 	min-width: 44px;
 }
+
+/* ── Wall Calendar: months as a vertical list of cards ── */
+body.is-mobile .mylogs-wall-calendar .wc-sheet {
+	padding: 28px 4px 20px;
+}
+body.is-mobile .mylogs-wall-calendar .wc-months {
+	grid-template-columns: minmax(0, 1fr);
+	gap: 14px;
+}
+body.is-mobile .mylogs-wall-calendar .wc-month {
+	min-height: 0;
+}
+body.is-mobile .mylogs-wall-calendar .wc-yearrow h1 {
+	font-size: 52px;
+}
+body.is-mobile .mylogs-wall-calendar .wc-navbtn {
+	width: 44px;
+	height: 44px;
+}
+body.is-mobile .mylogs-wall-calendar select.wc-yearsel {
+	min-height: 44px;
+}
+body.is-mobile .mylogs-wall-calendar .wc-add {
+	width: 44px;
+	height: 44px;
+	font-size: 20px;
+}
+body.is-mobile .mylogs-wall-calendar .wc-item {
+	min-height: 44px;
+	padding: 10px 2px;
+	align-items: center;
+}
+body.is-mobile .mylogs-wall-calendar button.wc-sym {
+	position: relative;
+}
+body.is-mobile .mylogs-wall-calendar button.wc-sym::after {
+	content: "";
+	position: absolute;
+	inset: -14px;
+}
+body.is-mobile .mylogs-wall-calendar .wc-addform input,
+body.is-mobile .mylogs-wall-calendar .wc-addform button {
+	min-height: 44px;
+}
+body.is-mobile .mylogs-wall-calendar .wc-legend .wc-hint {
+	flex-basis: 100%;
+}
+
+/* ── My Life: scrollable tab bar, full-width cards ── */
+body.is-mobile .mylogs-my-life .mlf-nav button.mlf-btn {
+	min-width: 44px;
+	height: 44px;
+	justify-content: center;
+}
+body.is-mobile .mylogs-my-life input.mlf-date-input {
+	flex: 1 1 140px;
+	height: 44px;
+	font-size: 16px;
+}
+body.is-mobile .mylogs-my-life .mlf-tabs {
+	flex-wrap: nowrap;
+	scrollbar-width: none;
+	-webkit-overflow-scrolling: touch;
+	scroll-snap-type: x proximity;
+}
+body.is-mobile .mylogs-my-life .mlf-tabs::-webkit-scrollbar {
+	display: none;
+}
+body.is-mobile .mylogs-my-life button.mlf-tab {
+	min-height: 52px;
+	scroll-snap-align: start;
+}
+body.is-mobile .mylogs-my-life .mlf-cards,
+body.is-mobile .mylogs-my-life .mlf-card {
+	width: 100%;
+}
+body.is-mobile .mylogs-my-life button.mlf-card-toggle {
+	min-height: 48px;
+}
+body.is-mobile .mylogs-my-life textarea.mlf-note {
+	font-size: 16px;
+}
+body.is-mobile .mylogs-my-life {
+	padding-bottom: calc(48px + var(--mylogs-kb, 0px));
+}
+
+/* ── Pinboard: full-width cards, tappable inputs ── */
+body.is-mobile .mylogs-pinboard .pb-grid {
+	grid-template-columns: minmax(0, 1fr);
+}
+body.is-mobile .mylogs-pinboard .pb-more {
+	min-width: 44px;
+	min-height: 44px;
+	opacity: 1;
+	font-size: 18px;
+}
+body.is-mobile .mylogs-pinboard input.pb-input,
+body.is-mobile .mylogs-pinboard input.pb-log-input {
+	min-height: 44px;
+	font-size: 16px;
+}
+body.is-mobile .mylogs-pinboard button.pb-log-add {
+	min-height: 44px;
+}
+body.is-mobile .mylogs-pinboard .pb-log li {
+	padding-top: 6px;
+	padding-bottom: 6px;
+}
+body.is-mobile .mylogs-pinboard .pb-status {
+	min-height: 32px;
+}
