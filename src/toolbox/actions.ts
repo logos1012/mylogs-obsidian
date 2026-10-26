@@ -10,7 +10,7 @@ import { toIsoDate } from "../parser.ts";
 import { parseFrontmatterText, valueToString } from "../pinboard/model.ts";
 import { cleanFolder, type MyLogsSettings } from "../settings.ts";
 import { editDelta, type Entry, inputKind, nameLink, nextSkillId, parseSkill, reconcile, registryAffected, registryPathOf, requestStamp, type RunRequest, type Skill, type SkillEdit, skillEditChanges, type SkillInput, skillName, skillPath, type SkillRow, stubAffected, type Taken, templatePathOf } from "./model.ts";
-import { appendRunRequest, applySkillEdit, changeText, fillSkillTemplate, hasKindTable, leftoverPlaceholders, logToolboxChange, moveRowToDiscarded, moveRowToKind, parseToolboxRegistry, type RegistryResult, setSkillStatus, skillRowOf, upsertSkillRow } from "./ops.ts";
+import { appendRunRequest, applySkillEdit, changeText, fillSkillTemplate, hasKindTable, leftoverPlaceholders, logToolboxChange, moveRowToDiscarded, moveRowToKind, parseToolboxRegistry, type RegistryResult, setSkillStatus, skillRowOf, skillWrite, touchUpdatedAt, upsertSkillRow } from "./ops.ts";
 import { DEFAULT_SKILL_TEMPLATE } from "./templates.ts";
 
 export interface ToolboxHost {
@@ -143,7 +143,7 @@ export async function setStatus(host: ToolboxHost, s: Skill, status: string): Pr
 	}
 	const failed: string[] = [];
 	try {
-		await host.app.vault.process(f, (t) => setSkillStatus(t, status, today()));
+		await host.app.vault.process(f, (t) => skillWrite(t, (x) => setSkillStatus(x, status, today()), new Date()));
 	} catch (err) {
 		console.error("[MyLogs] Toolbox skill write failed", err);
 		new Notice("MyLogs: 스킬 파일에 쓰지 못했어요. 등록부는 바꾸지 않았어요.");
@@ -167,7 +167,7 @@ export async function discardSkill(host: ToolboxHost, s: Skill, o: { date: strin
 	}
 	const failed: string[] = [];
 	try {
-		await host.app.vault.process(f, (t) => setSkillStatus(t, "폐기", today()));
+		await host.app.vault.process(f, (t) => skillWrite(t, (x) => setSkillStatus(x, "폐기", today()), new Date()));
 	} catch (err) {
 		console.error("[MyLogs] Toolbox skill write failed", err);
 		new Notice("MyLogs: 스킬 파일에 쓰지 못했어요. 등록부는 바꾸지 않았어요.");
@@ -228,7 +228,8 @@ export async function createSkill(host: ToolboxHost, input: SkillInput, id: stri
 		new Notice(`이미 있는 파일이에요. 만들지 않았어요.\n${path}`);
 		return null;
 	}
-	const text = fillSkillTemplate(await loadTemplate(host), input, id, new Date());
+	const now = new Date();
+	const text = touchUpdatedAt(fillSkillTemplate(await loadTemplate(host), input, id, now), now);
 	const left = leftoverPlaceholders(text);
 	if (left.length) console.warn(`[MyLogs] Toolbox template placeholders left: ${left.join(", ")}`);
 	let created: TFile;
@@ -280,7 +281,7 @@ export async function editSkill(host: ToolboxHost, s: Skill, e: SkillEdit): Prom
 	}
 	const failed: string[] = [];
 	try {
-		await app.vault.process(f, (t) => applySkillEdit(t, s, e, today()));
+		await app.vault.process(f, (t) => skillWrite(t, (x) => applySkillEdit(x, s, e, today()), new Date()));
 	} catch (err) {
 		console.error("[MyLogs] Toolbox skill write failed", err);
 		new Notice("MyLogs: 스킬 파일에 쓰지 못했어요. 아무것도 바꾸지 않았어요.");

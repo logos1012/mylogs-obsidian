@@ -60,6 +60,9 @@ import {
 	parseToolboxRegistry,
 	setSkillStatus,
 	skillRowOf,
+	skillWrite,
+	kstTimestamp,
+	touchUpdatedAt,
 	upsertSkillRow,
 } from "../src/toolbox/ops.ts";
 
@@ -741,4 +744,48 @@ test("폐기 from a kind table: the row leaves 「도구」 for 「폐기」", (
 	const p = parseToolboxRegistry(r.text);
 	assert.deepEqual(p.skills.map((x) => x.id), ["T-01"]);
 	assert.deepEqual(p.discarded.map((x) => x.id), ["T-02"]);
+});
+
+// ───────────────────────── 「4-10」 updated_at (temporary-dual) ─────────────────────────
+
+const DUAL = fx("MyLogs 운영.md");
+// 2026-10-26 15:04:05 UTC = 2026-10-27 00:04:05 KST (crosses the date line on purpose).
+const KST_NOW = new Date(Date.UTC(2026, 9, 26, 15, 4, 5));
+
+test("kstTimestamp: Asia/Seoul, seconds, +09:00", () => {
+	assert.equal(kstTimestamp(KST_NOW), "2026-10-27T00:04:05+09:00");
+	assert.equal(kstTimestamp(new Date(Date.UTC(2026, 0, 1, 0, 0, 0))), "2026-01-01T09:00:00+09:00");
+	assert.match(kstTimestamp(new Date()), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+09:00$/);
+});
+
+test("touchUpdatedAt: only when the key is present; quoted; nothing else moves", () => {
+	const out = touchUpdatedAt(DUAL, KST_NOW);
+	assert.equal(getFmValue(DUAL, "updated_at"), "2026-10-26T16:39:03+09:00");
+	assert.match(out, /^updated_at: "2026-10-27T00:04:05\+09:00"$/m, "quoted, same line");
+	assert.equal(out.replace(/^updated_at: .*$/m, ""), DUAL.replace(/^updated_at: .*$/m, ""), "only that line changes");
+	assert.equal(touchUpdatedAt(SKILL2, KST_NOW), SKILL2, "absent key → not added");
+	assert.ok(!/updated_at/.test(touchUpdatedAt(SKILL2, KST_NOW)));
+	// `updated_at` in the body (not frontmatter) doesn't count.
+	const bodyOnly = SKILL2 + "\nupdated_at: x\n";
+	assert.equal(touchUpdatedAt(bodyOnly, KST_NOW), bodyOnly);
+	// CRLF kept.
+	const crlf = DUAL.replace(/\n/g, "\r\n");
+	assert.equal(touchUpdatedAt(crlf, KST_NOW), out.replace(/\n/g, "\r\n"));
+});
+
+test("skillWrite: status toggle / 수정 bump updated_at next to updated; no-op writes don't", () => {
+	const st = skillWrite(DUAL, (t) => setSkillStatus(t, "멈춤", "2026-10-27"), KST_NOW);
+	assert.equal(getFmValue(st, "status"), "멈춤");
+	assert.equal(getFmValue(st, "updated"), "2026-10-27");
+	assert.match(st, /^updated_at: "2026-10-27T00:04:05\+09:00"$/m);
+	assert.equal(skillWrite(DUAL, (t) => t, KST_NOW), DUAL, "unchanged text → updated_at untouched");
+	const legacy = skillWrite(SKILL2, (t) => setSkillStatus(t, "사용", "2026-10-27"), KST_NOW);
+	assert.ok(!/updated_at/.test(legacy), "no updated_at key → none added");
+	const s = parseSkill(parseFrontmatterText(DUAL).data, parseFrontmatterText(DUAL).body, "11 Toolbox/MyLogs 운영.md", "11 Toolbox")!;
+	const e = { name: s.name, trigger: s.trigger, schedule: s.schedule, output: s.output, notify: s.notify, description: "Use when operating the MyLogs vault (edited)." };
+	const ed = skillWrite(DUAL, (t) => applySkillEdit(t, s, e, "2026-10-27"), KST_NOW);
+	assert.equal(getFmValue(ed, "description"), "Use when operating the MyLogs vault (edited).");
+	assert.equal(getFmValue(ed, "updated"), "2026-10-27");
+	assert.equal(getFmValue(ed, "updated_at"), "2026-10-27T00:04:05+09:00");
+	assert.equal(getFmValue(ed, "body_mode"), "temporary-dual");
 });
