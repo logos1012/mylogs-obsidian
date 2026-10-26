@@ -21,7 +21,10 @@ import { shiftMonthKey, type DiaryMonth, isMonthKey } from "../mylife/model.ts";
 import { todayIsoLocal } from "../desk/model.ts";
 import { askForm, confirmDelete } from "../ui/modals.ts";
 import { addFrom, attachmentFiles, createEntry, deleteEntry, type DiaryData, editMeta, loadDiary, loadMaterial, loadMyLifeMonth, type Material, readEntry, registryPath, root, saveAttachment, saveBody, togglePinned, toggleStarred } from "./actions.ts";
+import { isOwnWrite, lastWritten } from "./sync.ts";
 import {
+	bodiesEqual,
+	bodyOf,
 	calendarDays,
 	type DiaryEntry,
 	displayTitle,
@@ -29,6 +32,7 @@ import {
 	groupTimeline,
 	insertEmbed,
 	monthLabel,
+	normalizeBody,
 	onThisDay,
 	promptForDate,
 	recentlyAnswered,
@@ -45,8 +49,11 @@ export const VIEW_TYPE_DIARY = "mylogs-diary";
 
 const WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"];
 
-function normalizeBody(s: string): string {
-	return s.replace(/\r\n/g, "\n");
+/** How long a UI action (「오늘 쓰기」, 미리보기, selecting another entry) waits for a save before going on. */
+const SAVE_WAIT_MS = 4000;
+
+function timeout(ms: number): Promise<void> {
+	return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 interface DiaryViewState {
@@ -70,10 +77,13 @@ class EntryEditor {
 	dirty = false;
 	conflict = false;
 	private pending: string | null = null;
+	/** The text a save in flight is writing (so a modify event carrying it is ours, not a conflict). */
+	private inFlight: string | null = null;
 	private textarea: HTMLTextAreaElement | null = null;
 	private statusEl: HTMLElement | null = null;
 	private barEl: HTMLElement | null = null;
 	private saveTimer: number | null = null;
+	/** The save queue. Never left rejected: every link catches, so the next keystroke can save again. */
 	private saving: Promise<void> = Promise.resolve();
 
 	constructor(
@@ -86,6 +96,11 @@ class EntryEditor {
 
 	get current(): DiaryEntry {
 		return this.entry;
+	}
+
+	/** Unsaved text in the textarea (differs from the file). */
+	private get hasUnsaved(): boolean {
+		return this.pending !== null && !bodiesEqual(this.pending, this.base);
 	}
 
 	/** Build the textarea inside `host`. Keeps unsaved text across rebuilds. */
@@ -101,9 +116,9 @@ class EntryEditor {
 		this.textarea = ta;
 		ta.addEventListener("input", () => {
 			this.pending = ta.value;
-			this.dirty = normalizeBody(ta.value) !== this.base;
+			this.dirty = !bodiesEqual(ta.value, this.base);
 			this.autosize();
-			this.setStatus(this.dirty ? "입력 중" : "");
+			if (!this.conflict) this.setStatus(this.dirty ? "입력 중" : "");
 			this.scheduleSave();
 		});
 		ta.addEventListener("blur", () => void this.flush());
@@ -147,23 +162,49 @@ class EntryEditor {
 		ta.style.height = `${Math.max(ta.scrollHeight + 2, 320)}px`;
 	}
 
-	/** Fresh file text arrived (modify event / reload). */
+	/**
+	 * Fresh file text arrived (a refresh / reload). Our own writes — the save in flight, the last
+	 * text we wrote — only move `base`; they never touch the textarea and never raise the conflict
+	 * bar. A real external change replaces the text only when nothing is typed and the textarea is
+	 * not focused; otherwise the bar shows and typing goes on.
+	 */
 	sync(entry: DiaryEntry): void {
 		this.entry = entry;
 		const fresh = normalizeBody(entry.body);
-		if (fresh === this.base) return;
-		if (this.dirty) {
+		if (bodiesEqual(fresh, this.base)) {
+			this.base = fresh;
+			return;
+		}
+		const last = lastWritten(this.path);
+		const ours = (this.inFlight !== null && bodiesEqual(fresh, this.inFlight)) || (last !== null && bodiesEqual(fresh, bodyOf(last)));
+		if (ours) {
+			this.base = fresh;
+			this.dirty = this.hasUnsaved;
+			if (!this.dirty) this.pending = null;
+			if (this.conflict) {
+				this.hideConflict();
+				this.setStatus(this.dirty ? "입력 중" : "");
+			}
+			return;
+		}
+		if (this.hasUnsaved || this.isFocused()) {
 			this.showConflict();
 			return;
 		}
 		this.base = fresh;
 		this.pending = null;
+		this.dirty = false;
+		this.hideConflict();
 		if (this.textarea) {
 			const pos = this.textarea.selectionStart;
 			this.textarea.value = fresh;
 			this.textarea.selectionStart = this.textarea.selectionEnd = Math.min(pos, fresh.length);
 			this.autosize();
 		}
+	}
+
+	private isFocused(): boolean {
+		return !!this.textarea && document.activeElement === this.textarea;
 	}
 
 	private scheduleSave(): void {
@@ -174,12 +215,10 @@ class EntryEditor {
 		}, this.view.plugin.settings.autosaveDelayMs);
 	}
 
-	flush(): Promise<void> {
-		if (this.saveTimer !== null) {
-			window.clearTimeout(this.saveTimer);
-			this.saveTimer = null;
-		}
-		this.saving = this.saving.then(() => this.doSave()).catch((err) => {
+	/** Queue one save step; an error is logged and shown, and the queue stays usable. */
+	private enqueue(step: () => Promise<void>): Promise<void> {
+		this.saving = this.saving.then(step).catch((err) => {
+			this.inFlight = null;
 			console.error("[MyLogs] Diary save failed", err);
 			this.setStatus("저장 실패", true);
 			new Notice("MyLogs: 엔트리 저장에 실패했어요.");
@@ -187,12 +226,42 @@ class EntryEditor {
 		return this.saving;
 	}
 
+	flush(): Promise<void> {
+		if (this.saveTimer !== null) {
+			window.clearTimeout(this.saveTimer);
+			this.saveTimer = null;
+		}
+		return this.enqueue(() => this.doSave());
+	}
+
+	/** `flush`, but a UI action waits at most `SAVE_WAIT_MS`: a slow disk (Google Drive) must not freeze the buttons. */
+	settle(ms = SAVE_WAIT_MS): Promise<void> {
+		return Promise.race([this.flush(), timeout(ms)]);
+	}
+
+	/**
+	 * Write the textarea to the file. A conflict is re-checked against the file on every save, so a
+	 * bar raised in error clears itself once the file matches again; a real one keeps the user's text
+	 * in the textarea until 「다시 불러오기」 or 「내 내용으로 저장」.
+	 */
 	private async doSave(force = false): Promise<void> {
-		if (!this.dirty || this.pending === null) return;
-		if (this.conflict && !force) return;
+		if (this.pending === null || (!force && !this.hasUnsaved)) {
+			if (!this.conflict && this.pending !== null && !this.hasUnsaved) {
+				this.dirty = false;
+				this.pending = null;
+				this.setStatus("");
+			}
+			return;
+		}
 		const value = this.pending;
 		this.setStatus("저장 중");
-		const r = await saveBody(this.view.plugin, this.path, value, force ? null : this.base, force);
+		this.inFlight = value;
+		let r: Awaited<ReturnType<typeof saveBody>>;
+		try {
+			r = await saveBody(this.view.plugin, this.path, value, force ? null : this.base, force);
+		} finally {
+			this.inFlight = null;
+		}
 		if (!r.ok) {
 			if (r.conflict) this.showConflict();
 			else this.setStatus("저장 실패", true);
@@ -202,7 +271,7 @@ class EntryEditor {
 			this.entry = r.entry;
 			this.base = normalizeBody(r.entry.body);
 		} else this.base = normalizeBody(value);
-		this.dirty = normalizeBody(value) !== this.base;
+		this.dirty = this.hasUnsaved;
 		if (!this.dirty) this.pending = null;
 		this.hideConflict();
 		this.setStatus("저장됨");
@@ -219,9 +288,11 @@ class EntryEditor {
 	}
 
 	private showConflict(): void {
+		const first = !this.conflict;
 		this.conflict = true;
+		this.setStatus("저장 안 됨", true);
 		const bar = this.barEl;
-		if (!bar) return;
+		if (!bar || (!first && bar.childElementCount)) return;
 		bar.empty();
 		bar.show();
 		const icon = bar.createSpan({ cls: "dy-conflict-icon" });
@@ -229,16 +300,24 @@ class EntryEditor {
 		bar.createSpan({ text: "파일에 새 내용이 있어요" });
 		bar.createSpan({ cls: "dy-sep", text: "·" });
 		const reload = bar.createEl("button", { cls: "dy-link-btn", text: "다시 불러오기", attr: { type: "button" } });
-		reload.addEventListener("click", () => void this.reloadFromFile());
+		reload.addEventListener("click", () => void this.guard("다시 불러오기", () => this.reloadFromFile()));
 		const keep = bar.createEl("button", { cls: "dy-link-btn is-quiet", text: "내 내용으로 저장", attr: { type: "button" } });
-		keep.addEventListener("click", () => void this.keepMine());
-		this.setStatus("저장 안 됨", true);
+		keep.addEventListener("click", () => void this.guard("내 내용으로 저장", () => this.keepMine()));
 	}
 
 	private hideConflict(): void {
 		this.conflict = false;
 		this.barEl?.hide();
 		this.barEl?.empty();
+	}
+
+	private async guard(label: string, fn: () => Promise<void>): Promise<void> {
+		try {
+			await fn();
+		} catch (err) {
+			console.error(`[MyLogs] Diary ${label} failed`, err);
+			new Notice(`MyLogs: ${label}에 실패했어요.`);
+		}
 	}
 
 	private async reloadFromFile(): Promise<void> {
@@ -258,10 +337,13 @@ class EntryEditor {
 	}
 
 	private async keepMine(): Promise<void> {
-		this.hideConflict();
+		if (this.saveTimer !== null) {
+			window.clearTimeout(this.saveTimer);
+			this.saveTimer = null;
+		}
+		if (this.pending === null && this.textarea) this.pending = this.textarea.value;
 		this.dirty = true;
-		this.saving = this.saving.then(() => this.doSave(true));
-		await this.saving;
+		await this.enqueue(() => this.doSave(true));
 	}
 
 	/** Pasted / dropped images: save under 첨부 and insert `![[…]]` at the cursor. */
@@ -355,14 +437,41 @@ export class DiaryView extends ItemView {
 		this.timelineEl = this.rootEl.createDiv({ cls: "dy-timeline" });
 		this.editorEl = this.rootEl.createDiv({ cls: "dy-center" });
 		this.materialEl = this.rootEl.createDiv({ cls: "dy-material" });
-		const onFile = (f: TAbstractFile, old?: string) => {
-			if (this.watched(f.path) || (old && this.watched(old))) this.scheduleRefresh();
+		const onFile = (kind: "modify" | "create" | "delete" | "rename", f: TAbstractFile, old?: string) => {
+			try {
+				if (!(this.watched(f.path) || (old && this.watched(old)))) return;
+				// A modify carrying our own write (entry file, Diary Index.md) — or Google Drive
+				// re-touching it with the same content after a sync — is not an external change:
+				// no reload of the open editor. Anything else (a real edit, create, delete, rename) refreshes.
+				if (kind === "modify" && f instanceof TFile && lastWritten(f.path) !== null) {
+					this.app.vault
+						.cachedRead(f)
+						.then((text) => {
+							if (!isOwnWrite(f.path, text)) this.scheduleRefresh();
+						})
+						.catch(() => this.scheduleRefresh());
+					return;
+				}
+				this.scheduleRefresh();
+			} catch (err) {
+				console.error("[MyLogs] Diary file event failed", err);
+			}
 		};
-		this.registerEvent(this.app.vault.on("modify", (f) => onFile(f)));
-		this.registerEvent(this.app.vault.on("create", (f) => onFile(f)));
-		this.registerEvent(this.app.vault.on("delete", (f) => onFile(f)));
-		this.registerEvent(this.app.vault.on("rename", (f, old) => onFile(f, old)));
+		this.registerEvent(this.app.vault.on("modify", (f) => onFile("modify", f)));
+		this.registerEvent(this.app.vault.on("create", (f) => onFile("create", f)));
+		this.registerEvent(this.app.vault.on("delete", (f) => onFile("delete", f)));
+		this.registerEvent(this.app.vault.on("rename", (f, old) => onFile("rename", f, old)));
 		await this.refresh();
+	}
+
+	/** Run a UI action; an error is logged as `[MyLogs] …` and shown, never left to kill the view. */
+	private async guard(label: string, fn: () => Promise<void>): Promise<void> {
+		try {
+			await fn();
+		} catch (err) {
+			console.error(`[MyLogs] Diary ${label} failed`, err);
+			new Notice(`MyLogs: ${label}에 실패했어요.`);
+		}
 	}
 
 	async onClose(): Promise<void> {
@@ -377,7 +486,7 @@ export class DiaryView extends ItemView {
 		if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
 		this.refreshTimer = window.setTimeout(() => {
 			this.refreshTimer = null;
-			void this.refresh();
+			this.refresh().catch((err) => console.error("[MyLogs] Diary refresh failed", err));
 		}, 300);
 	}
 
@@ -432,42 +541,65 @@ export class DiaryView extends ItemView {
 		if (this.renderChild) this.removeChild(this.renderChild);
 		this.renderChild = this.addChild(new Component());
 		this.rootEl.toggleClass("is-material-collapsed", this.plugin.settings.diaryMaterialCollapsed);
-		this.renderTimeline();
-		this.renderEditor();
-		this.renderMaterial();
+		// One pane failing to draw must not take the others (and their buttons) with it.
+		for (const [name, draw] of [
+			["timeline", () => this.renderTimeline()],
+			["editor", () => this.renderEditor()],
+			["material", () => this.renderMaterial()],
+		] as const) {
+			try {
+				draw();
+			} catch (err) {
+				console.error(`[MyLogs] Diary ${name} render failed`, err);
+			}
+		}
 	}
 
 	// ── actions ──
 
 	/** 「오늘 쓰기」: a new empty entry (optionally answering a prompt), opened with the cursor in the body. */
 	async writeToday(prompt = ""): Promise<void> {
-		await this.editor?.flush();
-		let created: TFile | null = null;
-		await this.run(async () => {
-			created = await createEntry(this.plugin, prompt);
-			if (created) this.selected = created.path;
+		await this.guard("오늘 쓰기", async () => {
+			await this.editor?.settle();
+			let created: TFile | null = null;
+			await this.run(async () => {
+				created = await createEntry(this.plugin, prompt);
+				if (created) this.selected = created.path;
+			});
+			if (created) {
+				this.preview = false;
+				this.renderEditor();
+				this.editor?.focusBody();
+				this.app.workspace.requestSaveLayout();
+			}
 		});
-		if (created) {
-			this.preview = false;
+	}
+
+	/** 「미리보기」 ↔ 「쓰기」. */
+	async togglePreview(): Promise<void> {
+		await this.guard("미리보기", async () => {
+			await this.editor?.settle();
+			this.preview = !this.preview;
 			this.renderEditor();
-			this.editor?.focusBody();
 			this.app.workspace.requestSaveLayout();
-		}
+		});
 	}
 
 	async select(path: string): Promise<void> {
 		if (path === this.selected) return;
-		await this.editor?.flush();
-		this.selected = path;
-		const e = this.selectedEntry();
-		if (e && e.date.slice(0, 7) !== this.myLifeMonth) {
-			this.myLifeMonth = e.date.slice(0, 7);
-			this.myLife = await loadMyLifeMonth(this.plugin, this.myLifeMonth);
-		}
-		this.renderTimeline();
-		this.renderEditor();
-		this.renderMaterial();
-		this.app.workspace.requestSaveLayout();
+		await this.guard("엔트리 열기", async () => {
+			await this.editor?.settle();
+			this.selected = path;
+			const e = this.selectedEntry();
+			if (e && e.date.slice(0, 7) !== this.myLifeMonth) {
+				this.myLifeMonth = e.date.slice(0, 7);
+				this.myLife = await loadMyLifeMonth(this.plugin, this.myLifeMonth);
+			}
+			this.renderTimeline();
+			this.renderEditor();
+			this.renderMaterial();
+			this.app.workspace.requestSaveLayout();
+		});
 	}
 
 	/** The editor saved: refresh the entry in the timeline without re-reading the folder. */
@@ -815,13 +947,7 @@ export class DiaryView extends ItemView {
 		const status = bar.createSpan({ cls: "dy-save-status" });
 		const right = bar.createDiv({ cls: "dy-sheet-tools" });
 		const pv = right.createEl("button", { cls: `dy-btn dy-btn-small${this.preview ? " is-active" : ""}`, text: this.preview ? "쓰기" : "미리보기", attr: { type: "button", "aria-pressed": this.preview ? "true" : "false" } });
-		pv.addEventListener("click", () => {
-			void this.editor?.flush().then(() => {
-				this.preview = !this.preview;
-				this.renderEditor();
-				this.app.workspace.requestSaveLayout();
-			});
-		});
+		pv.addEventListener("click", () => void this.togglePreview());
 		const open = right.createEl("button", { cls: "dy-btn dy-btn-icon", attr: { type: "button", "aria-label": "마크다운 파일 열기" } });
 		setIcon(open, "file-text");
 		open.addEventListener("click", (ev) => this.openFile(e.path, ev));
@@ -894,14 +1020,16 @@ export class DiaryView extends ItemView {
 	}
 
 	private async toggleMaterial(): Promise<void> {
-		const s = this.plugin.settings;
-		s.diaryMaterialCollapsed = !s.diaryMaterialCollapsed;
-		// Plain save: a settings refresh would redraw every view for a fold.
-		await this.plugin.saveData(s);
-		this.rootEl.toggleClass("is-material-collapsed", s.diaryMaterialCollapsed);
-		await this.editor?.flush();
-		this.mounted = ""; // the toggle button lives in the sheet bar: rebuild it
-		this.renderEditor();
+		await this.guard("재료 패널 접기/펼치기", async () => {
+			const s = this.plugin.settings;
+			s.diaryMaterialCollapsed = !s.diaryMaterialCollapsed;
+			// Plain save: a settings refresh would redraw every view for a fold.
+			await this.plugin.saveData(s);
+			this.rootEl.toggleClass("is-material-collapsed", s.diaryMaterialCollapsed);
+			await this.editor?.settle();
+			this.mounted = ""; // the toggle button lives in the sheet bar: rebuild it
+			this.renderEditor();
+		});
 	}
 
 	private async renderMarkdown(el: HTMLElement, content: string, sourcePath: string): Promise<void> {
