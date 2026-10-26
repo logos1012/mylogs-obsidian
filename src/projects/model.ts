@@ -9,6 +9,7 @@
  */
 
 import { bulletItems, daysBetween, findSectionText, isIsoDate, parseSections, valueToString } from "../pinboard/model.ts";
+import { readMilestones, type Milestone } from "./milestones.ts";
 
 export const PROJECT_STATUSES = ["후보", "진행", "대기", "보류", "완료"] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
@@ -77,6 +78,9 @@ export interface Project {
 	summary: string;
 	/** 한 줄 결과 (`- **결과:** …` in 「현재 상태」), for completed projects. */
 	result: string;
+	milestones?: Milestone[];
+	milestoneSource?: string;
+	milestoneError?: string;
 }
 
 // ───────────────────────── paths ─────────────────────────
@@ -176,6 +180,9 @@ export function parseProject(fm: Record<string, unknown> | null | undefined, bod
 	const secs = parseSections(body);
 	const action = parseAction(findSectionText(secs, ACTION_SECTION));
 	const summary = bulletItems(findSectionText(secs, SUMMARY_SECTION)).join(" ");
+	let milestones: Milestone[] = [], milestoneSource = "", milestoneError = "";
+	try { const m = readMilestones(body); milestones = m.items; milestoneSource = m.source; }
+	catch (e) { milestoneError = String(e instanceof Error ? e.message : e); }
 	return {
 		path,
 		folder: loc.folder,
@@ -197,6 +204,7 @@ export function parseProject(fm: Record<string, unknown> | null | undefined, bod
 		actionDone: action.done,
 		summary,
 		result: parseResult(findSectionText(secs, STATE_SECTION)),
+		milestones, milestoneSource, milestoneError,
 	};
 }
 

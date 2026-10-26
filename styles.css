@@ -9462,3 +9462,30 @@ body.is-mobile .mylogs-pinboard .pbm-legend {
 body.is-mobile .mylogs-pinboard .pbm-legend-health {
 	display: none;
 }
+
+/* Project milestone disclosure: reuse the board's quiet paper/teal palette. */
+.mylogs-projects .pf-milestones { min-width: 0; border-top: 1px solid var(--pf-line); padding-top: 4px; }
+.mylogs-projects .pf-milestones summary { cursor: pointer; min-height: 44px; padding: 10px 0; color: var(--pf-ink-2); font-weight: 600; }
+.mylogs-projects .pf-ms-count { float: right; font-variant-numeric: tabular-nums; color: var(--pf-accent); }
+.mylogs-projects .pf-milestones progress { display: block; width: 100%; height: 5px; margin-top: 8px; appearance: none; border: 0; border-radius: 3px; overflow: hidden; background: var(--pf-line); }
+.mylogs-projects .pf-milestones progress::-webkit-progress-bar { background: var(--pf-line); }
+.mylogs-projects .pf-milestones progress::-webkit-progress-value { background: var(--pf-accent); }
+.mylogs-projects .pf-ms-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.mylogs-projects .pf-ms-hint { color: var(--pf-muted); font-size: 12px; }
+.mylogs-projects .pf-ms-row { padding: 6px 0; border-bottom: 1px solid var(--pf-line); min-width: 0; }
+.mylogs-projects .pf-ms-check { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 10px 0; cursor: pointer; overflow-wrap: anywhere; }
+.mylogs-projects .pf-ms-check input { flex: 0 0 auto; margin: 2px 0 0; width: 18px; height: 18px; accent-color: var(--pf-accent); }
+.mylogs-projects .pf-ms-row.is-done .pf-ms-check span { color: var(--pf-accent); }
+.mylogs-projects .pf-ms-controls { display: flex; justify-content: flex-end; gap: 4px; }
+.mylogs-projects .pf-milestones button { min-height: 44px; padding: 7px 12px; white-space: normal; height: auto; }
+.mylogs-projects .pf-ms-controls button { background: transparent; color: var(--pf-ink-2); box-shadow: none; border: 0; }
+.mylogs-projects .pf-ms-editor { margin: 0; padding: 8px 0; min-width: 0; }
+.mylogs-projects .pf-ms-editor label { display: flex; flex-direction: column; gap: 8px; }
+.mylogs-projects .pf-ms-editor textarea { width: 100%; max-width: 100%; min-height: 80px; resize: vertical; font-size: 16px; color: var(--pf-ink); background: var(--pf-paper); border: 1px solid var(--pf-line-strong); border-radius: 5px; padding: 10px; scroll-margin-block: 90px; }
+.mylogs-projects .pf-ms-editor-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0; background: var(--pf-paper); }
+.mylogs-projects .pf-ms-editor-actions button[type=submit] { background: var(--pf-accent); color: var(--pf-accent-ink); }
+.mylogs-projects .pf-ms-error, .mylogs-projects .pf-ms-remove { color: var(--pf-warn); background: var(--pf-warn-bg); padding: 10px; border-radius: 5px; overflow-wrap: anywhere; }
+.mylogs-projects .pf-ms-remove button { margin: 8px 6px 0 0; }
+.mylogs-projects .pf-ms-ready { color: var(--pf-accent); background: var(--pf-accent-soft); padding: 10px; border-radius: 5px; }
+.mylogs-projects .pf-milestones :is(summary, button, textarea, input):focus-visible { outline: 2px solid var(--pf-accent); outline-offset: 2px; }
+.mylogs-projects .pf-card.is-stale > .pf-milestones { opacity: 1; }

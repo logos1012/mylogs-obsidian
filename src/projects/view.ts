@@ -1,7 +1,9 @@
 import { debounce, ItemView, Keymap, Menu, normalizePath, Platform, setIcon, type TAbstractFile, TFile, TFolder, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { toIsoDate } from "../parser.ts";
-import { valueToString } from "../pinboard/model.ts";
+import { valueToString, parseFrontmatterText } from "../pinboard/model.ts";
+import { renderMilestones, type MilestoneUIState } from "./milestone-ui.ts";
+import { saveMilestone } from "./milestone-actions.ts";
 import { cleanFolder } from "../settings.ts";
 import { activeRoot, aliasesOf, archiveRoot, changeStatus, completeProject, createProject, deleteProject, editProject, takenIdsAndNames } from "./actions.ts";
 import { askForm, confirmDelete } from "../ui/modals.ts";
@@ -72,6 +74,7 @@ export class ProjectFoldersView extends ItemView {
 	private busy = false;
 	private dragging: Project | null = null;
 	private pending = false;
+	private milestoneStates = new Map<string, MilestoneUIState>();
 
 	private scheduleRefresh = debounce(() => void this.refresh(), 300, true);
 
@@ -132,6 +135,12 @@ export class ProjectFoldersView extends ItemView {
 		this.contentEl.empty();
 		this.contentEl.addClass("mylogs-projects-container");
 		this.rootEl = this.contentEl.createDiv({ cls: "mylogs-projects" });
+		const viewport = this.contentEl.ownerDocument.defaultView?.visualViewport;
+		if (viewport) {
+			const keepEditorVisible = () => this.rootEl.querySelector(".pf-ms-editor:focus-within")?.scrollIntoView({ block: "nearest" });
+			viewport.addEventListener("resize", keepEditorVisible);
+			this.register(() => viewport.removeEventListener("resize", keepEditorVisible));
+		}
 		this.registerEvent(
 			this.app.metadataCache.on("changed", (f) => {
 				if (this.watched(f.path)) this.scheduleRefresh();
@@ -153,7 +162,7 @@ export class ProjectFoldersView extends ItemView {
 	/** Re-read the hubs and re-render (waits while a write or a drag is in progress). */
 	async refresh(): Promise<void> {
 		if (!this.rootEl) return;
-		if (this.busy || this.dragging) {
+		if (this.busy || this.dragging || this.rootEl.querySelector(".pf-ms-editor, .pf-ms-remove") || [...this.milestoneStates.values()].some(s => s.busy)) {
 			this.pending = true;
 			return;
 		}
@@ -172,11 +181,9 @@ export class ProjectFoldersView extends ItemView {
 		for (const f of this.app.vault.getMarkdownFiles()) {
 			const loc = hubLocation(f.path, act, arc);
 			if (!loc) continue;
-			const cache = this.app.metadataCache.getFileCache(f);
-			if (valueToString(cache?.frontmatter?.type) !== "project") continue;
-			const text = await this.app.vault.cachedRead(f);
-			const body = text.slice(cache?.frontmatterPosition?.end.offset ?? 0);
-			const p = parseProject(cache?.frontmatter, body, loc, f.path);
+			const text = await this.app.vault.read(f);
+			const fm = parseFrontmatterText(text);
+			const p = parseProject(fm.data, fm.body, loc, f.path);
 			if (p) projects.push(p);
 		}
 		const pin = cleanFolder(this.plugin.settings.pinboardFolder);
@@ -498,6 +505,10 @@ export class ProjectFoldersView extends ItemView {
 			const chips = card.createDiv({ cls: "pf-chips" });
 			for (const g of p.goals) chips.createSpan({ cls: "pf-chip", text: g });
 		}
+
+		let ms = this.milestoneStates.get(p.path);
+		if (!ms) { ms = { open: false }; this.milestoneStates.set(p.path, ms); }
+		renderMilestones(card, p, ms, (change, expected) => saveMilestone(this.plugin, p, expected, change, todayIso()), () => this.refresh());
 
 		const foot = card.createDiv({ cls: "pf-card-foot" });
 		if (p.archived && p.completed) foot.createSpan({ text: `완료 ${dotDate(p.completed)}` });
