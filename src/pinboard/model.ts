@@ -10,10 +10,36 @@
  */
 
 export type GoalType = "main-goal" | "sub-goal";
-export const GOAL_STATUSES = ["active", "achieved", "paused", "dropped"] as const;
+/** 진행 중: `active` / `paused`. 종료 (사용자만 확정): `achieved` / `partial` / `missed` / `dropped`. */
+export const GOAL_STATUSES = ["active", "paused", "achieved", "partial", "missed", "dropped"] as const;
 export type GoalStatus = (typeof GOAL_STATUSES)[number];
+export const ENDED_STATUSES: readonly string[] = ["achieved", "partial", "missed", "dropped"];
 
-export const STATUS_KO: Record<string, string> = { active: "진행 중", achieved: "달성", paused: "멈춤", dropped: "중단" };
+export const STATUS_KO: Record<string, string> = {
+	active: "진행 중",
+	paused: "멈춤",
+	achieved: "달성",
+	partial: "부분 달성",
+	missed: "미달성",
+	dropped: "중단",
+};
+
+/** A finished goal (its `health` is empty, its 종료 회고 is due). */
+export function isEnded(status: string): boolean {
+	return ENDED_STATUSES.includes(status);
+}
+
+/** `health`: a person's judgement, separate from progress. `""` = 판단 없음. */
+export const HEALTHS = ["on-track", "at-risk", "off-track"] as const;
+export type Health = (typeof HEALTHS)[number] | "";
+export const HEALTH_KO: Record<string, string> = { "on-track": "순항", "at-risk": "주의", "off-track": "이탈", "": "판단 없음" };
+export const HEALTH_ICON: Record<string, string> = { "on-track": "🟢", "at-risk": "🟡", "off-track": "🔴", "": "⚪" };
+
+/** A known health value, else `""` (unknown words are not guessed into a colour). */
+export function normalizeHealth(v: string): Health {
+	const s = v.trim().toLowerCase();
+	return (HEALTHS as readonly string[]).includes(s) ? (s as Health) : "";
+}
 export const KIND_KO: Record<string, string> = { outcome: "결과", performance: "수행" };
 export const MEASURE_KO: Record<string, string> = { metric: "수치", milestone: "이정표" };
 
@@ -30,6 +56,10 @@ export interface Goal {
 	period: string;
 	area: string;
 	status: string;
+	/** `on-track` / `at-risk` / `off-track` / `""` (판단 없음). */
+	health: Health;
+	/** Sub Goal weight in its Main's average; null = not set (counts as 1). */
+	weight: number | null;
 	measure: string;
 	kind: string;
 	baseline: string;
@@ -94,6 +124,7 @@ export function parseGoal(fm: Record<string, unknown> | null | undefined, path: 
 	const s = (k: string) => valueToString(fm[k]);
 	const base = path.split("/").pop()?.replace(/\.md$/, "") ?? path;
 	const due = s("due").slice(0, 10);
+	const weight = toNum(fm.weight);
 	return {
 		path,
 		id: s("id"),
@@ -103,6 +134,8 @@ export function parseGoal(fm: Record<string, unknown> | null | undefined, path: 
 		period: s("period"),
 		area: s("area"),
 		status: s("status") || "active",
+		health: normalizeHealth(s("health")),
+		weight: weight !== null && weight > 0 ? weight : null,
 		measure: s("measure"),
 		kind: s("kind"),
 		baseline: s("baseline"),
@@ -247,12 +280,13 @@ export function metricProgress(baseline: unknown, current: unknown, target: unkn
 }
 
 /**
- * The `progress` value to store for a Sub Goal (integer 0–100).
- * metric → formula (null if a number is missing: keep what's there, never invent);
- * milestone → 100 when achieved, else 0.
+ * The `progress` value to store for a Sub Goal (integer 0–100), SPEC 1-2:
+ * `achieved` → 100; metric → formula (null if a number is missing: keep what's there, never
+ * invent); milestone → 0 until achieved.
  */
 export function computeSubProgress(g: Pick<Goal, "measure" | "status" | "baseline" | "current" | "target">): number | null {
-	if (g.measure === "milestone") return g.status === "achieved" ? 100 : 0;
+	if (g.status === "achieved") return 100;
+	if (g.measure === "milestone") return 0;
 	if (g.measure === "metric") {
 		const p = metricProgress(g.baseline, g.current, g.target);
 		return p === null ? null : Math.round(p);
@@ -266,29 +300,43 @@ export interface Rollup {
 	progress: number;
 }
 
-/** Main Goal: `sub_total` (dropped excluded), `sub_achieved`, `progress = achieved / total`. */
-export function rollupMain(subs: Pick<Goal, "status">[]): Rollup {
-	const live = subs.filter((s) => s.status !== "dropped");
-	const subAchieved = live.filter((s) => s.status === "achieved").length;
-	const subTotal = live.length;
-	return { subTotal, subAchieved, progress: subTotal ? Math.round((subAchieved / subTotal) * 100) : 0 };
+/** What a Sub Goal contributes to its Main: its progress, or 0 while it is 미정. */
+export type RollupSub = Pick<Goal, "status"> & Partial<Pick<Goal, "measure" | "baseline" | "current" | "target" | "weight">>;
+
+function rollupProgressOf(s: RollupSub): number {
+	return computeSubProgress({ measure: s.measure ?? "", status: s.status, baseline: s.baseline ?? "", current: s.current ?? "", target: s.target ?? "" }) ?? 0;
 }
 
-/** Progress shown on a Sub Goal card (stored value first, like the reference). */
+/**
+ * Main Goal (SPEC 1-2): `sub_total` (dropped excluded), `sub_achieved`, and `progress` = the
+ * weighted average `Σ(progress_i × w_i) / Σ w_i` of the Sub Goals that aren't dropped (a missing
+ * weight counts as 1, a 미정 Sub as 0, no Sub → 0). Each Sub counts with its rounded progress
+ * (`computeSubProgress`), the integer stored in its note.
+ */
+export function rollupMain(subs: RollupSub[]): Rollup {
+	const live = subs.filter((s) => s.status !== "dropped");
+	const subAchieved = live.filter((s) => s.status === "achieved").length;
+	let sum = 0;
+	let wsum = 0;
+	for (const s of live) {
+		const w = s.weight && s.weight > 0 ? s.weight : 1;
+		sum += rollupProgressOf(s) * w;
+		wsum += w;
+	}
+	return { subTotal: live.length, subAchieved, progress: wsum ? Math.round(sum / wsum) : 0 };
+}
+
+/** Progress shown for a Sub Goal: computed from the note (null = 미정; the stored value isn't shown). */
 export function displaySubProgress(g: Goal): number | null {
-	if (g.progress !== null) return clamp(g.progress);
 	if (g.status === "achieved") return 100;
+	if (g.measure === "milestone") return 0;
 	if (g.measure === "metric") return metricProgress(g.baseline, g.current, g.target);
 	return null;
 }
 
-/** Progress shown on a Main Goal ring, with the achieved/total caption numbers. */
-export function displayMainProgress(m: Goal, subs: Goal[]): Rollup {
-	const r = rollupMain(subs);
-	const subTotal = m.subTotal ?? r.subTotal;
-	const subAchieved = m.subAchieved ?? r.subAchieved;
-	const p = m.progress ?? (subTotal ? (subAchieved / subTotal) * 100 : 0);
-	return { subTotal, subAchieved, progress: clamp(p) };
+/** Progress shown for a Main Goal: always computed from its Sub Goals (never typed in). */
+export function displayMainProgress(_m: Goal, subs: Goal[]): Rollup {
+	return rollupMain(subs);
 }
 
 // ───────────────────────── board ─────────────────────────
@@ -490,4 +538,215 @@ export function parseInputValue(raw: string): string | number {
 	const s = raw.trim();
 	const n = toNum(s);
 	return n !== null && /^-?[\d,]+(\.\d+)?$/.test(s) ? n : s;
+}
+
+// ───────────────────────── 진척 기록 (SPEC 1-3) ─────────────────────────
+
+export type Verify = "보고됨" | "확인됨";
+export const VERIFIES: readonly Verify[] = ["보고됨", "확인됨"];
+
+/**
+ * One `## 진척 기록` line, read:
+ * `YYYY-MM-DD: 내용 (value:: 98) (health:: at-risk) (보고됨) — 근거: [[…]]`.
+ * Old lines without fields stay valid (their fields are empty).
+ */
+export interface ProgressLine {
+	/** `YYYY-MM-DD` or "". */
+	date: string;
+	/** 내용 without the fields, the 보고됨/확인됨 mark and the 근거. */
+	text: string;
+	/** `(value:: N)` as a number (null when absent or not a number). */
+	value: number | null;
+	valueRaw: string;
+	health: Health;
+	verify: Verify | "";
+	/** After `— 근거:`, as written. */
+	evidence: string;
+}
+
+/** Parse the text of a 진척 기록 list item (without the `- `). */
+export function parseProgressLine(raw: string): ProgressLine {
+	let s = raw.trim();
+	let date = "";
+	const dm = /^(\d{4}-\d{2}-\d{2})\s*:?\s*/.exec(s);
+	if (dm && isIsoDate(dm[1])) {
+		date = dm[1];
+		s = s.slice(dm[0].length);
+	}
+	let evidence = "";
+	const em = /\s*[—–]\s*근거\s*:\s*(.*)$/.exec(s);
+	if (em) {
+		evidence = em[1].trim();
+		s = s.slice(0, em.index);
+	}
+	let valueRaw = "";
+	s = s.replace(/\s*\(\s*value\s*::\s*([^)]*?)\s*\)/, (_m, v: string) => {
+		valueRaw = v.trim();
+		return "";
+	});
+	let health: Health = "";
+	s = s.replace(/\s*\(\s*health\s*::\s*([^)]*?)\s*\)/, (_m, v: string) => {
+		health = normalizeHealth(v);
+		return "";
+	});
+	let verify: Verify | "" = "";
+	s = s.replace(/\s*\((보고됨|확인됨)\)/, (_m, v: Verify) => {
+		verify = v;
+		return "";
+	});
+	return { date, text: s.replace(/\s{2,}/g, " ").trim(), value: valueRaw ? toNum(valueRaw) : null, valueRaw, health, verify, evidence };
+}
+
+/** Newest first: by date (undated last), later lines first within a day. */
+export function newestFirst<T extends { date: string }>(lines: T[]): T[] {
+	return lines
+		.map((l, i) => ({ l, i }))
+		.sort((a, b) => (a.l.date === b.l.date ? b.i - a.i : !a.l.date ? 1 : !b.l.date ? -1 : a.l.date < b.l.date ? 1 : -1))
+		.map((x) => x.l);
+}
+
+export interface ChartPoint {
+	date: string;
+	value: number;
+	health: Health;
+	/** The `baseline` point (first point of the line). */
+	baseline?: boolean;
+}
+
+/**
+ * Points of the 시간 흐름 chart (SPEC 1-3): `baseline` first (dated at the earliest 진척 기록 line,
+ * or `start` when there is none), then every dated line with a numeric `(value::)` in date order.
+ */
+export function chartSeries(g: Pick<Goal, "baseline" | "target">, lines: ProgressLine[], start: string): { points: ChartPoint[]; target: number | null } {
+	const dated = lines.filter((l) => l.date);
+	const first = dated.map((l) => l.date).sort()[0] ?? start;
+	const points: ChartPoint[] = [];
+	const b = toNum(g.baseline);
+	if (b !== null) points.push({ date: first, value: b, health: "", baseline: true });
+	const vals = dated
+		.map((l, i) => ({ l, i }))
+		.filter((x) => x.l.value !== null)
+		.sort((x, y) => (x.l.date === y.l.date ? x.i - y.i : x.l.date < y.l.date ? -1 : 1));
+	for (const { l } of vals) points.push({ date: l.date, value: l.value!, health: l.health });
+	return { points, target: toNum(g.target) };
+}
+
+// ───────────────────────── 관련 업무 (SPEC 1-5) ─────────────────────────
+
+/** A project hub, as far as the Pinboard needs it. */
+export interface ProjectRef {
+	id: string;
+	title: string;
+	/** Hub note path. */
+	path: string;
+	status: string;
+	/** The hub's `goals` (goal ids). */
+	goals: string[];
+	/** Completed and moved to the Archive Box (not offered for new links). */
+	archived?: boolean;
+}
+
+/** A Flywheel element (`12 Flywheel/Flywheel.md`) with its `goal::` ids. */
+export interface HabitRef {
+	id: string;
+	name: string;
+	status: string;
+	goals: string[];
+}
+
+export type RelatedKind = "project" | "habit" | "memo";
+
+export interface RelatedItem {
+	kind: RelatedKind;
+	label: string;
+	/** Hub path (projects). */
+	path?: string;
+	id?: string;
+	status?: string;
+	/** Linked from one side only (goal → hub or hub → goal). */
+	oneSided?: boolean;
+	/** The goal names a project that wasn't found. */
+	broken?: boolean;
+}
+
+/** Goal ids in a Flywheel `goal::` value (`G-2026-02.1`, `[[G-2026-02.1 …]]`, comma-separated). */
+export function goalIdsIn(value: string): string[] {
+	const out: string[] = [];
+	for (const m of value.matchAll(/G-\d{4}-\d+(?:\.\d+)?/g)) if (!out.includes(m[0])) out.push(m[0]);
+	return out;
+}
+
+function linkTarget(link: string): string {
+	const m = /\[\[([^\]|#]+)/.exec(link);
+	return (m ? m[1] : link).trim().replace(/\.md$/, "");
+}
+
+function baseOf(path: string): string {
+	return path.replace(/\.md$/, "").split("/").pop() ?? path;
+}
+
+/**
+ * 관련 업무 of one goal: its projects (`project_ids` / `projects`, plus hubs whose `goals` list it;
+ * one-sided links are marked), Flywheel elements whose `goal::` names it, and the 수단 text items
+ * as 메모. Nothing here moves progress (SPEC 1-5).
+ */
+export function relatedOf(g: Pick<Goal, "id" | "projects" | "projectIds">, projects: ProjectRef[], habits: HabitRef[], means: string[]): RelatedItem[] {
+	const out: RelatedItem[] = [];
+	const seen = new Set<string>();
+	const addProject = (p: ProjectRef, fromGoal: boolean) => {
+		if (seen.has(p.path)) return;
+		seen.add(p.path);
+		out.push({ kind: "project", label: p.title || baseOf(p.path), path: p.path, id: p.id, status: p.status, oneSided: fromGoal ? !p.goals.includes(g.id) : true });
+	};
+	for (const id of g.projectIds) {
+		const p = projects.find((x) => x.id && x.id === id);
+		if (p) addProject(p, true);
+		else out.push({ kind: "project", label: id, id, broken: true });
+	}
+	for (const link of g.projects) {
+		const t = linkTarget(link);
+		const p = projects.find((x) => x.path.replace(/\.md$/, "") === t || baseOf(x.path) === baseOf(t));
+		if (p) addProject(p, true);
+		else if (!out.some((x) => x.broken && x.label === wikilinkName(link))) out.push({ kind: "project", label: wikilinkName(link), broken: true });
+	}
+	for (const p of projects) if (p.goals.includes(g.id)) addProject(p, false);
+	for (const h of habits) if (h.goals.includes(g.id)) out.push({ kind: "habit", label: h.name ? `${h.id} ${h.name}` : h.id, id: h.id, status: h.status });
+	for (const m of means) out.push({ kind: "memo", label: m });
+	return out;
+}
+
+/** A Main Goal's 관련 업무: its own, plus its Sub Goals' projects and habits (each once). */
+export function mergeRelated(own: RelatedItem[], fromSubs: RelatedItem[][]): RelatedItem[] {
+	const out = [...own];
+	const key = (r: RelatedItem) => `${r.kind}:${r.path ?? r.id ?? r.label}`;
+	const keys = new Set(out.map(key));
+	for (const list of fromSubs) {
+		for (const r of list) {
+			if (r.kind === "memo" || keys.has(key(r))) continue;
+			keys.add(key(r));
+			out.push({ ...r, oneSided: false });
+		}
+	}
+	return out;
+}
+
+// ───────────────────────── summary ─────────────────────────
+
+export interface HealthCounts {
+	"on-track": number;
+	"at-risk": number;
+	"off-track": number;
+	/** Live goals without a judgement. */
+	none: number;
+}
+
+/** Health of the goals still running (active / paused); finished goals have none. */
+export function healthCounts(goals: Pick<Goal, "status" | "health">[]): HealthCounts {
+	const c: HealthCounts = { "on-track": 0, "at-risk": 0, "off-track": 0, none: 0 };
+	for (const g of goals) {
+		if (isEnded(g.status)) continue;
+		if (g.health) c[g.health]++;
+		else c.none++;
+	}
+	return c;
 }

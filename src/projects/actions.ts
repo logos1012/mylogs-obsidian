@@ -10,12 +10,12 @@ import { cleanFolder, type MyLogsSettings } from "../settings.ts";
 import { planNewProject, TEMPLATE_FILES, type TemplateKey, type Templates } from "./create.ts";
 import type { CompleteAnswer } from "./modals.ts";
 import { archiveFolder, hubLocation, hubPath, LOG_DIR, logIndexPath, monthlyLogPath, type NewProjectInput, parseProject, type Project, WORK_DIR } from "./model.ts";
-import { goalUnlinkTexts, hubWithoutGoals, planProjectEdit, type ProjectEdit, removeRegistryRow, renameInProjectText, applyHubEdit } from "./edit.ts";
+import { goalLinkTexts, goalUnlinkTexts, hubGoalsLinked, hubWithoutGoals, planProjectEdit, type ProjectEdit, removeRegistryRow, renameInProjectText, applyHubEdit } from "./edit.ts";
 import { linkProject, unlinkProject } from "../pinboard/goal-edit.ts";
 import { INDEX_FILE as PINBOARD_INDEX, prependChangeLog } from "../pinboard/index-writer.ts";
-import { valueToString } from "../pinboard/model.ts";
+import { valueToString, parseFrontmatterText } from "../pinboard/model.ts";
 import { setFrontmatterScalar } from "../writer.ts";
-import type { LogEntry } from "./ops.ts";
+import { getFmList, getFmValue, type LogEntry } from "./ops.ts";
 import {
 	activeRowOf,
 	appendLogEntry,
@@ -201,16 +201,18 @@ export async function changeStatus(host: ProjectsHost, p: Project, to: string, o
 }
 
 /** 「3-5」 완료: record, move the folder to the Archive Box, move the registry row to 「완료」. */
-export async function completeProject(host: ProjectsHost, p: Project, ans: CompleteAnswer): Promise<void> {
+export async function completeProject(host: ProjectsHost, p: Project, ans: CompleteAnswer, failures?: string[]): Promise<void> {
 	const { app } = host;
 	if (p.archived) return;
 	const target = normalizePath(archiveFolder(archiveRoot(host), p.scope, p.name));
 	if (app.vault.getAbstractFileByPath(target)) {
+		failures?.push(`보관 위치 중복: ${target}`);
 		new Notice(`보관 위치에 같은 이름의 폴더가 이미 있어요. 아무것도 바꾸지 않았어요.\n${target}`);
 		return;
 	}
 	const folder = app.vault.getAbstractFileByPath(normalizePath(p.folder));
 	if (!(folder instanceof TFolder)) {
+		failures?.push(`프로젝트 폴더 없음: ${p.folder}`);
 		new Notice(`프로젝트 폴더를 찾지 못했어요: ${p.folder}`);
 		return;
 	}
@@ -218,11 +220,13 @@ export async function completeProject(host: ProjectsHost, p: Project, ans: Compl
 	const templates = await loadTemplates(host);
 	// Write before moving: archived originals are not edited (10 Archive Box/AGENTS.md 「5. 금지」).
 	const failed = await writeProjectRecord(host, p, "완료", today, { complete: ans }, templates);
+	if (failed.length) { failures?.push(...failed); report(failed, ""); return; }
 	try {
 		await ensureFolder(app, target.slice(0, target.lastIndexOf("/")));
 		await app.fileManager.renameFile(folder, target);
 	} catch (err) {
 		console.error("[MyLogs] Project Folders: move to archive failed", err);
+		failures?.push(`보관 이동 실패: ${p.folder}`);
 		new Notice(`MyLogs: 폴더를 Archive Box로 옮기지 못했어요. 허브는 완료로 기록됐어요. 등록부는 바꾸지 않았어요.`);
 		return;
 	}
@@ -246,6 +250,7 @@ export async function completeProject(host: ProjectsHost, p: Project, ans: Compl
 		return "등록부 갱신 실패";
 	});
 	if (problem) failed.push(`등록부 (${problem})`);
+	failures?.push(...failed);
 	report(failed, `「${p.title}」 완료. ${target}로 옮겼어요.`);
 }
 
@@ -445,10 +450,11 @@ export async function editProject(host: ProjectsHost, p: Project, e: ProjectEdit
  * 삭제: the project folder goes to the trash (recoverable), its registry row is removed, and the
  * Pinboard Sub Goals that pointed at it drop the link (Pinboard 「10. 연결 규칙」).
  */
-export async function deleteProject(host: ProjectsHost, p: Project): Promise<void> {
+export async function deleteProject(host: ProjectsHost, p: Project, failures?: string[]): Promise<void> {
 	const { app } = host;
 	const folder = app.vault.getAbstractFileByPath(normalizePath(p.folder));
 	if (!(folder instanceof TFolder)) {
+		failures?.push(`프로젝트 폴더 없음: ${p.folder}`);
 		new Notice(`프로젝트 폴더를 찾지 못했어요: ${p.folder}`);
 		return;
 	}
@@ -457,6 +463,7 @@ export async function deleteProject(host: ProjectsHost, p: Project): Promise<voi
 		await app.vault.trash(folder, true);
 	} catch (err) {
 		console.error("[MyLogs] Project Folders: trash failed", err);
+		failures?.push(`프로젝트 휴지통 실패: ${p.folder}`);
 		new Notice("MyLogs: 프로젝트 폴더를 휴지통으로 옮기지 못했어요. 등록부는 바꾸지 않았어요.");
 		return;
 	}
@@ -476,11 +483,12 @@ export async function deleteProject(host: ProjectsHost, p: Project): Promise<voi
 		for (const [id, f] of files) await app.vault.process(f, (t) => unlinkProject(t, p.id, p.name, today)).catch(() => failed.push(id));
 		await logPinboard(host, `${[...files.keys()].join(", ")}에서 프로젝트 ${p.id} 연결 해제 (프로젝트 삭제) (플러그인)`, today).catch(() => failed.push(PINBOARD_INDEX));
 	}
+	failures?.push(...failed);
 	report(failed, `「${p.title}」 폴더를 휴지통으로 옮기고 등록부에서 지웠어요.`);
 }
 
 /** Pinboard goals were deleted: remove their ids from the hubs that list them (「3-4」 record each). */
-export async function removeGoalsFromProjects(host: ProjectsHost, ids: string[]): Promise<void> {
+export async function removeGoalsFromProjects(host: ProjectsHost, ids: string[], failures?: string[]): Promise<void> {
 	const { app } = host;
 	const act = activeRoot(host);
 	const arc = archiveRoot(host);
@@ -488,18 +496,78 @@ export async function removeGoalsFromProjects(host: ProjectsHost, ids: string[])
 	const templates = await loadTemplates(host);
 	for (const f of app.vault.getMarkdownFiles()) {
 		const loc = hubLocation(f.path, act, arc);
-		if (!loc || loc.archived) continue;
-		const cache = app.metadataCache.getFileCache(f);
-		if (valueToString(cache?.frontmatter?.type) !== "project") continue;
+		if (!loc) continue;
 		const text = await app.vault.read(f);
-		const p = parseProject(cache?.frontmatter, text.slice(cache?.frontmatterPosition?.end.offset ?? 0), loc, f.path);
+		const parsed = parseFrontmatterText(text);
+		if (parsed.data.type !== "project") continue;
+		const p = parseProject(parsed.data, parsed.body, loc, f.path);
 		const removed = p ? p.goals.filter((g) => ids.includes(g)) : [];
 		if (!p || !removed.length) continue;
 		await app.vault.process(f, (t) => hubWithoutGoals(t, removed, today));
+		if(loc.archived){
+			// Historical bodies/logs stay immutable; only stale goal metadata is detached.
+			const problem=await editRegistry(host,t=>({ok:true,text:t,added:false}),`${p.id} 보관 허브에서 삭제 목표 ${removed.join(", ")} 연결 해제`,today);
+			if(problem)failures?.push(problem);
+			continue;
+		}
 		const t = goalUnlinkTexts(p, removed, today);
 		const failed = await writeRecord(host, p.folder, p.name, t.entry, t.recent, today, templates);
 		const goals = p.goals.filter((g) => !removed.includes(g)).join(", ");
-		await editRegistry(host, (x) => upsertActiveRow(x, { id: p.id, goals, updated: today }), t.change, today).catch(() => failed.push("등록부"));
-		if (failed.length) new Notice(`MyLogs: ${p.title}의 ${failed.join(", ")} 갱신에 실패했어요.`);
+		const problem = await editRegistry(host, (x) => upsertActiveRow(x, { id: p.id, goals, updated: today }), t.change, today).catch(() => "등록부 갱신 실패");
+		if(problem)failed.push(problem);
+		if (failed.length) { failures?.push(...failed.map(x=>`${p.title}: ${x}`)); new Notice(`MyLogs: ${p.title}의 ${failed.join(", ")} 갱신에 실패했어요.`); }
 	}
+}
+
+/**
+ * Pinboard 「3-6」 프로젝트 연결 (양방향) from the goal panel, or its 해제: the hub `goals`
+ * (+ 「3-4」 record and registry `goals` cell) and the Sub Goal `projects` / `project_ids`
+ * (+ `Pinboard Index.md` 변경 기록). Each side is skipped when it already matches, so this
+ * also fixes a one-sided link. Returns the names of the files that failed (empty = all done).
+ */
+export async function setGoalProjectLink(host: ProjectsHost, hub: string, goalId: string, link: boolean): Promise<string[]> {
+	const { app } = host;
+	const failed: string[] = [];
+	const today = toIsoDate(new Date());
+	const f = fileAt(app, hub);
+	const loc = hubLocation(hub, activeRoot(host), archiveRoot(host));
+	if (!f || !loc) return [hub.split("/").pop() ?? hub];
+	if (loc.archived) {
+		new Notice("완료되어 Archive Box에 보관된 프로젝트는 여기서 바꾸지 않아요.");
+		return ["허브 (보관됨)"];
+	}
+	const text = await app.vault.read(f);
+	const id = getFmValue(text, "id");
+	if (!id) return ["허브 (id 없음)"];
+	const before = getFmList(text, "goals");
+	let after = before;
+	if (before.includes(goalId) !== link) {
+		try {
+			await app.vault.process(f, (t) => hubGoalsLinked(t, goalId, link, today));
+			after = getFmList(await app.vault.read(f), "goals");
+		} catch (err) {
+			console.error("[MyLogs] Pinboard → project hub link failed", err);
+			failed.push("허브");
+		}
+		if (!failed.length) {
+			const cache = app.metadataCache.getFileCache(f);
+			const p = parseProject({ ...(cache?.frontmatter ?? {}), type: "project" }, text.slice(cache?.frontmatterPosition?.end.offset ?? 0), loc, f.path);
+			const t = goalLinkTexts({ id }, goalId, link, after, p?.action ?? "", today);
+			failed.push(...(await writeRecord(host, loc.folder, loc.name, t.entry, t.recent, today, await loadTemplates(host))));
+			const problem = await editRegistry(host, (x) => upsertActiveRow(x, { id, goals: after.join(", "), updated: today }), t.change, today).catch(() => "등록부 갱신 실패");
+			if (problem) failed.push(`등록부 (${problem})`);
+		}
+	}
+	const gf = goalFiles(host, [goalId]).get(goalId);
+	if (!gf) failed.push(goalId);
+	else {
+		try {
+			await app.vault.process(gf, (t) => (link ? linkProject(t, id, `[[${loc.folder}/${loc.name}]]`, today) : unlinkProject(t, id, loc.name, today)));
+		} catch (err) {
+			console.error("[MyLogs] Pinboard goal link failed", err);
+			failed.push(goalId);
+		}
+	}
+	await logPinboard(host, `${goalId} ↔ ${id} ${link ? "연결" : "연결 해제"} (플러그인)`, today).catch(() => failed.push(PINBOARD_INDEX));
+	return failed;
 }

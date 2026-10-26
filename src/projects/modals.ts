@@ -10,6 +10,7 @@ export interface NewProjectOptions {
 	prefill?: Partial<NewProjectInput>;
 	/** Shown under the title (e.g. where the prefilled values come from). */
 	note?: string;
+	autoId?: boolean;
 }
 
 /** 「3-2」: 이름, 한 문장 설명, 개인/회사, area, 유형 (+ id, 별칭, 한 가지 행동). Resolves null when cancelled. */
@@ -31,6 +32,7 @@ class NewProjectModal extends Modal {
 		super(app);
 		const p = opts.prefill ?? {};
 		this.v = { name: p.name ?? "", summary: p.summary ?? "", scope: p.scope ?? opts.scope ?? "개인", area: p.area ?? "", kind: p.kind ?? "", id: p.id ?? (p.name ? suggestId(p.name) : "P-"), aliases: p.aliases ?? "", action: p.action ?? "", from: p.from };
+		if(opts.autoId){const prefix=`P-${toIsoDate(new Date()).replace(/-/g,"")}-`;let n=1;while(opts.taken.ids.includes(prefix+n))n++;this.v.id=prefix+n;this.idTouched=true;}
 	}
 
 	onOpen(): void {
@@ -46,7 +48,7 @@ class NewProjectModal extends Modal {
 		let idInput: HTMLInputElement | null = null;
 		new Setting(el).setName("이름").addText((t) => {
 			t.setValue(this.v.name);
-			t.setPlaceholder("예: 혼팀 브랜드").onChange((x) => {
+			t.setPlaceholder("예: 뉴스레터 창간").onChange((x) => {
 				this.v.name = x;
 				if (!this.idTouched && idInput) {
 					this.v.id = suggestId(x);
@@ -77,7 +79,7 @@ class NewProjectModal extends Modal {
 			for (const k of KINDS) d.addOption(k, k);
 			d.setValue(this.v.kind).onChange((x) => (this.v.kind = x));
 		});
-		new Setting(el)
+		if(!this.opts.autoId)new Setting(el)
 			.setName("id")
 			.setDesc("P- 뒤에 영문 소문자·숫자·하이픈. 바꾸지 않는 값이에요.")
 			.addText((t) => {
