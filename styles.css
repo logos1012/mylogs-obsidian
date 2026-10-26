@@ -7813,3 +7813,80 @@ body.is-mobile .mylogs-desk-calendar .dc-m-foot {
 	color: var(--dc-muted);
 	font-size: 12.5px;
 }
+
+/* ── Drawer: column tabs, 후보 on top, dock → card sheet (src/drawer/mobile.ts) ── */
+body.is-mobile .mylogs-drawer.dr-m .dr-top {
+	align-items: flex-start;
+	gap: 12px;
+	padding-bottom: 14px;
+}
+body.is-mobile .mylogs-drawer.dr-m .dr-right {
+	width: 100%;
+	text-align: left;
+}
+body.is-mobile .mylogs-drawer .dr-btn {
+	min-height: 44px;
+	padding: 0 16px;
+	font-size: 14.5px;
+}
+body.is-mobile .mylogs-drawer.dr-m .dr-cands {
+	margin-bottom: 14px;
+}
+body.is-mobile .mylogs-drawer.dr-m .dr-cand {
+	grid-template-columns: 1fr;
+	cursor: pointer;
+}
+body.is-mobile .mylogs-drawer.dr-m .dr-cand-btns {
+	display: flex;
+	gap: 8px;
+}
+body.is-mobile .mylogs-drawer.dr-m .dr-board.dr-m-board {
+	display: block;
+	margin-top: 0;
+}
+body.is-mobile .mylogs-drawer.dr-m .dr-col {
+	min-height: 0;
+	border: 0;
+	padding: 0;
+	background: transparent;
+}
+body.is-mobile .mylogs-drawer.dr-m .dr-col-head {
+	display: none;
+}
+body.is-mobile .mylogs-drawer.dr-m .dr-card-head {
+	align-items: center;
+}
+body.is-mobile .mylogs-drawer.dr-m .dr-text {
+	padding: 10px 0;
+	font-size: 15.5px;
+}
+body.is-mobile .mylogs-drawer .dr-more {
+	min-width: 44px;
+	min-height: 44px;
+	font-size: 18px;
+	opacity: 1;
+}
+body.is-mobile .mylogs-drawer button.dr-m-send {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 44px;
+	padding: 0 10px;
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+	color: var(--dr-accent);
+	font-size: 13.5px;
+	font-weight: 600;
+}
+body.is-mobile .mylogs-drawer .dr-m-send-icon {
+	display: inline-flex;
+}
+body.is-mobile .mylogs-drawer .dr-m-send-icon svg {
+	width: 16px;
+	height: 16px;
+}
+body.is-mobile .mylogs-drawer .dr-when.is-goal {
+	min-height: 32px;
+}

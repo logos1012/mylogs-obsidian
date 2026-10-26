@@ -83,3 +83,55 @@ test("desk day page: default day and clamping into a month", () => {
 	assert.equal(dayInMonth("2026-03", "2026-02-15"), "2026-03-15");
 	assert.equal(dayInMonth("2026-10", "2026-10-09"), "2026-10-09");
 });
+
+// ── Drawer ──
+
+import { candidateTargets, type DrawerMoveApi, drawerItemTargets, runCandidateTarget, runDrawerTarget } from "../src/drawer/mobile-targets.ts";
+
+function drawerRecorder() {
+	const calls: unknown[][] = [];
+	const api: DrawerMoveApi<string, string> = {
+		moveToSection: async (...a) => void calls.push(["moveToSection", ...a]),
+		takeOut: async (...a) => void calls.push(["takeOut", ...a]),
+		letGo: async (...a) => void calls.push(["letGo", ...a]),
+		acceptCand: async (...a) => void calls.push(["acceptCand", ...a]),
+		dropCand: async (...a) => void calls.push(["dropCand", ...a]),
+	};
+	return { api, calls };
+}
+
+test("drawer targets: a card → the other two columns, the four 꺼내기 targets, 놓아주기 (the dock)", () => {
+	const t = drawerItemTargets({ section: "아이디어", active: true }, "2026-10");
+	assert.deepEqual(
+		t.map((x) => (x.op === "section" ? `section:${x.section}` : x.op === "take" ? `take:${x.take}` : x.op)),
+		["section:보류", "section:프로젝트 후보", "take:today", "take:month", "take:wall", "take:project", "letgo"],
+	);
+	assert.deepEqual(drawerItemTargets({ section: "보류", active: false }, "2026-10"), [], "departed lines go nowhere");
+});
+
+test("drawer targets: each card target runs the drop zone's call", async () => {
+	const { api, calls } = drawerRecorder();
+	for (const t of drawerItemTargets({ section: "보류", active: true }, "2026-10")) await runDrawerTarget(t, "item", api);
+	assert.deepEqual(calls, [
+		["moveToSection", "item", "아이디어"],
+		["moveToSection", "item", "프로젝트 후보"],
+		["takeOut", "item", "today"],
+		["takeOut", "item", "month"],
+		["takeOut", "item", "wall"],
+		["takeOut", "item", "project"],
+		["letGo", "item"],
+	]);
+});
+
+test("drawer targets: a 후보 → any column (acceptCand with that section) or 놓아주기 (dropCand)", async () => {
+	const { api, calls } = drawerRecorder();
+	const t = candidateTargets("프로젝트 후보");
+	assert.equal(t.find((x) => x.op === "accept" && x.section === "프로젝트 후보")?.sub, "기본 섹션");
+	for (const x of t) await runCandidateTarget(x, "cand", api);
+	assert.deepEqual(calls, [
+		["acceptCand", "cand", "보류"],
+		["acceptCand", "cand", "아이디어"],
+		["acceptCand", "cand", "프로젝트 후보"],
+		["dropCand", "cand"],
+	]);
+});
