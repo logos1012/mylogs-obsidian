@@ -22,7 +22,10 @@ export interface FlywheelElement {
 	name: string;
 	/** Every `- 키:: 값` line of the block, keys as written (정체성, 최소, 보통, 다음, 선행지표, goal, status, since). */
 	fields: Record<string, string>;
-	/** `status::` — 사용 / 쉼 / 폐기; `사용` when the field is missing (as in the Python). */
+	/**
+	 * `status::` — 사용 / 쉼 / 폐기; `""` when the field is missing. Like `new_day.py`, a missing
+	 * status is not 사용: the element is left out (treated as 쉼) and the caller warns (`missingStatus`).
+	 */
 	status: string;
 }
 
@@ -49,7 +52,7 @@ export function parseFlywheel(text: string | null): FlywheelElement[] {
 			const sp = rest.indexOf(" ");
 			const id = sp === -1 ? rest : rest.slice(0, sp);
 			const name = sp === -1 ? "" : rest.slice(sp + 1).trim();
-			cur = { id, name, fields: {}, status: "사용" };
+			cur = { id, name, fields: {}, status: "" };
 		} else if (cur && raw.startsWith("- ") && raw.includes("::")) {
 			const body = raw.slice(2);
 			const k = body.slice(0, body.indexOf("::")).trim();
@@ -65,7 +68,12 @@ export function parseFlywheel(text: string | null): FlywheelElement[] {
 	return out;
 }
 
-/** Elements that go into today's Daily Pad: `status:: 사용` only (쉼·폐기 are skipped). */
+/** Elements without a `status::` field — left out of the Daily Pad; `new_day.py` warns on stderr. */
+export function missingStatus(elements: FlywheelElement[]): FlywheelElement[] {
+	return elements.filter((e) => !("status" in e.fields));
+}
+
+/** Elements that go into today's Daily Pad: `status:: 사용` only (쉼·폐기·no status are skipped). */
 export function activeElements(elements: FlywheelElement[]): FlywheelElement[] {
 	return elements.filter((e) => e.status === "사용");
 }

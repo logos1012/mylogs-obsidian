@@ -2,6 +2,12 @@
 
 버전 번호는 `manifest.json`의 `version`과 같고, 같은 이름의 git 태그와 GitHub Release가 있다(앞에 v를 붙이지 않는다).
 
+## 다음 버전 (아직 릴리스 안 함)
+
+- **Toolbox: `updated_at` 갱신** (`11 Toolbox/AGENTS.md` 「4-10」) — 플러그인이 스킬 파일에 무엇이든 쓸 때(상태 바꾸기, 폐기, 수정·종류 바꾸기, 새 스킬) frontmatter에 `updated_at` 키가 있으면 `updated`와 함께 지금 시각으로 올린다: `"YYYY-MM-DDTHH:MM:SS+09:00"`(Asia/Seoul, 초 단위, 따옴표). 키가 없으면 더하지 않는다(지금은 `body_mode: temporary-dual`인 T-02 `MyLogs 운영`만 해당). 실제로 바뀐 것이 없으면 건드리지 않는다. 순수 헬퍼 `kstTimestamp` · `touchUpdatedAt` · `skillWrite`(`src/toolbox/ops.ts`)
+- **Flywheel: `status::` 없는 요소는 넣지 않음** — `new_day.py` `flywheel_lines()`와 같게, `status::` 필드가 없는 요소는 쉼으로 보고 Daily Pad에 넣지 않는다(예전엔 `사용`으로 봄). 새 날을 만들 때 그런 요소가 있으면 Notice로 알린다(파이썬은 stderr 경고). 바이트 일치 픽스처 `new_day-2026-10-24.flywheel-mixed.md`를 실제 `new_day.py` `render()`로 다시 만듦
+- 픽스처 `test/fixtures/toolbox/MyLogs 운영.md`(볼트 복사본). 테스트 232개(updated_at 3: 시각 형식, 키 있을 때만·따옴표·다른 줄 그대로, 상태/수정 쓰기 경로)
+
 ## 0.8.3 — 2026-10-26
 
 - **Toolbox: 스킬 세 종류** (`11 Toolbox/AGENTS.md` v2.0 「1」「3」) — 스킬 frontmatter `kind`(작업 / 도구 / 운영; 없으면 작업으로 읽음), `slug`(Hermes 스텁 폴더 이름), `description`을 읽는다. 등록부는 「운영」「도구」「작업」 세 표(옛 「스킬」 표 하나도 작업으로 읽고 씀). 화면은 위에서부터 **운영 · 도구 · 작업** 세 구역, 열은 등록부 표와 같음(운영: 이름 · slug · 범위 · 상태 · 마지막 검토 / 도구: 이름 · slug · 부르는 말 · 담당 · 상태 · 마지막 검토 / 작업: 예전 그대로). 상태 버튼은 종류별: 작업 멈춤/시험/사용 3단, 도구 멈춤/사용 2단, 운영은 배지만(사용/폐기). 「지금 실행」과 `last_run` 기준 "아직도 쓰나요?"는 작업만; `last_reviewed` 90일 지남은 모든 종류에 "검토할 때" 배지(「4-9」)

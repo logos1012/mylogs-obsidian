@@ -26,7 +26,7 @@ import {
 	toIsoDate,
 } from "./parser.ts";
 import { MAIN_SECTION_KEYS, type MainSectionKey } from "./settings.ts";
-import { flywheelIdOf, flywheelLines, flywheelPath, isFlywheelLine, missedCount, parseFlywheel, weeklyDone } from "./flywheel/model.ts";
+import { flywheelIdOf, flywheelLines, flywheelPath, isFlywheelLine, missedCount, missingStatus, parseFlywheel, weeklyDone } from "./flywheel/model.ts";
 import { weekMonday } from "./mylife/model.ts";
 import { AutoGrow } from "./ui/autogrow.ts";
 import {
@@ -820,12 +820,15 @@ export class DailyPadView extends ItemView {
 			}
 			const s = this.plugin.settings;
 			// 12 Flywheel AGENTS 「4-2」: `status:: 사용` elements open 오늘 할 일. No Flywheel.md → plain skeleton.
+			const flywheel = parseFlywheel(await this.readVaultFile(flywheelPath(s.flywheelPath)));
+			const noStatus = missingStatus(flywheel).map((e) => e.id);
+			if (noStatus.length) new Notice(`Flywheel ${noStatus.join(", ")}에 status:: 가 없어 넣지 않았어요(쉼으로 봄).`);
 			const content = dailyPadSkeleton({
 				isoDate: this.date,
 				weekday: moment(this.date, "YYYY-MM-DD").format("ddd"),
 				deskCalendarFolder: s.deskCalendarFolder,
 				sections: MAIN_SECTION_KEYS.map((k) => s.sections[k]),
-				flywheelLines: flywheelLines(parseFlywheel(await this.readVaultFile(flywheelPath(s.flywheelPath)))),
+				flywheelLines: flywheelLines(flywheel),
 			});
 			await this.app.vault.create(path, content);
 			// The create event triggers a rebuild; reload directly in case it fired early.

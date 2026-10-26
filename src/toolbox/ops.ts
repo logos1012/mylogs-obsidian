@@ -179,6 +179,33 @@ export function setSkillStatus(text: string, status: string, today: string): str
 	return setFmValue(setFmValue(text, "status", status), "updated", today);
 }
 
+/** `YYYY-MM-DDTHH:MM:SS+09:00` — `now` in Asia/Seoul (KST has no DST, so a fixed +9h offset). */
+export function kstTimestamp(now: Date): string {
+	const k = new Date(now.getTime() + 9 * 3600_000);
+	const p = (n: number) => String(n).padStart(2, "0");
+	return `${k.getUTCFullYear()}-${p(k.getUTCMonth() + 1)}-${p(k.getUTCDate())}T${p(k.getUTCHours())}:${p(k.getUTCMinutes())}:${p(k.getUTCSeconds())}+09:00`;
+}
+
+/**
+ * 「4-10」 1·6: when the frontmatter already has `updated_at` (temporary-dual skills), set it to
+ * `now` in KST, quoted. Absent key → text unchanged (never added).
+ */
+export function touchUpdatedAt(text: string, now: Date): string {
+	if (!/^updated_at\s*:/m.test(text.slice(0, fmEndOffset(text)))) return text;
+	return setFmValue(text, "updated_at", JSON.stringify(kstTimestamp(now)));
+}
+
+/** Any write to a skill file: `t → write(t)`, plus `updated_at` when the write changed something. */
+export function skillWrite(text: string, write: (t: string) => string, now: Date): string {
+	const out = write(text);
+	return out === text ? text : touchUpdatedAt(out, now);
+}
+
+function fmEndOffset(text: string): number {
+	const lines = splitLinesKeepEol(text);
+	return lines.slice(0, frontmatterEnd(lines)).join("").length;
+}
+
 /** A skill's own 「변경 기록」 line (`- YYYY-MM-DD: …`, appended at the end — the file's order). */
 export function appendSkillLog(text: string, today: string, entry: string): string {
 	return appendToSection(text, CHANGELOG_SECTION, `- ${today}: ${oneLine(entry)}`);
