@@ -6,6 +6,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseFrontmatterText } from "../src/pinboard/model.ts";
+import { readMilestones, milestoneSummary } from "../src/projects/milestones.ts";
 import { getFmList, parseRegistry } from "../src/projects/ops.ts";
 import { TEMPLATE_FILES } from "../src/projects/create.ts";
 import { readGoal } from "../src/pinboard/create.ts";
@@ -14,7 +15,7 @@ import { TODAY, ROOT, MAIN_TEMPLATE, SUB_TEMPLATE, INDEX, REGISTRY, WHEEL, INPUT
 // Real actions, real parsers, real templates; only the Obsidian storage adapter is simulated.
 const temp=mkdtempSync(join(tmpdir(),"mylogs-pinboard-test-"));after(()=>rmSync(temp,{recursive:true,force:true}));
 const stub=`export class App{};export class PluginSettingTab{};export class Setting{};export class Notice{constructor(message){globalThis.__notices?.push(message)}};export class TFile{constructor(path){this.path=path;this.name=path.split('/').pop();this.basename=this.name.replace(/\\.md$/,'')}};export class TFolder{constructor(path){this.path=path;this.name=path.split('/').pop();this.children=[]}};export const normalizePath=p=>p.replace(/\\\\/g,'/').replace(/\\/+/g,'/').replace(/^\\/|\\/$/g,'');`;
-const result=await build({stdin:{contents:`export * from './src/pinboard/create-actions.ts';export * from './src/projects/actions.ts';export {DEFAULT_SETTINGS} from './src/settings.ts';export {TFile,TFolder} from 'obsidian';`,resolveDir:resolve(import.meta.dirname,"..")},bundle:true,format:"cjs",platform:"node",write:false,plugins:[{name:"mock-obsidian",setup(b){b.onResolve({filter:/^obsidian$/},()=>({path:"obsidian",namespace:"mock"}));b.onLoad({filter:/.*/,namespace:"mock"},()=>({contents:stub,loader:"js"}));}}]});
+const result=await build({stdin:{contents:`export * from './src/pinboard/create-actions.ts';export * from './src/projects/actions.ts';export * from './src/projects/milestone-actions.ts';export {DEFAULT_SETTINGS} from './src/settings.ts';export {TFile,TFolder} from 'obsidian';`,resolveDir:resolve(import.meta.dirname,"..")},bundle:true,format:"cjs",platform:"node",write:false,plugins:[{name:"mock-obsidian",setup(b){b.onResolve({filter:/^obsidian$/},()=>({path:"obsidian",namespace:"mock"}));b.onLoad({filter:/.*/,namespace:"mock"},()=>({contents:stub,loader:"js"}));}}]});
 const bundle=join(temp,"actions.cjs");writeFileSync(bundle,result.outputFiles[0].text);const api=createRequire(import.meta.url)(bundle);
 
 function vault(){
@@ -40,6 +41,27 @@ function vault(){
 	return {host,data,nodes,trash,moves,put};
 }
 async function start(){const v=vault();const main=await api.createGoalFlow(v.host,{input:INPUT},2026,undefined,TODAY);const sub=await api.createGoalFlow(v.host,{input:{...INPUT,title:"뉴스레터 첫 발행",measure:"milestone",target:"창간호 발송"},execution:{mode:"new",project:PROJECT}},2026,main.id,TODAY);return {...v,main,sub};}
+
+test("milestone storage updates all records but no goal values or project status", async()=>{
+	const v=await start(),path=v.sub.projects[0].slice(2,-2)+".md",{p}=await api.readProject(v.host,path),goal=v.data.get(v.sub.path),main=v.data.get(v.main.path),index=v.data.get(`${ROOT}/Pinboard Index.md`);
+	await api.saveMilestone(v.host,p,"",{kind:"add",text:"창간호 검수 통과"},TODAY);
+	let m=readMilestones(v.data.get(path)!);await api.saveMilestone(v.host,p,m.source,{kind:"check",line:m.items[0].line,done:true},TODAY);
+	m=readMilestones(v.data.get(path)!);assert.equal(milestoneSummary(m.items).label,"1/1 달성");assert.match(v.data.get(path)!,/status: 후보/);
+	assert.equal(v.data.get(v.sub.path),goal);assert.equal(v.data.get(v.main.path),main);assert.equal(v.data.get(`${ROOT}/Pinboard Index.md`),index);
+	assert.match(v.data.get(`${p.folder}/99 작업실/로그/${p.name} 로그 2026-01.md`)!,/마일스톤 달성 확인/);
+	assert.match(v.data.get(`${p.folder}/99 작업실/${p.name} 로그.md`)!,/1\/1 달성/);
+	assert.match(v.data.get("05 Project Folders/99 작업실/Project Folders Index.md")!,/마일스톤 달성 확인/);
+	assert.equal(v.moves.length,0);
+});
+test("milestone stale source, archived hub and write failure are safe",async()=>{
+	const v=await start(),path=v.sub.projects[0].slice(2,-2)+".md",{p}=await api.readProject(v.host,path);
+	await api.saveMilestone(v.host,p,"",{kind:"add",text:"구성 확정"},TODAY);
+	const before=new Map(v.data);await assert.rejects(api.saveMilestone(v.host,p,"",{kind:"add",text:"검수"},TODAY),/다른 곳/);assert.deepEqual(v.data,before);
+	const real=v.host.app.vault.process;v.host.app.vault.process=async(f:any,fn:any)=>{if(f.path.endsWith("Project Folders Index.md"))throw Error("disk full");return real(f,fn)};
+	await assert.rejects(api.saveMilestone(v.host,p,readMilestones(v.data.get(path)!).source,{kind:"add",text:"검수"},TODAY),/저장을 취소/);assert.deepEqual(v.data,before);
+	v.host.app.vault.process=real;const archivePath=path.replace("05 Project Folders","10 Archive Box/Projects");v.put(archivePath,v.data.get(path)!);
+	await assert.rejects(api.saveMilestone(v.host,{...p,path:archivePath},readMilestones(v.data.get(path)!).source,{kind:"add",text:"검수"},TODAY),/보관/);
+});
 
 test("storage flow: Main → Sub + template project saves all originals and registries",async()=>{const v=await start();const hub=v.sub.projects[0].slice(2,-2)+".md";assert.ok(v.data.has(hub));assert.deepEqual(getFmList(v.data.get(hub)!,"goals"),[v.sub.id]);assert.equal(readGoal(v.data.get(v.main.path)!,v.main.path).subTotal,1);assert.match(v.data.get(`${ROOT}/Pinboard Index.md`)!,/뉴스레터 창간/);assert.equal(v.trash.length,0);});
 test("storage flow: missing real project template creates neither Sub nor project",async()=>{const v=vault(),m=await api.createGoalFlow(v.host,{input:INPUT},2026,undefined,TODAY);const path="05 Project Folders/99 작업실/템플릿/허브.md";v.nodes.delete(path);v.data.delete(path);const before=[...v.data];await assert.rejects(api.createGoalFlow(v.host,{input:{...INPUT,title:"첫 발행"},execution:{mode:"new",project:PROJECT}},2026,m.id,TODAY),/필수 파일/);assert.deepEqual([...v.data],before);});
