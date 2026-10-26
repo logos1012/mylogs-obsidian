@@ -16,8 +16,9 @@
 | Desk Calendar | "Desk Calendar 열기", "새 달 만들기" | 주마다 [이번 주 할 일 \| 월~일]. 드래그 앤 드롭 3단계 배정(이달 중 → 이번 주 → 날짜), 날짜 사이 이동, 배정 취소, 못 한 일 다섯 선택지(다른 날·미래로·서랍에·쪼개기·놓아주기)와 세 번째 미룰 때 질문 |
 | Project Folders | "Project Folders 열기", "새 프로젝트 만들기", "완료 타임라인 열기" | 프로젝트 칸반(후보 → 진행 → 대기 → 보류 → 완료) ↔ 리스트(area별), 개인/회사 필터. 카드를 끌면 허브 `status`·월별 로그·로그 인덱스·등록부를 함께 갱신, 완료는 Archive Box로 옮김. 14일 넘게 멈춘 진행 카드는 계속/보류/종료를 물음. 새 프로젝트는 템플릿으로 생성 (개발 중) |
 | Drawer | "Drawer 열기", "Drawer에 넣기" | `06 Drawer/Drawer.md` 한 파일. 위: 오늘 들어온 후보(Daily Pad 결정 대기의 `#서랍후보`·`#프로젝트후보`, 넣기 / 놓아주기). 가운데: 보류 / 아이디어 / 프로젝트 후보 세 열. 아래: 꺼내기(오늘 / 이달 Desk / Wall·달 선택 / 프로젝트로)와 놓아주기 칸. 카드를 끌어 섹션을 옮기거나 꺼내고(보낸 곳에 `(from:: Drawer)` 줄, Drawer 줄은 `[>] → [[보낸 곳]]`), 놓아주면 `[-] (why::)`. `when::` 칩이 목표 id면 Pinboard로, `reviewed` 90일 지나면 "아직도 원하나요?". 모든 쓰기는 「변경 기록」 한 줄 + `updated` (개발 중) |
-| My Life | "My Life 열기" | 지나간 시간의 기록(`08 My Life/`). 날짜를 고르고 **오늘 / 이번 주 / 이번 달 / 올해 / Diary** 탭으로 그날의 Daily, 그 주의 Weekly(ISO 주), 그 달의 Monthly, 그 해의 Yearly를 섹션 카드로 읽음. frontmatter 숫자(세션·항목·놓아줌·걸러냄·상태)는 한 줄 요약, `#sample`·`sample: true`는 「샘플」 표시, 카드 접기는 탭별로 기억. 파일은 Hermes가 쓰므로 **읽기 전용**이고 「만들기」 버튼이 없음. 예외는 Weekly 이상 `## 사용자 한마디`만 — 여기서 쓰면 그 섹션만 저장. **Diary** 탭은 그 달 Daily 전부의 `## 깨달음·감상`·`## 로그`와 Monthly의 `## 깨달음·감상`을 날짜순으로 모아 원문 그대로 보여 주고(달 이동), 각 항목에서 원본 파일로 감. "Daily Pad 열기"로 같은 날짜의 Daily Pad를, Daily Pad의 책 아이콘으로 다시 My Life를 연다 |
+| My Life | "My Life 열기" | 지나간 시간의 기록(`08 My Life/`). 날짜를 고르고 **오늘 / 이번 주 / 이번 달 / 올해** 탭으로 그날의 Daily, 그 주의 Weekly(ISO 주), 그 달의 Monthly, 그 해의 Yearly를 섹션 카드로 읽음. frontmatter 숫자(세션·항목·놓아줌·걸러냄·상태)는 한 줄 요약, `#sample`·`sample: true`는 「샘플」 표시, 카드 접기는 탭별로 기억. 파일은 Hermes가 쓰므로 **읽기 전용**이고 「만들기」 버튼이 없음. 예외는 Weekly 이상 `## 사용자 한마디`만 — 여기서 쓰면 그 섹션만 저장. "Daily Pad 열기"로 같은 날짜의 Daily Pad를, "Diary 열기"로 Diary 화면을, Daily Pad의 책 아이콘으로 다시 My Life를 연다. (예전 Diary 탭의 깨달음·감상·로그 모아 보기는 Diary 화면 재료 패널의 「My Life에서」로 옮겼다) |
 | Toolbox | "Toolbox 열기", "새 스킬 만들기" | `11 Toolbox/` 스킬 등록부 표 한 장: 이름(파일 열기) · 하는 일(「목적」 첫 줄) · 트리거/schedule · 출력 · 상태 · 마지막 실행·결과 · 마지막 검토. 상태는 행의 **멈춤 / 시험 / 사용** 3단 버튼(시험·사용은 무엇이 켜지는지 보여 주고 확인; 스킬 frontmatter `status`·`updated`, 등록부 상태 칸, 변경 기록 한 줄). **지금 실행**은 등록부 「실행 요청」에 `- [ ] T-NN (requested:: 시각)`을 붙이고(실행은 Hermes), 대기 건은 배지, 처리된 `[x]`는 7일 동안 흐리게. `last_run` 없거나 90일 지남 → 흐리게 + "아직도 쓰나요?", `last_result` 실패 → 빨간 점과 이유, 20개 초과 → 머리 알림. 우클릭: 수정(이름·트리거·schedule·출력·알림; 이름은 파일도 바꿈) / 폐기(폐기일·이유 → 「폐기」 표로, 파일은 그대로). 새 스킬은 `_Templates/스킬.md`로 생성(다음 `T-NN`, `status: 멈춤`, 등록부 행). 파일은 있는데 행이 없으면 "등록부에 없음" + 등록, 행만 있으면 취소선 |
+| Diary | "Diary 열기", "Diary 오늘 쓰기" | `09 Diary/` — **내가 자기 언어로 쓰는 글**. Day One식 3단: 왼쪽 **타임라인**(월 헤더, 요일·날짜 큰 라벨, 제목, 미리보기 2줄, 첫 사진 썸네일, 시각·태그·장소 한 줄, 최신순, `pinned`는 맨 위; 전체 / ★ / 태그 / 연도 필터; 캘린더 띠에 쓴 날 색칠·첫 사진·연속 일수), 가운데 **에디터**(본문 폭 680px·큰 명조체; 첫 줄 `# 제목`이 frontmatter `title`로, 저장마다 `updated`; 시각·장소·날씨·태그는 위에 흐린 한 줄, 누르면 수정; 사진 붙여넣기·드롭 → `99 작업실/첨부/{YYYY-MM}/{YYYY-MM-DD HHMM} {NN}.{ext}`에 저장하고 `![[…]]` 삽입; Daily Pad와 같은 디바운스 자동 저장과 충돌 안내; 미리보기 전환), 오른쪽 **재료 패널**(접을 수 있고 기억: ① 오늘 Daily Pad 끼적임·메모·로그 ② 어제 My Life Daily 깨달음·감상·열린 질문 ③ 그날의 기록 — 지난 해 같은 월-일 엔트리 ④ 오늘의 질문 — `프롬프트.md`에서 날짜 시드로 하나, 90일 안에 답한 질문은 제외, 「답하기」는 `prompt`와 `> 질문` 첫 줄로 새 엔트리 ⑤ My Life에서 — 그 달 Daily·Monthly의 깨달음·감상·로그 원문). 재료의 「+ from」은 엔트리 `from`에 링크만 더하고 본문에는 넣지 않는다. **오늘 쓰기**는 `_Templates/엔트리.md`로 `{YYYY}/{YYYY-MM}/{YYYY-MM-DD HHMM}.md`(같은 분이면 `-2`)를 만들고 커서를 본문에. 저장·생성 때 등록부 `Diary Index.md` 「엔트리」 행과 「월별」(달·엔트리·쓴 날)을 갱신(변경 기록은 안 씀), 우클릭 ★·고정·삭제(확인 → 파일과 첨부를 휴지통, 행 제거, 변경 기록 `삭제 「제목」 (날짜)`). 플러그인은 본문을 한 글자도 쓰지 않는다 |
 
 모든 쓰기는 바뀐 줄만 고치고, 쓰기 직전에 파일이 그새 바뀌지 않았는지 확인합니다.
 
@@ -123,6 +124,7 @@ updated: 2026-10-24
 | Drawer 파일 | `06 Drawer/Drawer.md` |
 | My Life 폴더 | `08 My Life` (`01 Daily/<YYYY>/<YYYY-MM>/`, `02 Weekly/<GGGG>/`, `03 Monthly/<YYYY>/`, `04 Yearly/`) |
 | Toolbox 폴더 | `11 Toolbox` (`<이름>.md`, `Toolbox Index.md`, `_Templates/스킬.md`) |
+| Diary 폴더 | `09 Diary` (`<YYYY>/<YYYY-MM>/<YYYY-MM-DD HHMM>.md`, `Diary Index.md`, `_Templates/엔트리.md`, `99 작업실/프롬프트.md`·`첨부/`) |
 | 섹션 이름 | `오늘 할 일`, `메모`, `로그`, `끼적임`, `자료`, `결정 대기` |
 | 자동 저장 지연 | 800 ms |
 | 테스트 데이터 표시 | 켬 (`#test` 항목에 작은 표시) |
@@ -152,7 +154,8 @@ npm run dev     # 고칠 때마다 다시 빌드
 - `src/view.ts`: Daily Pad 화면 (`ItemView`, 보기 형식 `mylogs-daily-pad`).
 - `src/settings.ts`: 설정 탭.
 - `src/desk/`, `src/projects/`, `src/drawer/`: 화면마다 `model.ts`(읽기)·`ops.ts`(순수 쓰기 변환)·`actions.ts`(볼트 쓰기)·`view.ts`·`register.ts`. 순수 모듈만 테스트합니다.
-- `src/mylife/`: My Life 화면. `model.ts`(경로·ISO 주·섹션 파싱·사용자 한마디 쓰기·Diary 모음, 순수)·`view.ts`·`register.ts`. 픽스처는 볼트의 김하루 샘플(`test/fixtures/my-life/`).
+- `src/mylife/`: My Life 화면. `model.ts`(경로·ISO 주·섹션 파싱·사용자 한마디 쓰기·깨달음·감상 모음, 순수)·`view.ts`·`register.ts`. 픽스처는 볼트의 김하루 샘플(`test/fixtures/my-life/`).
+- `src/diary/`: Diary 화면. `model.ts`(엔트리 파싱·미리보기·타임라인 묶기·파일 이름·제목↔frontmatter·질문 고르기·그날의 기록·연속 일수·from 링크, 순수)·`ops.ts`(등록부 「엔트리」·「월별」·삭제 기록, 순수)·`actions.ts`(볼트 쓰기)·`view.ts`·`register.ts`. 픽스처는 김하루의 가상 엔트리(`test/fixtures/diary/`).
 - `src/toolbox/`: Toolbox 화면. `model.ts`(스킬 파싱·다음 id·배지·등록부 행 대조, 순수)·`ops.ts`(등록부 표·실행 요청·상태·폐기·수정 변환, 순수)·`actions.ts`·`modals.ts`·`view.ts`·`register.ts`. 픽스처는 볼트의 `11 Toolbox/` 복사본(`test/fixtures/toolbox/`).
 - `test/fixtures/`: 볼트의 테스트 데이터(`#test`) 복사본과 Python 참고 구현의 출력. 파서가 Python과 똑같이 읽는지 비교합니다.
 
