@@ -2,6 +2,19 @@
 
 버전 번호는 `manifest.json`의 `version`과 같고, 같은 이름의 git 태그와 GitHub Release가 있다(앞에 v를 붙이지 않는다).
 
+## 0.9.0 — 2026-10-27
+
+- **모바일** (계획 「11. 모바일」) — 같은 플러그인·같은 로직, 화면에서만 `Platform.isMobile`로 갈라진다. 데스크톱 경로는 그대로(각 화면의 그리기 함수 맨 앞 한 줄 분기, 또는 `onOpen`의 한 줄). 모바일 CSS는 `styles.css` 끝 「/* ===== mobile ===== */」 블록, 모두 `body.is-mobile` 아래
+  - 공용 키트 `src/ui/mobile.ts`: `pickTarget`(SuggestModal 액션 시트), 길게 누르기(450ms, 10px 넘게 움직이면 취소; 데스크톱 오른쪽 클릭 메뉴를 그대로 연다), `tabBar`, ⋯ 버튼, 떠 있는 버튼, 파일 고르기, 키보드 높이(`visualViewport`). `src/ui/autogrow.ts`의 커서 따라가기는 모바일에서 키보드에 가린 부분을 뺀 영역 기준
+  - Daily Pad: 머리말 줄바꿈, 44px 버튼·날짜 고르기, 16px 편집칸, 키보드 위 여백
+  - Diary: 「타임라인 / 쓰기 / 재료」 탭, 엔트리를 고르면 쓰기 탭, 「오늘 쓰기」 떠 있는 버튼, 캘린더 창, 이미지 버튼(붙여넣기와 같은 경로)
+  - Desk Calendar: 하루씩 보기(◀ ▶, 달 경계 넘으면 그 달 파일) + 「하루 / 이번 주 할 일 / 이달 중」 탭. 항목을 누르면 보낼 곳(이달 중 → 주, 이번 주 할 일 → 날짜, 날짜 → 다른 날 · 배정 취소) — 데스크톱 드롭과 같은 plan. 못 한 일 메뉴는 ⋯ / 길게 누르기
+  - Wall Calendar: 달 카드 세로 목록, 다른 달로 옮기기는 기존 달 고르기 창
+  - Drawer: 세 열 → 탭, 후보 띠는 위, 아래 꺼내기/놓아주기 칸 → 카드의 「보내기」 시트
+  - Project Folders: 칸반 → 상태 탭, 「상태 바꾸기」 고르기 창, 리스트는 카드 한 열, 타임라인 가로 스크롤
+  - My Life: 탭 줄 가로 스크롤, 카드 전체 폭 · Pinboard: 카드 전체 폭, 입력칸 16px · Toolbox: 스킬마다 카드, 상태는 고르기 창
+- 테스트 251개(+19: 길게 누르기 상태 기계, 키보드 높이, 고르기 필터, 화면별 보낼 곳 목록이 데스크톱 드롭 영역과 같고 같은 호출로 이어지는지 — Desk · Drawer · Project Folders)
+
 ## 0.8.4 — 2026-10-26
 
 - **Toolbox: `updated_at` 갱신** (`11 Toolbox/AGENTS.md` 「4-10」) — 플러그인이 스킬 파일에 무엇이든 쓸 때(상태 바꾸기, 폐기, 수정·종류 바꾸기, 새 스킬) frontmatter에 `updated_at` 키가 있으면 `updated`와 함께 지금 시각으로 올린다: `"YYYY-MM-DDTHH:MM:SS+09:00"`(Asia/Seoul, 초 단위, 따옴표). 키가 없으면 더하지 않는다(지금은 `body_mode: temporary-dual`인 T-02 `MyLogs 운영`만 해당). 실제로 바뀐 것이 없으면 건드리지 않는다. 순수 헬퍼 `kstTimestamp` · `touchUpdatedAt` · `skillWrite`(`src/toolbox/ops.ts`)

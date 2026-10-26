@@ -6,6 +6,7 @@ import {
 	moment,
 	normalizePath,
 	Notice,
+	Platform,
 	setIcon,
 	TAbstractFile,
 	TFile,
@@ -29,6 +30,7 @@ import { MAIN_SECTION_KEYS, type MainSectionKey } from "./settings.ts";
 import { flywheelIdOf, flywheelLines, flywheelPath, isFlywheelLine, missedCount, missingStatus, parseFlywheel, weeklyDone } from "./flywheel/model.ts";
 import { weekMonday } from "./mylife/model.ts";
 import { AutoGrow } from "./ui/autogrow.ts";
+import { trackKeyboard } from "./ui/mobile.ts";
 import {
 	appendToSection,
 	dailyPadSkeleton,
@@ -646,6 +648,7 @@ export class DailyPadView extends ItemView {
 		this.contentEl.empty();
 		this.contentEl.addClass("mylogs-daily-pad-container");
 		this.rootEl = this.contentEl.createDiv({ cls: "mylogs-daily-pad" });
+		if (Platform.isMobile) this.register(trackKeyboard(this.contentEl));
 		this.buildSkeleton();
 
 		this.registerEvent(this.app.vault.on("modify", (f) => this.onFileEvent(f)));

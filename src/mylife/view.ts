@@ -18,6 +18,7 @@ import {
 	moment,
 	normalizePath,
 	Notice,
+	Platform,
 	setIcon,
 	type TAbstractFile,
 	TFile,
@@ -27,6 +28,7 @@ import {
 import type MyLogsPlugin from "../main.ts";
 import { addDays, fromIsoDate } from "../parser.ts";
 import { todayIsoLocal } from "../desk/model.ts";
+import { trackKeyboard } from "../ui/mobile.ts";
 import {
 	hasUserNote,
 	MY_LIFE_TABS,
@@ -326,6 +328,7 @@ export class MyLifeView extends ItemView {
 		this.contentEl.empty();
 		this.contentEl.addClass("mylogs-my-life-container");
 		this.rootEl = this.contentEl.createDiv({ cls: "mylogs-my-life" });
+		if (Platform.isMobile) this.register(trackKeyboard(this.contentEl));
 		this.headerEl = this.rootEl.createDiv({ cls: "mlf-top" });
 		this.tabsEl = this.rootEl.createDiv({ cls: "mlf-tabs", attr: { role: "tablist" } });
 		this.bodyEl = this.rootEl.createDiv({ cls: "mlf-body" });

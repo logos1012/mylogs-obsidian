@@ -1,4 +1,4 @@
-import { ItemView, Keymap, Menu, Notice, setIcon, type TAbstractFile, TFile, type WorkspaceLeaf } from "obsidian";
+import { ItemView, Keymap, Menu, Notice, Platform, setIcon, type TAbstractFile, TFile, type WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { addDays } from "../parser.ts";
 import { todayIsoLocal, shiftMonth } from "../desk/model.ts";
@@ -26,6 +26,8 @@ import {
 	takeOutToday,
 } from "./actions.ts";
 import { askNewItem, askWhen } from "./modals.ts";
+import { type DrawerMobileHost, renderDrawerMobile } from "./mobile.ts";
+import { type DrawerMoveApi, runCandidateTarget, runDrawerTarget } from "./mobile-targets.ts";
 import {
 	activeCount,
 	CANDIDATE_TAGS,
@@ -195,6 +197,7 @@ export class DrawerView extends ItemView {
 	// ── rendering ──
 
 	private render(): void {
+		if (Platform.isMobile) return renderDrawerMobile(this.mobileHost());
 		const root = this.rootEl;
 		const scrollTop = this.contentEl.scrollTop;
 		root.empty();
@@ -211,6 +214,39 @@ export class DrawerView extends ItemView {
 		const foot = root.createDiv({ cls: "dr-foot" });
 		foot.appendText("끌어다 놓기: 카드 → 다른 열(섹션 옮김) · 아래 꺼내기 칸(오늘 / 이달 / Wall / 프로젝트로) · 놓아주기 칸 · 후보 → 열(넣기와 분류를 한 번에). ⋯ 또는 오른쪽 클릭: 수정, 삭제. 나간 줄([>], [-])은 월간 리뷰가 지워요.");
 		this.contentEl.scrollTop = scrollTop;
+	}
+
+	/** What the mobile layout (`./mobile.ts`) may use: the desktop pieces, and the drop zones' calls. */
+	private mobileHost(): DrawerMobileHost {
+		// The same calls as the drop zones in renderColumn / renderDock (and the 후보 놓아주기 button).
+		const api: DrawerMoveApi<DrawerItem, Candidate> = {
+			moveToSection: (it, s) => this.run(() => moveToSection(this.plugin, it, s)),
+			takeOut: (it, t) => this.takeOut(it, t),
+			letGo: (it) => this.chooseLetGo(it),
+			acceptCand: (c, s) => this.acceptCand(c, s),
+			dropCand: (c) => this.dropCand(c),
+		};
+		return {
+			app: this.app,
+			contentEl: this.contentEl,
+			rootEl: this.rootEl,
+			begin: () => {
+				this.rootEl.empty();
+				this.zones = [];
+				return todayIsoLocal();
+			},
+			exists: () => this.exists,
+			columns: () => (this.data ? columns(this.data) : null),
+			candidates: () => this.cands?.list ?? [],
+			defaultSection: (c) => defaultSection(c.kind),
+			renderHeader: (root, today) => this.renderHeader(root, today),
+			renderEmpty: (root) => this.renderEmpty(root),
+			renderCandidates: (root) => this.renderCandidates(root),
+			renderColumn: (board, col, today) => this.renderColumn(board, col, this.data!, today),
+			moveItem: (t, it) => runDrawerTarget(t, it, api),
+			moveCandidate: (t, c) => runCandidateTarget(t, c, api),
+			register: (cb) => this.register(cb),
+		};
 	}
 
 	private btn(parent: HTMLElement, text: string, onClick: (e: MouseEvent) => void, o: { icon?: string; cls?: string; label?: string } = {}): HTMLButtonElement {
