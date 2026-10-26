@@ -8,7 +8,8 @@
  *
  * A file is frontmatter + `# title` + `## section` cards in template order (`_Templates/`). Hermes
  * writes everything; the plugin only shows it, except `## 사용자 한마디` (Weekly and up), which the
- * user writes (「1」, 「6」). The Diary tab reads `## 깨달음·감상` and `## 로그` across a month (「4-6」).
+ * user writes (「1」, 「6」). `aggregateDiary` (깨달음·감상 + 로그 across a month) feeds the Diary view's
+ * 「My Life에서」 material section (「4-6」); the My Life view itself has no Diary tab any more.
  *
  * Pure module (no Obsidian imports) so it can be unit-tested with `node --test`.
  */
@@ -19,14 +20,16 @@ import { detectEol, findSection, getSectionContent, listSections, setFrontmatter
 
 export const MY_LIFE_UNITS = ["daily", "weekly", "monthly", "yearly"] as const;
 export type MyLifeUnit = (typeof MY_LIFE_UNITS)[number];
-export type MyLifeTab = MyLifeUnit | "diary";
-export const MY_LIFE_TABS: readonly MyLifeTab[] = ["daily", "weekly", "monthly", "yearly", "diary"];
+export type MyLifeTab = MyLifeUnit;
+export const MY_LIFE_TABS: readonly MyLifeTab[] = MY_LIFE_UNITS;
 
 export const DEFAULT_MY_LIFE_PATH = "08 My Life";
 export const USER_NOTE_SECTION = "사용자 한마디";
 export const INSIGHT_SECTION = "깨달음·감상";
 export const LOG_SECTION = "로그";
-/** Yearly's counterpart of 깨달음·감상 (「4-6」). Not aggregated by the Diary tab (it is a month view). */
+/** Daily's links to that day's Diary entries (Hermes writes them; `09 Diary/AGENTS.md` 「4-3」). */
+export const DIARY_LINKS_SECTION = "Diary";
+/** Yearly's counterpart of 깨달음·감상 (「4-6」). Not aggregated by `aggregateDiary` (it is a month view). */
 export const YEAR_SENTENCES_SECTION = "해의 문장들";
 
 export const UNIT_FOLDER: Record<MyLifeUnit, string> = {
@@ -36,17 +39,16 @@ export const UNIT_FOLDER: Record<MyLifeUnit, string> = {
 	yearly: "04 Yearly",
 };
 
-export const UNIT_LABEL: Record<MyLifeTab, string> = {
+export const UNIT_LABEL: Record<MyLifeUnit, string> = {
 	daily: "오늘",
 	weekly: "이번 주",
 	monthly: "이번 달",
 	yearly: "올해",
-	diary: "Diary",
 };
 
 /** Section names of `_Templates/{Daily,Weekly,Monthly,Yearly}.md`, in template order. */
 export const TEMPLATE_SECTIONS: Record<MyLifeUnit, readonly string[]> = {
-	daily: ["하루", "한 일", "결정", INSIGHT_SECTION, "열린 질문", "보낸 곳", "놓아준 일", LOG_SECTION, "끼적임", "세션"],
+	daily: ["하루", "한 일", "결정", INSIGHT_SECTION, "열린 질문", "보낸 곳", "놓아준 일", LOG_SECTION, "끼적임", DIARY_LINKS_SECTION, "세션"],
 	weekly: ["한 주", "진전 (Pinboard 대조)", "한 일", "결정", INSIGHT_SECTION, "계획과 실제", "놓아준 일", "반복 주제", USER_NOTE_SECTION, "날짜"],
 	monthly: [
 		"한 달",
@@ -146,7 +148,7 @@ export function unitPath(folder: string, unit: MyLifeUnit, iso: string): string 
 	}
 }
 
-/** The folder that holds a month's Daily files (for the Diary tab). */
+/** The folder that holds a month's Daily files (for the Diary view's 「My Life에서」). */
 export function dailyMonthFolder(folder: string, monthKey: string): string {
 	return `${root(folder)}/${UNIT_FOLDER.daily}/${monthKey.slice(0, 4)}/${monthKey}`;
 }
@@ -320,7 +322,7 @@ export function normalizeNote(s: string): string {
 	return s.replace(/\r\n/g, "\n").replace(/\s+$/, "").replace(/^(?:[ \t]*\n)+/, "");
 }
 
-// ───────────────────────── Diary ─────────────────────────
+// ───────────────────────── 깨달음·감상 + 로그 across a month (Diary view 「My Life에서」) ─────────────────────────
 
 export interface DiarySource {
 	/** Vault path of the file (link target). */

@@ -251,6 +251,11 @@ export interface SkeletonOptions {
 	weekday?: string;
 	deskCalendarFolder: string;
 	sections: string[];
+	/**
+	 * Flywheel lines (`src/flywheel/model.ts` → `flywheelLines`) placed at the top of the first
+	 * section (`오늘 할 일`), one per line, as `new_day.py` does. Empty or absent → no change.
+	 */
+	flywheelLines?: string[];
 }
 
 /**
@@ -271,5 +276,6 @@ export function dailyPadSkeleton(o: SkeletonOptions): string {
 		"---\n\n" +
 		`# ${o.isoDate}${o.weekday ? ` (${o.weekday})` : ""}\n\n` +
 		`![[${desk}/${y}/${ym}#${o.isoDate}]]\n`;
-	return head + o.sections.map((s) => `\n## ${s}\n`).join("");
+	const fw = o.flywheelLines ?? [];
+	return head + o.sections.map((s, i) => `\n## ${s}\n` + (i === 0 && fw.length ? fw.join("\n") + "\n" : "")).join("");
 }
