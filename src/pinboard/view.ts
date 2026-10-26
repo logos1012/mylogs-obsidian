@@ -19,7 +19,7 @@ import { enableTouchMenus, pickTarget, type PickItem } from "../ui/mobile.ts";
 import { toIsoDate } from "../parser.ts";
 import { cleanFolder } from "../settings.ts";
 import { askForm, confirmDelete } from "../ui/modals.ts";
-import { hubLocation, nameProblem, parseProject } from "../projects/model.ts";
+import { hubLocation, parseProject } from "../projects/model.ts";
 import { activeRoot, archiveRoot, removeGoalsFromProjects, takenIdsAndNames, completeProject, deleteProject } from "../projects/actions.ts";
 import { askNewProject } from "../projects/modals.ts";
 import { flywheelPath, parseFlywheel } from "../flywheel/model.ts";
@@ -29,21 +29,13 @@ import {
 	applyMainRollup,
 	deleteProgressEntry,
 	unlinkProject,
-	editGoalNote,
 	editProgressEntry,
-	type GoalChange,
 	type GoalFieldChange,
-	goalBaseName,
-	type IndexCells,
 	progressEntries,
 	type ProgressEntry,
 	removeIndexRows,
 	removeUndecidedLines,
-	renameLinks,
-	sectionAsLines,
 	setIndexCells,
-	VISION_SECTION,
-	WHY_SECTION,
 } from "./goal-edit.ts";
 import {
 	applyIndexEdit,
@@ -102,6 +94,8 @@ import { type MapInput, type MapSub, renderStrategyMap } from "./map.ts";
 import { askCreateGoal, askDeleteGoals } from "./create-modal.ts";
 import { createGoalFlow, connectFlywheel, connectProject, createProjectForGoal, unlinkDeletedFlywheel, readProject, readGoals, refreshRelatedIndex } from "./create-actions.ts";
 import { parseFrontmatterText } from "./model.ts";
+import { INLINE_LABELS, inlineToken, inlineValue, type InlineGoalField } from "./inline-edit.ts";
+import { saveInlineGoal } from "./inline-actions.ts";
 
 export const VIEW_TYPE_PINBOARD = "mylogs-pinboard";
 
@@ -126,6 +120,7 @@ interface Loaded {
 	goals: Goal[];
 	files: Map<string, TFile>;
 	sections: Map<string, Map<string, string>>;
+	texts: Map<string, string>;
 	board: Board;
 	projects: ProjectRef[];
 	/** 관련 업무 by goal id (a Main's includes its Sub Goals' projects and habits). */
@@ -247,6 +242,12 @@ export class PinboardView extends ItemView {
 		this.contentEl.addClass("mylogs-pinboard-container");
 		this.rootEl = this.contentEl.createDiv({ cls: "mylogs-pinboard" });
 		this.layerEl = this.contentEl.createDiv({ cls: "pb-detail-layer" });
+		const viewport = this.contentEl.ownerDocument.defaultView?.visualViewport;
+		if (viewport) {
+			const keepVisible = () => this.layerEl.querySelector(".pb-inline-editor:focus-within")?.scrollIntoView({ block: "nearest" });
+			viewport.addEventListener("resize", keepVisible);
+			this.register(() => viewport.removeEventListener("resize", keepVisible));
+		}
 		if (Platform.isMobile) this.register(enableTouchMenus(this.contentEl));
 		this.registerDomEvent(this.contentEl, "keydown", (e: KeyboardEvent) => {
 			if (e.key !== "Escape" || !this.openId) return;
@@ -326,6 +327,7 @@ export class PinboardView extends ItemView {
 		const goals: Goal[] = [];
 		const files = new Map<string, TFile>();
 		const sections = new Map<string, Map<string, string>>();
+		const texts = new Map<string, string>();
 		const logs = new Map<string, LogItem[]>();
 		if (year !== null) {
 			for (const f of this.goalFiles(year)) {
@@ -336,6 +338,7 @@ export class PinboardView extends ItemView {
 				goals.push(g);
 				files.set(f.path, f);
 				sections.set(f.path, parseSections(parsed.body));
+				texts.set(f.path, text);
 				logs.set(
 					f.path,
 					progressEntries(text).map((entry) => ({ entry, line: parseProgressLine(entry.text) })),
@@ -359,7 +362,7 @@ export class PinboardView extends ItemView {
 			);
 		}
 		const missing = missingFields(board, secsOf);
-		return { year, years, goals, files, sections, board, projects, related, logs, missing };
+		return { year, years, goals, files, sections, texts, board, projects, related, logs, missing };
 	}
 
 	private beginEdit(): void {
@@ -388,6 +391,7 @@ export class PinboardView extends ItemView {
 	}
 
 	private render(): void {
+		if (this.editing > 0) { this.refreshPending = true; return; }
 		const root = this.rootEl;
 		const d = this.data;
 		const scroll = root.scrollTop;
@@ -432,6 +436,7 @@ export class PinboardView extends ItemView {
 			for (const y of d.years) sel.createEl("option", { text: String(y), value: String(y) });
 			sel.value = String(year);
 			sel.addEventListener("change", () => {
+				if (!this.canNavigate()) { sel.value = String(d.year); return; }
 				this.year = Number(sel.value);
 				this.openId = null;
 				this.animateNext = true;
@@ -710,6 +715,7 @@ export class PinboardView extends ItemView {
 	}
 
 	private openPath(path: string, newLeaf: PaneType | boolean = false): void {
+		if (!this.canNavigate()) return;
 		const f = this.app.vault.getAbstractFileByPath(normalizePath(path));
 		if (f instanceof TFile) void this.app.workspace.getLeaf(newLeaf).openFile(f);
 		else new Notice(`MyLogs: ${path}을 찾지 못했어요.`);
@@ -735,6 +741,7 @@ export class PinboardView extends ItemView {
 	// ── 상세 패널 ──
 
 	openGoal(id: string): void {
+		if (!this.canNavigate()) return;
 		if (!this.goalById(id)) return;
 		this.openId = id;
 		this.rootEl.querySelectorAll(".pb-row.is-open").forEach((el) => el.removeClass("is-open"));
@@ -743,6 +750,7 @@ export class PinboardView extends ItemView {
 	}
 
 	private closeDetail(): void {
+		if (!this.canNavigate()) return;
 		this.openId = null;
 		this.rootEl.querySelectorAll(".pb-row.is-open").forEach((el) => el.removeClass("is-open"));
 		this.layerEl.removeClass("is-open");
@@ -750,6 +758,7 @@ export class PinboardView extends ItemView {
 	}
 
 	private renderDetail(fresh = false): void {
+		if (this.editing > 0) { this.refreshPending = true; return; }
 		const layer = this.layerEl;
 		const prevScroll = fresh ? 0 : (layer.querySelector(".pb-d-scroll")?.scrollTop ?? 0);
 		const wasOpen = layer.hasClass("is-open");
@@ -794,9 +803,10 @@ export class PinboardView extends ItemView {
 		const side = grid.createDiv({ cls: "pb-d-side" });
 
 		// title + pickers
-		const h = body.createEl("h2", { cls: "pb-d-title" });
+		const h = body.createDiv({ cls: "pb-d-title", attr: { role: "heading", "aria-level": "2" } });
 		this.hdot(h, g);
-		h.createSpan({ text: g.title });
+		this.inlineField(h, g, "title", { display: g.title });
+		body.createDiv({ cls: "pb-inline-hint", text: "제목·설명·값을 누르면 이 자리에서 수정할 수 있어요." });
 		const pickers = body.createDiv({ cls: "pb-d-pickers" });
 		this.statusPicker(pickers, g);
 		this.healthPicker(pickers, g);
@@ -832,25 +842,20 @@ export class PinboardView extends ItemView {
 		// description
 		const secs = d.sections.get(g.path) ?? new Map<string, string>();
 		const desc = this.card(body, "설명");
-		const descPart = (label: string, items: string[], empty: string) => {
+		const descPart = (field: InlineGoalField, label: string) => {
 			const box = desc.createDiv({ cls: "pb-d-desc" });
 			box.createDiv({ cls: "pb-d-label", text: label });
-			if (!items.length) box.createDiv({ cls: "pb-muted", text: empty });
-			else {
-				const ul = box.createEl("ul");
-				for (const it of items) ul.createEl("li", { text: it });
-			}
+			this.inlineField(box, g, field, { multiline: true, label });
 		};
 		if (main) {
-			descPart("왜 이 목표인가", bulletItems(findSectionText(secs, "왜 이 목표인가", "왜")), "아직 비어 있어요. 이 목표가 왜 중요한지 노트에 한 줄 적어 주세요.");
-			descPart("달성한 모습", bulletItems(findSectionText(secs, "달성한 모습")), "아직 비어 있어요.");
+			descPart("why", "왜 이 목표인가");
+			descPart("vision", "달성한 모습");
 		} else {
-			descPart("달성 기준", bulletItems(findSectionText(secs, "달성 기준")), "아직 비어 있어요.");
-			const memo = bulletItems(findSectionText(secs, "메모"));
-			if (memo.length) descPart("메모", memo, "");
+			descPart("criteria", "달성 기준");
+			descPart("memo", "메모");
 		}
 		const retro = bulletItems(findSectionText(secs, "종료 회고")).filter((x) => !/^[^:]+:\s*$/.test(x));
-		if (retro.length || isEnded(g.status)) descPart("종료 회고", retro, "노트의 「종료 회고」에 영향과 이유를 적어 주세요.");
+		if (retro.length || isEnded(g.status)) descPart("retro", "종료 회고");
 
 		// Sub list
 		if (main) {
@@ -884,6 +889,7 @@ export class PinboardView extends ItemView {
 		addBtn.appendText("업데이트 추가");
 		const formHost = lc.createDiv();
 		addBtn.addEventListener("click", () => {
+			if (!this.canNavigate()) return;
 			addBtn.hide();
 			this.updateForm(formHost, g, () => addBtn.show());
 		});
@@ -906,11 +912,11 @@ export class PinboardView extends ItemView {
 			fill(dl.createEl("dd"));
 		};
 		prop("id", (x) => x.setText(g.id));
-		if (main) prop("기간", (x) => x.setText(g.period || "—"));
+		if (main) prop("기간", (x) => this.inlineField(x, g, "period"));
 		else
 			prop("기한", (x) => {
-				if (!g.due) return void x.setText("미정");
-				x.setText(g.due);
+				this.inlineField(x, g, "due", { type: "date" });
+				if (!g.due) return;
 				const dd = dday(g.due, today);
 				if (!isEnded(g.status)) x.createSpan({ cls: `pb-dd${dd.cls ? ` is-${dd.cls}` : ""}`, text: ` ${dd.big}` });
 			});
@@ -920,10 +926,12 @@ export class PinboardView extends ItemView {
 				const a = x.createEl("button", { cls: "pb-linkish", text: `${parent.id} ${parent.title}`, attr: { type: "button" } });
 				a.addEventListener("click", () => this.openGoal(parent.id));
 			});
-		prop("area", (x) => x.setText(g.area || "—"));
+		prop("영역", (x) => this.inlineField(x, g, "area"));
 		if (!main) {
-			prop("측정", (x) => x.setText([MEASURE_KO[g.measure] ?? g.measure, KIND_KO[g.kind] ?? g.kind].filter(Boolean).join(" · ") || "미정"));
-			prop("가중치", (x) => x.setText(g.weight === null ? "1 (기본)" : fmtNum(g.weight)));
+			prop("측정", (x) => this.inlineField(x, g, "measure", { display: MEASURE_KO[g.measure] ?? g.measure, choices: [["", "미정"], ["metric", "수치"], ["milestone", "이정표"]] }));
+			prop("종류", (x) => this.inlineField(x, g, "kind", { display: KIND_KO[g.kind] ?? g.kind, choices: [["", "미정"], ["outcome", "결과"], ["performance", "수행"]] }));
+			prop("단위", (x) => this.inlineField(x, g, "unit"));
+			prop("가중치", (x) => this.inlineField(x, g, "weight", { display: g.weight === null ? "1 (기본)" : fmtNum(g.weight) }));
 		}
 		prop("상태", (x) => x.setText(STATUS_KO[g.status] ?? g.status));
 		prop("갱신", (x) => x.setText(g.updated || "—"));
@@ -932,10 +940,6 @@ export class PinboardView extends ItemView {
 		setIcon(openNote.createSpan({ cls: "pb-btn-icon" }), "file-text");
 		openNote.appendText("노트 열기");
 		openNote.addEventListener("click", (e) => this.openPath(g.path, Keymap.isModEvent(e)));
-		const edit = sbtn.createEl("button", { attr: { type: "button" } });
-		setIcon(edit.createSpan({ cls: "pb-btn-icon" }), "pencil");
-		edit.appendText("수정…");
-		edit.addEventListener("click", () => void this.editGoal(g));
 
 		scroll.scrollTop = prevScroll;
 		if (fresh) panel.focus({ preventScroll: true });
@@ -975,6 +979,7 @@ export class PinboardView extends ItemView {
 		b.createSpan({ text: STATUS_KO[g.status] ?? g.status });
 		setIcon(b.createSpan({ cls: "pb-caret" }), "chevron-down");
 		b.addEventListener("click", (e) => {
+			if (!this.canNavigate()) return;
 			const menu = new Menu();
 			const add = (st: string) =>
 				menu.addItem((it) =>
@@ -1006,6 +1011,7 @@ export class PinboardView extends ItemView {
 			b.createSpan({ cls: `pb-hdot is-${h || "none"}` });
 			b.createSpan({ text: HEALTH_KO[h] });
 			b.addEventListener("click", () => {
+				if (!this.canNavigate()) return;
 				if (!on) void this.writeGoal(g, { health: h });
 			});
 		}
@@ -1025,15 +1031,15 @@ export class PinboardView extends ItemView {
 		const p = displaySubProgress(s);
 		const top = pc.createDiv({ cls: "pb-bignum" });
 		top.createEl("b", { text: p === null ? "미정" : `${Math.round(p)}%` });
-		const path = top.createSpan({ cls: "pb-path" });
-		if (s.measure === "metric") {
-			path.createSpan({ cls: "pb-muted", text: `${fmtVal(s.baseline, "")?.[0] ?? "?"} → ` });
-			this.currentEditor(path, s);
-			path.createSpan({ cls: "pb-muted", text: ` → ${fmtVal(s.target, "")?.[0] ?? "?"}${s.unit ? ` ${s.unit}` : ""}` });
-		} else {
-			this.currentEditor(path, s);
-			path.createSpan({ cls: "pb-muted", text: ` → ${s.target || "달성 조건 미정"}` });
-		}
+		const path = pc.createDiv({ cls: "pb-inline-metrics" });
+		const metric = (field: InlineGoalField, label: string) => {
+			const box = path.createDiv({ cls: "pb-inline-metric" });
+			box.createDiv({ cls: "pb-d-label", text: label });
+			this.inlineField(box, s, field, { label });
+		};
+		if (s.measure === "metric") metric("baseline", "시작 값");
+		metric("current", "현재 값");
+		metric("target", s.measure === "metric" ? "목표 값" : "달성 조건");
 		this.bar(pc, p).addClass("is-big");
 		const hint = paceHint(s, today);
 		if (hint) {
@@ -1044,56 +1050,57 @@ export class PinboardView extends ItemView {
 		if (s.measure === "metric") this.chart(pc, s, lines, today);
 	}
 
-	/** `current`, editable in place (Enter saves, Esc cancels). */
-	private currentEditor(parent: HTMLElement, s: Goal): void {
-		const shown = s.current ? (fmtVal(s.current, "")?.[0] ?? s.current) : "현재 값 입력";
-		const n = parent.createSpan({
-			cls: `pb-cur${s.current ? "" : " is-need"}`,
-			text: shown,
-			attr: { role: "button", tabindex: "0", title: "눌러서 현재 값 고치기", "aria-label": `${s.title} 현재 값 고치기` },
-		});
-		const open = () => {
-			if (n.hasClass("is-editing")) return;
-			n.addClass("is-editing");
-			this.beginEdit();
-			n.empty();
-			const input = n.createEl("input", {
-				cls: "pb-input",
-				attr: { type: "text", inputmode: s.measure === "metric" ? "decimal" : "text", "aria-label": `${s.title} 현재 값`, enterkeyhint: "done" },
-			});
-			input.value = s.current;
-			let done = false;
-			const finish = async (save: boolean) => {
-				if (done) return;
-				done = true;
-				const val = input.value.trim();
-				input.remove();
-				n.removeClass("is-editing");
-				n.setText(save && val ? val : shown);
-				if (save && val && val !== s.current) await this.writeGoal(s, { current: val });
-				this.endEdit();
+	private canNavigate(): boolean {
+		if (this.editing === 0) return true;
+		new Notice("입력 중인 항목을 먼저 저장하거나 취소해 주세요.");
+		this.layerEl?.querySelector<HTMLElement>(".pb-inline-editor input, .pb-inline-editor textarea, .pb-inline-editor select")?.focus({ preventScroll: true });
+		return false;
+	}
+
+	/** Click the displayed value; edit in exactly that place, with explicit save/cancel. */
+	private inlineField(parent: HTMLElement, g: Goal, field: InlineGoalField, o: { label?: string; display?: string; multiline?: boolean; type?: string; choices?: [string, string][] } = {}): void {
+		const text = this.data?.texts.get(g.path) ?? "", initial = inlineValue(text, field), expected = inlineToken(text, field);
+		const label = o.label ?? INLINE_LABELS[field];
+		const host = parent.createDiv({ cls: `pb-inline-field pb-field-${field}`, attr: { "data-field": field } });
+		const trigger = host.createEl("button", { cls: `pb-inline-value${o.multiline ? " is-multiline" : ""}${!initial ? " is-empty" : ""}`, text: o.display || initial || (o.multiline ? "내용 추가" : "미정"), attr: { type: "button", "aria-label": `${label} 수정`, title: `${label} · 눌러서 수정` } });
+		trigger.addEventListener("click", () => {
+			if (!this.canNavigate()) return;
+			this.beginEdit(); host.addClass("is-editing"); trigger.hide();
+			const form = host.createEl("form", { cls: "pb-inline-editor", attr: { "aria-label": `${label} 편집` } });
+			const lab = form.createEl("label");
+			lab.createSpan({ cls: "pb-inline-caption", text: label });
+			let input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+			if (o.choices) {
+				input = lab.createEl("select");
+				for (const [value, name] of o.choices) input.createEl("option", { text: name, attr: { value } });
+			} else if (o.multiline) input = lab.createEl("textarea", { attr: { rows: "4" } });
+			else input = lab.createEl("input", { attr: { type: o.type ?? "text", inputmode: field === "weight" || (g.measure === "metric" && ["baseline", "current", "target"].includes(field)) ? "decimal" : "text", enterkeyhint: "done" } });
+			input.value = initial; input.setAttr("aria-label", label);
+			const error = form.createDiv({ cls: "pb-inline-error", attr: { role: "alert" } });
+			const actions = form.createDiv({ cls: "pb-inline-actions" });
+			const submit = actions.createEl("button", { cls: "mod-cta", text: "저장", attr: { type: "submit" } });
+			const cancel = actions.createEl("button", { text: "취소", attr: { type: "button" } });
+			let closed = false, saving = false;
+			const finish = async () => {
+				if (closed) return; closed = true;
+				form.remove(); host.removeClass("is-editing"); trigger.show(); this.endEdit();
+				await this.refresh();
+				this.layerEl.querySelector<HTMLButtonElement>(`[data-field="${field}"] > button`)?.focus({ preventScroll: true });
 			};
-			input.addEventListener("keydown", (e) => {
-				if (e.key === "Enter" && !e.isComposing) {
-					e.preventDefault();
-					void finish(true);
-				} else if (e.key === "Escape") {
-					e.preventDefault();
-					e.stopPropagation();
-					void finish(false);
-				}
+			cancel.addEventListener("click", () => { if (!saving) void finish(); });
+			form.addEventListener("keydown", e => {
+				if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); if (!saving) void finish(); }
+				else if (e.key === "Enter" && !e.isComposing && (!o.multiline || e.ctrlKey || e.metaKey)) { e.preventDefault(); form.requestSubmit(); }
 			});
-			input.addEventListener("blur", () => void finish(true));
-			input.addEventListener("click", (e) => e.stopPropagation());
-			input.focus();
-			input.select();
-		};
-		n.addEventListener("click", open);
-		n.addEventListener("keydown", (e) => {
-			if ((e.key === "Enter" || e.key === " ") && e.target === n) {
-				e.preventDefault();
-				open();
-			}
+			form.addEventListener("submit", async e => {
+				e.preventDefault(); if (saving || closed) return;
+				saving = true; submit.disabled = true; cancel.disabled = true; input.disabled = true; submit.setText("저장 중…"); error.empty();
+				try { await saveInlineGoal(this.plugin, g, field, expected, input.value, todayIso()); await finish(); }
+				catch (err) { error.setText(err instanceof Error ? err.message : String(err)); }
+				finally { saving = false; if (!closed) { submit.disabled = false; cancel.disabled = false; input.disabled = false; submit.setText("저장"); input.focus(); } }
+			});
+			input.addEventListener("focus", () => form.scrollIntoView({ block: "nearest" }));
+			input.focus(); if (input instanceof HTMLInputElement && input.type !== "date") input.select();
 		});
 	}
 
@@ -1212,6 +1219,7 @@ export class PinboardView extends ItemView {
 		b.appendText(text);
 		b.addEventListener("click", async (e) => {
 			e.stopPropagation();
+			if (!this.canNavigate()) return;
 			if (b.disabled) return;
 			b.disabled = true;
 			try {
@@ -1307,6 +1315,7 @@ export class PinboardView extends ItemView {
 
 	/** 「업데이트 추가」: value (metric Sub), health, 내용, 보고됨/확인됨, 근거. */
 	private updateForm(host: HTMLElement, g: Goal, onClose: () => void): void {
+		if (!this.canNavigate()) return;
 		host.empty();
 		this.beginEdit();
 		const today = todayIso();
@@ -1387,9 +1396,10 @@ export class PinboardView extends ItemView {
 	// ── menus ──
 
 	private goalMenu(e: MouseEvent, g: Goal): void {
+		if (!this.canNavigate()) return;
 		const menu = new Menu();
 		menu.addItem((i) => i.setTitle("자세히 보기").setIcon("panel-right-open").onClick(() => this.openGoal(g.id)));
-		menu.addItem((i) => i.setTitle("수정…").setIcon("pencil").onClick(() => void this.editGoal(g)));
+		menu.addItem((i) => i.setTitle("화면에서 편집").setIcon("pencil").onClick(() => { this.openGoal(g.id); this.layerEl.querySelector<HTMLButtonElement>('[data-field="title"] > button')?.focus(); }));
 		menu.addItem((i) =>
 			i
 				.setTitle("삭제…")
@@ -1421,140 +1431,6 @@ export class PinboardView extends ItemView {
 	}
 
 	// ── 수정 / 삭제 ──
-
-	private async editGoal(g: Goal): Promise<void> {
-		const d = this.data;
-		const file = this.fileOf(g);
-		if (!d || !file) return;
-		const text = await this.app.vault.read(file);
-		const areas = [...new Set(d.goals.map((x) => x.area).filter(Boolean))];
-		const main = g.type === "main-goal";
-		const v = await askForm(this.app, {
-			title: `${g.id} 수정`,
-			desc: main
-				? "목표 노트와 Pinboard Index.md를 함께 고쳐요. 제목을 바꾸면 파일 이름({id} {제목})도 바꿔요. id는 그대로예요."
-				: "목표 노트와 Pinboard Index.md를 함께 고쳐요. 숫자·가중치를 바꾸면 진척률과 상위 목표를 다시 계산해요. 제목을 바꾸면 파일 이름도 바꿔요.",
-			fields: main
-				? [
-						{ key: "title", label: "제목", type: "text", value: g.title },
-						{ key: "area", label: "영역 (area)", type: "text", value: g.area, list: areas },
-						{ key: "why", label: "왜 이 목표인가", type: "textarea", value: sectionAsLines(text, WHY_SECTION), desc: "한 줄에 하나씩" },
-						{ key: "vision", label: "달성한 모습", type: "textarea", value: sectionAsLines(text, VISION_SECTION), desc: "한 줄에 하나씩" },
-					]
-				: [
-						{ key: "title", label: "제목", type: "text", value: g.title },
-						{
-							key: "measure",
-							label: "측정 방식",
-							type: "select",
-							value: g.measure,
-							options: [
-								["", "미정"],
-								["metric", "수치 (metric)"],
-								["milestone", "이정표 (milestone)"],
-							],
-						},
-						{
-							key: "kind",
-							label: "종류",
-							type: "select",
-							value: g.kind,
-							options: [
-								["", "미정"],
-								["outcome", "결과 (outcome)"],
-								["performance", "수행 (performance)"],
-							],
-						},
-						{ key: "baseline", label: "시작 값 (baseline)", type: "text", value: g.baseline, desc: "모르면 비워 둬요" },
-						{ key: "target", label: g.measure === "metric" ? "목표 값 (target)" : "달성 조건 (target)", type: "text", value: g.target },
-						{ key: "unit", label: "단위", type: "text", value: g.unit, placeholder: "명, kg, 원/월" },
-						{ key: "due", label: "기한 (due)", type: "date", value: g.due, desc: "비우면 미정" },
-						{ key: "weight", label: "가중치 (weight)", type: "text", value: g.weight === null ? "" : String(g.weight), desc: "상위 목표 평균에서의 비중. 비우면 1" },
-					],
-			validate: (x) => {
-				const out: string[] = [];
-				const np = nameProblem(x.title);
-				if (np) out.push(np.replace("이름", "제목"));
-				if (x.due && !isIsoDate(x.due)) out.push("기한은 YYYY-MM-DD예요.");
-				if (x.weight && !((toNum(x.weight) ?? 0) > 0)) out.push("가중치는 0보다 큰 숫자예요.");
-				return out;
-			},
-		});
-		if (!v) return;
-		const change: GoalChange = main
-			? { title: v.title, area: v.area, why: v.why, vision: v.vision }
-			: { title: v.title, measure: v.measure, kind: v.kind, baseline: v.baseline, target: v.target, unit: v.unit, due: v.due, weight: v.weight };
-		const today = todayIso();
-		let next: Goal | null = null;
-		try {
-			await this.app.vault.process(file, (t) => {
-				const r = editGoalNote(t, file.path, change, today);
-				next = r.goal;
-				return r.text;
-			});
-		} catch (err) {
-			console.error("[MyLogs] Pinboard save failed", err);
-			new Notice(`MyLogs: ${g.id} 저장에 실패했어요.`);
-			return;
-		}
-		const ng = next as Goal | null;
-		if (!ng) return;
-		const parts: string[] = [];
-		if (ng.title !== g.title) parts.push(`제목 「${g.title}」 → 「${ng.title}」`);
-		for (const k of ["area", "measure", "kind", "baseline", "target", "unit", "due", "weight"] as (keyof Goal)[]) {
-			const a = g[k] === null ? "" : String(g[k]);
-			const b = ng[k] === null ? "" : String(ng[k]);
-			if (a !== b) parts.push(`${k} ${a || "—"} → ${b || "—"}`);
-		}
-		if (main && v.why !== sectionAsLines(text, WHY_SECTION)) parts.push("왜 이 목표인가");
-		if (main && v.vision !== sectionAsLines(text, VISION_SECTION)) parts.push("달성한 모습");
-		if (ng.title !== g.title) await this.renameGoalFile(file, g, ng);
-		const rows: IndexCells[] = [
-			{
-				id: g.id,
-				title: ng.title !== g.title ? ng.title : undefined,
-				due: main || ng.due === g.due ? undefined : ng.due || "미정",
-				path: main || (["baseline", "target", "unit", "measure"] as const).every((k) => ng[k] === g[k]) ? undefined : indexPathCell(ng),
-				progress: !main && ng.progress !== null && ng.progress !== g.progress ? indexProgressCell(ng.progress) : undefined,
-			},
-		];
-		if (!main) {
-			const m = await this.rollupParent(ng, today);
-			if (m) {
-				rows.push(m);
-				parts.push(`${m.id} ${m.progress}`);
-			}
-		}
-		await this.updateIndexWith((t) => setIndexCells(t, String(d.year), rows), `${g.id} 수정${parts.length ? `: ${parts.join(", ")}` : ""} (플러그인)`, ng);
-		await this.refresh();
-	}
-
-	/** `{id} {제목}.md` follows the new title; links in the parent / child notes follow too. */
-	private async renameGoalFile(file: TFile, g: Goal, ng: Goal): Promise<void> {
-		const d = this.data;
-		const oldBase = file.basename;
-		const newBase = goalBaseName(g.id, ng.title);
-		if (oldBase === newBase || !d) return;
-		const dir = file.parent?.path ?? "";
-		const newPath = normalizePath(`${dir}/${newBase}.md`);
-		if (this.app.vault.getAbstractFileByPath(newPath)) {
-			new Notice(`MyLogs: 같은 이름의 노트가 이미 있어 파일 이름은 바꾸지 않았어요.\n${newPath}`);
-			return;
-		}
-		try {
-			await this.app.fileManager.renameFile(file, newPath);
-		} catch (err) {
-			console.error("[MyLogs] Pinboard rename failed", err);
-			new Notice("MyLogs: 노트 파일 이름을 바꾸지 못했어요. 제목은 저장됐어요.");
-			return;
-		}
-		// Obsidian updates links when that setting is on; make sure the goal's own links follow either way.
-		const related = g.type === "main-goal" ? d.board.subs.filter((x) => x.parent === g.id) : d.board.mains.filter((m) => m.id === g.parent);
-		for (const r of related) {
-			const f = this.fileOf(r);
-			if (f) await this.app.vault.process(f, (t) => renameLinks(t, oldBase, newBase));
-		}
-	}
 
 	private async deleteGoal(g: Goal): Promise<void> {
 		if(this.creating)return;

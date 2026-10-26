@@ -9489,3 +9489,29 @@ body.is-mobile .mylogs-pinboard .pbm-legend-health {
 .mylogs-projects .pf-ms-ready { color: var(--pf-accent); background: var(--pf-accent-soft); padding: 10px; border-radius: 5px; }
 .mylogs-projects .pf-milestones :is(summary, button, textarea, input):focus-visible { outline: 2px solid var(--pf-accent); outline-offset: 2px; }
 .mylogs-projects .pf-card.is-stale > .pf-milestones { opacity: 1; }
+
+/* Pinboard: edit the displayed field, not a second modal. */
+.mylogs-pinboard-container .pb-inline-hint { color: var(--pb-muted); font-size: 12px; margin: -4px 0 14px; }
+.mylogs-pinboard-container .pb-inline-field { min-width: 0; max-width: 100%; }
+.mylogs-pinboard-container .pb-inline-field > button.pb-inline-value { display: block; width: 100%; min-height: 44px; height: auto; padding: 6px 4px; border: 1px solid transparent; border-radius: 4px; background: transparent; box-shadow: none; color: inherit; font: inherit; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; }
+.mylogs-pinboard-container .pb-inline-field > button.pb-inline-value:hover { background: var(--pb-soft); border-color: var(--pb-line); }
+.mylogs-pinboard-container .pb-inline-field > button.is-empty { color: var(--pb-muted); }
+.mylogs-pinboard-container .pb-d-title .pb-inline-field { flex: 1; }
+.mylogs-pinboard-container .pb-inline-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin: 12px 0; }
+.mylogs-pinboard-container .pb-inline-metric:has(.is-editing) { grid-column: 1 / -1; }
+.mylogs-pinboard-container .pb-inline-metric .pb-inline-value { font-size: 18px; font-weight: 600; }
+.mylogs-pinboard-container .pb-inline-editor { font: 14px/1.5 var(--font-interface); margin: 6px 0; width: 100%; min-width: 0; scroll-margin-block: 70px; }
+.mylogs-pinboard-container .pb-inline-editor label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--pb-muted); }
+.mylogs-pinboard-container :is(.pb-d-desc,.pb-inline-metric) .pb-inline-caption { display: none; }
+.mylogs-pinboard-container .pb-inline-editor :is(input,textarea,select) { width: 100%; min-width: 0; max-width: 100%; min-height: 44px; height: auto; border: 1px solid var(--pb-line); border-radius: 5px; padding: 8px; font: 16px/1.5 var(--font-interface); background: var(--pb-card); color: var(--pb-ink); }
+.mylogs-pinboard-container .pb-inline-editor textarea { resize: vertical; min-height: 110px; }
+.mylogs-pinboard-container .pb-inline-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 0; }
+.mylogs-pinboard-container .pb-inline-actions button { min-height: 44px; height: auto; min-width: 58px; padding: 8px 12px; font-size: 14px; }
+.mylogs-pinboard-container .pb-inline-error { color: var(--pb-off); font-size: 13px; font-weight: 400; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mylogs-pinboard-container .pb-inline-error:empty { display: none; }
+.mylogs-pinboard-container .pb-d-props dd:has(.is-editing) { grid-column: 1 / -1; }
+.mylogs-pinboard-container .pb-inline-field :is(button,input,textarea,select):focus-visible { outline: 2px solid var(--pb-ink); outline-offset: 2px; }
+@media (max-width: 600px) {
+ .mylogs-pinboard-container .pb-inline-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+ .mylogs-pinboard-container .pb-inline-metric:last-child { grid-column: 1 / -1; }
+}
