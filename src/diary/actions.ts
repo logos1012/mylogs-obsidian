@@ -16,7 +16,6 @@ import {
 	attachmentFolderOf,
 	attachmentPath,
 	attachmentsOf,
-	bodyOf,
 	type DiaryEntry,
 	diaryRoot,
 	displayTitle,
@@ -35,6 +34,7 @@ import {
 	withBody,
 } from "./model.ts";
 import { registerEntry, unregisterEntry } from "./ops.ts";
+import { isConflict, rememberWrite } from "./sync.ts";
 import { DEFAULT_ENTRY_TEMPLATE } from "./templates.ts";
 
 export interface DiaryHost {
@@ -57,6 +57,7 @@ function fileAt(app: App, path: string): TFile | null {
 function today(): string {
 	return toIsoDate(new Date());
 }
+
 
 // ───────────────────────── read ─────────────────────────
 
@@ -102,6 +103,7 @@ export async function syncRegistry(host: DiaryHost, e: DiaryEntry): Promise<stri
 				problem = r.reason;
 				return text;
 			}
+			rememberWrite(f.path, r.text);
 			return r.text;
 		});
 	} catch (err) {
@@ -154,6 +156,7 @@ export async function createEntry(host: DiaryHost, prompt = ""): Promise<TFile |
 	const path = normalizePath(entryPathOf(r, now, taken));
 	const text = newEntryText(await loadTemplate(host), now, prompt);
 	try {
+		rememberWrite(path, text);
 		return await app.vault.create(path, text);
 	} catch (err) {
 		console.error("[MyLogs] Diary create failed", err);
@@ -168,8 +171,9 @@ export type SaveResult = { ok: true; entry: DiaryEntry | null } | { ok: false; c
 
 /**
  * Save the editor text as the body (title synced into frontmatter, `updated` bumped), then the
- * registry row. `expectBody` is what the editor last synced with: when the file's body differs,
- * nothing is written and `conflict` is reported (someone else changed the file).
+ * registry row. `expectBody` is what the editor last synced with: when the file's body differs
+ * from it (and from our own last write), nothing is written and `conflict` is reported (someone
+ * else changed the file). Bodies are compared normalized (`isConflict`).
  */
 export async function saveBody(host: DiaryHost, path: string, body: string, expectBody: string | null, force = false): Promise<SaveResult> {
 	const f = fileAt(host.app, path);
@@ -178,11 +182,12 @@ export async function saveBody(host: DiaryHost, path: string, body: string, expe
 	let out = "";
 	try {
 		await host.app.vault.process(f, (text) => {
-			if (!force && expectBody !== null && bodyOf(text) !== expectBody) {
+			if (!force && isConflict(text, expectBody, f.path)) {
 				conflict = true;
 				return text;
 			}
 			out = withBody(text, body, new Date());
+			rememberWrite(f.path, out);
 			return out;
 		});
 	} catch (err) {
@@ -204,7 +209,11 @@ async function editFrontmatter(host: DiaryHost, path: string, edit: (text: strin
 	}
 	let out = "";
 	try {
-		await host.app.vault.process(f, (text) => (out = edit(text)));
+		await host.app.vault.process(f, (text) => {
+			out = edit(text);
+			if (out !== text) rememberWrite(f.path, out);
+			return out;
+		});
 	} catch (err) {
 		console.error(`[MyLogs] Diary ${label} failed`, err);
 		new Notice(`MyLogs: ${label}에 실패했어요.`);
@@ -291,6 +300,7 @@ export async function deleteEntry(host: DiaryHost, e: DiaryEntry): Promise<boole
 		try {
 			await app.vault.process(reg, (text) => {
 				const r = unregisterEntry(text, e, today());
+				if (r.ok) rememberWrite(reg.path, r.text);
 				return r.ok ? r.text : text;
 			});
 		} catch (err) {

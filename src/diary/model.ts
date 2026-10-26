@@ -449,6 +449,20 @@ export function bodyOf(text: string): string {
 	return splitFrontmatter(text).body;
 }
 
+/** CRLF → LF: the editor's line endings. */
+export function normalizeBody(s: string): string {
+	return s.replace(/\r\n/g, "\n");
+}
+
+/**
+ * Two bodies are the same text when they differ only in line endings or trailing whitespace
+ * (`withBody` adds the final newline the textarea does not have). Conflict detection and the
+ * editor's dirty check compare with this, never with `===` on raw file text.
+ */
+export function bodiesEqual(a: string, b: string): boolean {
+	return normalizeBody(a).replace(/\s+$/, "") === normalizeBody(b).replace(/\s+$/, "");
+}
+
 /**
  * Save the editor text: replace the body, sync the first `# ` line into `title` (「2」: 제목은 frontmatter
  * `title`과 본문 첫 줄), and bump `updated`. Nothing else in the frontmatter changes.
