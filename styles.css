@@ -893,6 +893,11 @@
 .is-mobile .mylogs-daily-pad {
 	padding: 20px 16px 64px;
 }
+/* While a section is being edited, leave room below so the caret follow (src/ui/autogrow.ts)
+   can keep the caret line away from the bottom edge even in the last section. */
+.mylogs-daily-pad:has(.ml-section.is-editing) {
+	padding-bottom: 45vh;
+}
 .is-mobile .mylogs-daily-pad .ml-item {
 	padding-top: 9px;
 	padding-bottom: 9px;
@@ -6884,7 +6889,9 @@
 	width: 100%;
 	max-width: var(--dy-column);
 	margin: 0 auto;
-	padding: 20px 32px 96px;
+	/* Big bottom room so the caret line can always be scrolled up away from the pane's edge
+	   (typewriter feel; the caret follow in src/ui/autogrow.ts relies on it). */
+	padding: 20px 32px 45vh;
 }
 .mylogs-diary .dy-sheet-empty {
 	padding-top: 96px;
@@ -6975,6 +6982,7 @@
 	word-break: keep-all;
 	overflow-wrap: anywhere;
 	resize: none;
+	overflow: hidden; /* grows to its content; only .dy-center scrolls */
 	outline: none;
 	box-shadow: none;
 	caret-color: var(--dy-accent);
@@ -7313,7 +7321,7 @@
 		overflow: visible;
 	}
 	.mylogs-diary .dy-sheet {
-		padding: 16px 16px 64px;
+		padding: 16px 16px 45vh;
 	}
 	.mylogs-diary textarea.dy-editor,
 	.mylogs-diary .dy-md {
