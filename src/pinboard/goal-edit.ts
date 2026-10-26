@@ -6,7 +6,9 @@
  *   `progress` (「3-4」 3);
  * - `Pinboard Index.md`: title / due / path / progress cells, row removal, 「미정·확인 필요」 lines
  *   of a removed id (「8. 인덱스 규칙」);
- * - `## 진척 기록` lines: edit / delete one entry.
+ * - `## 진척 기록` lines: edit / delete one entry;
+ * - 상태 / health / current / 진척 기록 from the goal panel (`applyGoalChange`, SPEC 1): Sub
+ *   `progress` recomputed, `health` cleared when the goal ends, `## 종료 회고` added (SPEC 1-4).
  *
  * Pure module (no Obsidian imports) so it can be unit-tested with `node --test`.
  */
@@ -14,14 +16,15 @@
 import { spliceLine } from "../line-edit.ts";
 import { splitLinesKeepEol, stripEol } from "../parser.ts";
 import { getFmList, getFmValue, setFmList, setFmValue, yamlScalar } from "../projects/ops.ts";
-import { findSection, getSectionContent, locateLine, replaceSectionContent, sectionLineRange, setFrontmatterScalar } from "../writer.ts";
-import { PROGRESS_SECTION } from "./index-writer.ts";
-import { computeSubProgress, type Goal, parseFrontmatterText, parseGoal, type Rollup } from "./model.ts";
+import { detectEol, findSection, getSectionContent, locateLine, replaceSectionContent, sectionLineRange, setFrontmatterScalar } from "../writer.ts";
+import { appendProgressLog, PROGRESS_SECTION, type ProgressLineInput } from "./index-writer.ts";
+import { computeSubProgress, type Goal, isEnded, parseFrontmatterText, parseGoal, parseInputValue, type Rollup } from "./model.ts";
 
 export const WHY_SECTION = "왜 이 목표인가";
 export const VISION_SECTION = "달성한 모습";
 export const SUBS_SECTION = "Sub Goal (측정 기준)";
 export const UNDECIDED_SECTION = "미정·확인 필요";
+export const RETRO_SECTION = "종료 회고";
 
 /** Fields of a goal the card shows and the 수정 dialog edits. `undefined` = keep. */
 export interface GoalChange {
@@ -37,6 +40,8 @@ export interface GoalChange {
 	unit?: string;
 	/** `YYYY-MM-DD` or "". */
 	due?: string;
+	/** Sub Goal weight (positive number) or "" (= 1). */
+	weight?: string;
 }
 
 /** Frontmatter value: numbers stay numbers, the rest is YAML-quoted when needed, "" = empty. */
@@ -89,6 +94,7 @@ const FM_KEYS: [keyof GoalChange, string][] = [
 	["target", "target"],
 	["unit", "unit"],
 	["due", "due"],
+	["weight", "weight"],
 ];
 
 /**
@@ -102,7 +108,7 @@ export function editGoalNote(text: string, path: string, c: GoalChange, today: s
 	for (const [k, key] of FM_KEYS) {
 		const v = c[k];
 		if (v === undefined || v.trim() === getFmValue(out, key)) continue;
-		out = setFmValue(out, key, fmScalar(v));
+		out = key === "weight" ? setFmValueAfter(out, key, fmScalar(v), "due") : setFmValue(out, key, fmScalar(v));
 	}
 	if (c.title !== undefined && before && c.title.trim() !== before.title) out = setH1(out, before.title, c.title.trim());
 	if (c.why !== undefined && c.why.trim() !== sectionAsLines(out, WHY_SECTION)) out = replaceSectionContent(out, WHY_SECTION, toBullets(c.why));
@@ -117,6 +123,117 @@ export function editGoalNote(text: string, path: string, c: GoalChange, today: s
 	}
 	if (out !== text) out = setFmValue(out, "updated", today);
 	return { text: out, goal: parseGoal(parseFrontmatterText(out).data, path) ?? goal };
+}
+
+// ───────────────────────── 상태 · health · current · 진척 기록 ─────────────────────────
+
+/** A change made from the goal panel. `undefined` = keep. */
+export interface GoalFieldChange {
+	/** Sub Goal `current` as typed (numbers are stored as numbers). */
+	current?: string;
+	status?: string;
+	/** `on-track` / `at-risk` / `off-track` / "" (판단 없음). */
+	health?: string;
+	/** One 진척 기록 line to append. */
+	log?: ProgressLineInput;
+}
+
+/**
+ * Set a frontmatter scalar; a key the note doesn't have yet goes right after `after` (so `health`
+ * sits next to `status`), else before the closing `---`. An empty value for a missing key adds nothing.
+ */
+export function setFmValueAfter(text: string, key: string, value: string, after: string): string {
+	if (hasFmKey(text, key)) return setFmValue(text, key, value);
+	if (!value) return text;
+	const lines = splitLinesKeepEol(text);
+	const end = frontmatterEndLine(lines);
+	const re = new RegExp(`^${after.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:`);
+	for (let i = 1; i < end; i++) {
+		if (re.test(stripEol(lines[i]))) {
+			// Skip a block list under `after`.
+			let j = i + 1;
+			while (j < end && /^\s+-\s|^\s*-\s/.test(stripEol(lines[j]))) j++;
+			lines.splice(j, 0, `${key}: ${value}${detectEol(text)}`);
+			return lines.join("");
+		}
+	}
+	return setFrontmatterScalar(text, key, value);
+}
+
+function frontmatterEndLine(lines: string[]): number {
+	if (stripEol(lines[0] ?? "").trim() !== "---") return 0;
+	for (let i = 1; i < lines.length; i++) if (stripEol(lines[i]).trim() === "---") return i;
+	return 0;
+}
+
+function hasFmKey(text: string, key: string): boolean {
+	const lines = splitLinesKeepEol(text);
+	const end = frontmatterEndLine(lines);
+	const re = new RegExp(`^${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:`);
+	for (let i = 1; i < end; i++) if (re.test(stripEol(lines[i]))) return true;
+	return false;
+}
+
+/** `current` as it goes into YAML: `1,500` → `1500`, text quoted when needed. */
+export function currentScalar(raw: string): string {
+	const v = parseInputValue(raw);
+	return typeof v === "number" ? String(v) : fmScalar(v);
+}
+
+/** The empty `## 종료 회고` of SPEC 1-4 with 결과 filled in. */
+export function retroSkeleton(status: string): string {
+	return [`- 결과: ${status}`, "- 영향: ", "- 계획에서 벗어난 부분: ", "- 이루지 못한 이유: "].join("\n");
+}
+
+/**
+ * A goal that ends gets `## 종료 회고` (at the bottom). When the section is there, only its
+ * `- 결과:` line follows the new status; what the user wrote stays.
+ */
+export function ensureRetro(text: string, status: string): string {
+	const sec = findSection(text, RETRO_SECTION);
+	if (!sec) {
+		const eol = detectEol(text);
+		let base = text;
+		if (base.length && !base.endsWith("\n")) base += eol;
+		return `${base}${eol}## ${RETRO_SECTION}${eol}${retroSkeleton(status).split("\n").join(eol)}${eol}`;
+	}
+	const r = sectionLineRange(text, sec);
+	const lines = splitLinesKeepEol(text);
+	for (let i = r.start; i < r.end; i++) {
+		const s = stripEol(lines[i]);
+		const m = /^(\s*[-*+]\s+결과\s*:)(.*)$/.exec(s);
+		if (!m) continue;
+		const next = `${m[1]} ${status}`;
+		if (next !== s) lines[i] = next + lines[i].slice(s.length);
+		return lines.join("");
+	}
+	return text;
+}
+
+/**
+ * Apply a panel change to one goal note (SPEC 1-1 … 1-4): `current` / `status` / `health`,
+ * the Sub Goal's `progress` recomputed (kept when not computable), `health` emptied when the
+ * status is a finished one, `## 종료 회고` added, the 진척 기록 line appended, `updated`.
+ * Only the touched keys / lines change.
+ */
+export function applyGoalChange(text: string, path: string, c: GoalFieldChange, today: string): { text: string; before: Goal | null; goal: Goal | null } {
+	const before = parseGoal(parseFrontmatterText(text).data, path);
+	let out = text;
+	if (c.current !== undefined && before?.type === "sub-goal") out = setFmValue(out, "current", currentScalar(c.current));
+	if (c.status !== undefined && c.status !== before?.status) out = setFmValue(out, "status", c.status);
+	let goal = parseGoal(parseFrontmatterText(out).data, path);
+	const ended = goal ? isEnded(goal.status) : false;
+	const health = ended ? "" : c.health;
+	if (health !== undefined) out = setFmValueAfter(out, "health", health, "status");
+	if (goal?.type === "sub-goal") {
+		const p = computeSubProgress(goal);
+		if (p !== null && p !== goal.progress) out = setFmValue(out, "progress", String(p));
+	}
+	if (c.status !== undefined && ended && c.status !== before?.status) out = ensureRetro(out, c.status);
+	if (c.log) out = appendProgressLog(out, c.log);
+	if (out !== text) out = setFmValue(out, "updated", today);
+	goal = parseGoal(parseFrontmatterText(out).data, path);
+	return { text: out, before, goal };
 }
 
 /** `[[old]]`, `[[old|…]]`, `[[old#…]]` (also with a folder prefix) → the new base name. */
@@ -162,10 +279,10 @@ export function unlinkProject(text: string, projectId: string, hubBase: string, 
 export function linkProject(text: string, projectId: string, hubLink: string, today: string): string {
 	const ids = getFmList(text, "project_ids");
 	const links = getFmList(text, "projects");
-	if (ids.includes(projectId)) return text;
-	let out = setFmList(text, "project_ids", [...ids, projectId]);
+	let out = setFmList(text, "project_ids", [...new Set([...ids, projectId])]);
 	const base = hubLink.replace(/^\[\[|\]\]$/g, "").split("/").pop()!;
 	const has = links.some((l) => l === hubLink || l.endsWith(`/${base}]]`) || l === `[[${base}]]`);
+	if (ids.includes(projectId) && has) return text;
 	if (!has) out = setFmList(out, "projects", [...links, hubLink]);
 	return setFmValue(out, "updated", today);
 }
@@ -185,6 +302,7 @@ export interface IndexCells {
 	title?: string;
 	parent?: string;
 	status?: string;
+	health?: string;
 	path?: string;
 	due?: string;
 	progress?: string;
@@ -218,6 +336,7 @@ export function setIndexCells(text: string, year: string, rows: IndexCells[]): {
 		set("제목", u.title);
 		set("parent", u.parent);
 		set("status", u.status);
+		set("health", u.health === undefined ? undefined : u.health || "—");
 		set("path", u.path);
 		set("due", u.due);
 		set("progress", u.progress);

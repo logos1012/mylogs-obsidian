@@ -15,6 +15,8 @@ export interface MyLogsSettings {
 	deskCalendarFolder: string;
 	/** Pinboard view: goal notes in `<folder>/<YYYY>/`, index at `<folder>/Pinboard Index.md`. */
 	pinboardFolder: string;
+	/** Pinboard view: the last chosen view, 목록 (`list`) or 전략 맵 (`map`). */
+	pinboardTab: "list" | "map";
 	/** Wall Calendar year files: <folder>/<YYYY>.md and <folder>/Wall Calendar Index.md. */
 	wallCalendarFolder: string;
 	/** Project Folders: `<folder>/<개인|회사>/<프로젝트명>/`, registry and templates in `<folder>/99 작업실/`. */
@@ -45,6 +47,7 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	dailyPadFolder: "04 Daily Pad",
 	deskCalendarFolder: "03 Desk Calendar",
 	pinboardFolder: "01 Pinboard",
+	pinboardTab: "list",
 	wallCalendarFolder: "02 Wall Calendar",
 	projectFoldersFolder: "05 Project Folders",
 	projectArchiveFolder: "10 Archive Box/Projects",

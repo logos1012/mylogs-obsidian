@@ -3,9 +3,9 @@ import {
 	ItemView,
 	Keymap,
 	Menu,
-	moment,
 	normalizePath,
 	Notice,
+	type PaneType,
 	Platform,
 	setIcon,
 	TAbstractFile,
@@ -15,20 +15,26 @@ import {
 	WorkspaceLeaf,
 } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
-import { enableTouchMenus } from "../ui/mobile.ts";
+import { enableTouchMenus, pickTarget, type PickItem } from "../ui/mobile.ts";
 import { toIsoDate } from "../parser.ts";
 import { cleanFolder } from "../settings.ts";
 import { askForm, confirmDelete } from "../ui/modals.ts";
-import { nameProblem } from "../projects/model.ts";
-import { removeGoalsFromProjects } from "../projects/actions.ts";
+import { hubLocation, nameProblem, parseProject } from "../projects/model.ts";
+import { activeRoot, archiveRoot, removeGoalsFromProjects, takenIdsAndNames, completeProject, deleteProject } from "../projects/actions.ts";
+import { askNewProject } from "../projects/modals.ts";
+import { flywheelPath, parseFlywheel } from "../flywheel/model.ts";
 import { setFrontmatterScalar } from "../writer.ts";
 import {
+	applyGoalChange,
 	applyMainRollup,
 	deleteProgressEntry,
+	unlinkProject,
 	editGoalNote,
 	editProgressEntry,
 	type GoalChange,
+	type GoalFieldChange,
 	goalBaseName,
+	type IndexCells,
 	progressEntries,
 	type ProgressEntry,
 	removeIndexRows,
@@ -41,20 +47,21 @@ import {
 } from "./goal-edit.ts";
 import {
 	applyIndexEdit,
-	appendProgressLog,
-	prependChangeLog,
+	defaultEvidence,
+	ensureHealthColumn,
 	INDEX_FILE,
 	indexPathCell,
 	indexProgressCell,
 	indexToken,
+	prependChangeLog,
+	type ProgressLineInput,
 	type RowUpdate,
 } from "./index-writer.ts";
 import {
-	areaColor,
 	type Board,
 	buildBoard,
 	bulletItems,
-	computeSubProgress,
+	chartSeries,
 	dday,
 	displayMainProgress,
 	displaySubProgress,
@@ -62,34 +69,55 @@ import {
 	fmtNum,
 	fmtVal,
 	type Goal,
-	GOAL_STATUSES,
+	goalIdsIn,
+	type HabitRef,
+	HEALTH_ICON,
+	HEALTH_KO,
+	healthCounts,
+	HEALTHS,
+	isEnded,
+	isIsoDate,
 	KIND_KO,
 	MEASURE_KO,
+	mergeRelated,
 	missingFields,
-	NEED,
+	type MissingField,
+	newestFirst,
 	paceHint,
 	parseGoal,
-	isIsoDate,
-	parseInputValue,
+	parseProgressLine,
 	parseSections,
+	type ProgressLine,
+	type ProjectRef,
+	type RelatedItem,
+	relatedOf,
 	rollupMain,
 	STATUS_KO,
-	valueToString,
-	wikilinkName,
+	toNum,
+	type Verify,
+	VERIFIES,
 	yearInfo,
 } from "./model.ts";
+import { type MapInput, type MapSub, renderStrategyMap } from "./map.ts";
+import { askCreateGoal, askDeleteGoals } from "./create-modal.ts";
+import { createGoalFlow, connectFlywheel, connectProject, createProjectForGoal, unlinkDeletedFlywheel, readProject, readGoals, refreshRelatedIndex } from "./create-actions.ts";
+import { parseFrontmatterText } from "./model.ts";
 
 export const VIEW_TYPE_PINBOARD = "mylogs-pinboard";
 
 const EXCLUDE_DIRS = new Set(["_Templates", "_build"]);
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+type Tab = "list" | "map";
 
 function todayIso(): string {
 	return toIsoDate(new Date());
 }
 
-/** A 진척 기록 line as shown on the card (links and emphasis as plain text). */
-function cleanLog(s: string): string {
-	return bulletItems(`- ${s}`)[0] ?? s;
+/** A 진척 기록 entry with its parsed fields. */
+interface LogItem {
+	entry: ProgressEntry;
+	line: ProgressLine;
 }
 
 interface Loaded {
@@ -98,9 +126,13 @@ interface Loaded {
 	goals: Goal[];
 	files: Map<string, TFile>;
 	sections: Map<string, Map<string, string>>;
-	/** Raw note texts (for the 진척 기록 lines). */
-	texts: Map<string, string>;
 	board: Board;
+	projects: ProjectRef[];
+	/** 관련 업무 by goal id (a Main's includes its Sub Goals' projects and habits). */
+	related: Map<string, RelatedItem[]>;
+	/** 진척 기록 by goal path, in file order. */
+	logs: Map<string, LogItem[]>;
+	missing: MissingField[];
 }
 
 export class PinboardView extends ItemView {
@@ -109,12 +141,21 @@ export class PinboardView extends ItemView {
 	year: number | null = null;
 
 	private rootEl!: HTMLElement;
+	private layerEl!: HTMLElement;
 	private data: Loaded | null = null;
 	private loadSeq = 0;
 	/** An inline editor is open; refreshes wait until it closes. */
 	private editing = 0;
 	private refreshPending = false;
+	/** The goal shown in the detail panel. */
+	private openId: string | null = null;
+	/** Main Goals folded in the list. */
+	private collapsed = new Set<string>();
+	private showMissing = false;
+	private creating = false;
+	/** The sun rises on the first render and after a year change. */
 	private animateNext = true;
+	private map: { destroy(): void } | null = null;
 
 	private scheduleRefresh = debounce(() => void this.refresh(), 250, true);
 
@@ -143,10 +184,21 @@ export class PinboardView extends ItemView {
 		const y = (state as { year?: unknown } | null)?.year;
 		if (typeof y === "number" && y !== this.year) {
 			this.year = y;
-			this.animateNext = true;
 			await this.refresh();
 		}
 		await super.setState(state, result);
+	}
+
+	/** 목록 or 전략 맵 — the last choice, kept in the plugin settings. */
+	private get tab(): Tab {
+		return this.plugin.settings.pinboardTab === "map" ? "map" : "list";
+	}
+
+	private setTab(t: Tab): void {
+		if (this.plugin.settings.pinboardTab === t) return;
+		this.plugin.settings.pinboardTab = t;
+		// Remember the choice without refreshing every other MyLogs view.
+		void this.plugin.saveData(this.plugin.settings);
 	}
 
 	// ── paths ──
@@ -158,6 +210,13 @@ export class PinboardView extends ItemView {
 	private inFolder(path: string): boolean {
 		const f = this.folder();
 		return path === f || path.startsWith(`${f}/`);
+	}
+
+	/** Files whose change shows up on the board: goal notes, project hubs, `Flywheel.md`. */
+	private watches(path: string): boolean {
+		if (this.inFolder(path)) return true;
+		if (path === normalizePath(flywheelPath(this.plugin.settings.flywheelPath))) return true;
+		return hubLocation(path, activeRoot(this.plugin), archiveRoot(this.plugin)) !== null;
 	}
 
 	private yearFolders(): number[] {
@@ -187,14 +246,22 @@ export class PinboardView extends ItemView {
 		this.contentEl.empty();
 		this.contentEl.addClass("mylogs-pinboard-container");
 		this.rootEl = this.contentEl.createDiv({ cls: "mylogs-pinboard" });
+		this.layerEl = this.contentEl.createDiv({ cls: "pb-detail-layer" });
 		if (Platform.isMobile) this.register(enableTouchMenus(this.contentEl));
+		this.registerDomEvent(this.contentEl, "keydown", (e: KeyboardEvent) => {
+			if (e.key !== "Escape" || !this.openId) return;
+			const t = e.target as HTMLElement | null;
+			if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+			e.preventDefault();
+			this.closeDetail();
+		});
 		this.registerEvent(
 			this.app.metadataCache.on("changed", (f) => {
-				if (this.inFolder(f.path)) this.scheduleRefresh();
+				if (this.watches(f.path)) this.scheduleRefresh();
 			}),
 		);
 		const onFile = (f: TAbstractFile, old?: string) => {
-			if (this.inFolder(f.path) || (old && this.inFolder(old))) this.scheduleRefresh();
+			if (this.watches(f.path) || (old && this.watches(old))) this.scheduleRefresh();
 		};
 		this.registerEvent(this.app.vault.on("delete", (f) => onFile(f)));
 		this.registerEvent(this.app.vault.on("rename", (f, old) => onFile(f, old)));
@@ -203,7 +270,9 @@ export class PinboardView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
+		this.destroyMap();
 		this.rootEl?.empty();
+		this.layerEl?.empty();
 	}
 
 	/** Re-read the notes and re-render (unless an inline editor is open). */
@@ -222,6 +291,31 @@ export class PinboardView extends ItemView {
 		(this.leaf as unknown as { updateHeader?: () => void }).updateHeader?.();
 	}
 
+	private loadProjects(): ProjectRef[] {
+		const act = activeRoot(this.plugin);
+		const arc = archiveRoot(this.plugin);
+		const out: ProjectRef[] = [];
+		for (const f of this.app.vault.getMarkdownFiles()) {
+			const loc = hubLocation(f.path, act, arc);
+			if (!loc) continue;
+			const p = parseProject(this.app.metadataCache.getFileCache(f)?.frontmatter, "", loc, f.path);
+			if (p) out.push({ id: p.id, title: p.title, path: p.path, status: p.archived ? "완료" : p.status, goals: p.goals, archived: p.archived });
+		}
+		return out;
+	}
+
+	private async loadHabits(): Promise<HabitRef[]> {
+		const f = this.app.vault.getAbstractFileByPath(normalizePath(flywheelPath(this.plugin.settings.flywheelPath)));
+		if (!(f instanceof TFile)) return [];
+		try {
+			const els = parseFlywheel(await this.app.vault.cachedRead(f));
+			return els.map((e) => ({ id: e.id, name: e.name, status: e.status, goals: goalIdsIn(e.fields["goal"] ?? "") }));
+		} catch (err) {
+			console.error("[MyLogs] Pinboard: Flywheel read failed", err);
+			return [];
+		}
+	}
+
 	private async loadData(): Promise<Loaded> {
 		const years = this.yearFolders();
 		const thisYear = new Date().getFullYear();
@@ -232,20 +326,40 @@ export class PinboardView extends ItemView {
 		const goals: Goal[] = [];
 		const files = new Map<string, TFile>();
 		const sections = new Map<string, Map<string, string>>();
-		const texts = new Map<string, string>();
+		const logs = new Map<string, LogItem[]>();
 		if (year !== null) {
 			for (const f of this.goalFiles(year)) {
-				const g = parseGoal(this.app.metadataCache.getFileCache(f)?.frontmatter, f.path);
+				const text = await this.app.vault.read(f);
+				const parsed = parseFrontmatterText(text);
+				const g = parseGoal(parsed.data, f.path);
 				if (!g) continue;
 				goals.push(g);
 				files.set(f.path, f);
-				const text = await this.app.vault.cachedRead(f);
-				texts.set(f.path, text);
-				const fmEnd = this.app.metadataCache.getFileCache(f)?.frontmatterPosition?.end.offset ?? 0;
-				sections.set(f.path, parseSections(text.slice(fmEnd)));
+				sections.set(f.path, parseSections(parsed.body));
+				logs.set(
+					f.path,
+					progressEntries(text).map((entry) => ({ entry, line: parseProgressLine(entry.text) })),
+				);
 			}
 		}
-		return { year, years, goals, files, sections, texts, board: buildBoard(goals) };
+		const board = buildBoard(goals);
+		const projects = this.loadProjects();
+		const habits = await this.loadHabits();
+		const related = new Map<string, RelatedItem[]>();
+		const secsOf = (p: string) => sections.get(p) ?? new Map<string, string>();
+		for (const s of board.subs) related.set(s.id, relatedOf(s, projects, habits, bulletItems(findSectionText(secsOf(s.path), "수단"))));
+		for (const { main, subs } of board.cards) {
+			const own = relatedOf(main, projects, habits, bulletItems(findSectionText(secsOf(main.path), "수단 (프로젝트·습관)", "수단")));
+			related.set(
+				main.id,
+				mergeRelated(
+					own,
+					subs.map((s) => related.get(s.id) ?? []),
+				),
+			);
+		}
+		const missing = missingFields(board, secsOf);
+		return { year, years, goals, files, sections, board, projects, related, logs, missing };
 	}
 
 	private beginEdit(): void {
@@ -257,360 +371,720 @@ export class PinboardView extends ItemView {
 		if (this.editing === 0 && this.refreshPending) this.scheduleRefresh();
 	}
 
+	private goalById(id: string): Goal | null {
+		return this.data?.goals.find((g) => g.id === id) ?? null;
+	}
+
 	// ── rendering ──
+
+	private destroyMap(): void {
+		if (!this.map) return;
+		try {
+			this.map.destroy();
+		} catch (err) {
+			console.error("[MyLogs] Pinboard map destroy failed", err);
+		}
+		this.map = null;
+	}
 
 	private render(): void {
 		const root = this.rootEl;
 		const d = this.data;
+		const scroll = root.scrollTop;
+		this.destroyMap();
 		root.empty();
+		root.toggleClass("is-map", this.tab === "map");
 		root.toggleClass("pb-animate", this.animateNext);
 		this.animateNext = false;
 		if (!d) return;
-		const today = todayIso();
-
+		const page = root.createDiv({ cls: "pb-page" });
 		if (d.year === null) {
-			const empty = root.createDiv({ cls: "pb-empty" });
+			const empty = page.createDiv({ cls: "pb-empty" });
 			empty.createDiv({ cls: "pb-empty-title", text: "Pinboard 연도 폴더가 없어요" });
 			empty.createEl("code", { text: `${this.folder()}/<YYYY>/` });
+			this.smallBtn(empty, "첫 목표 만들기", "템플릿으로 목표를 만들어요", () => this.createGoal(), "plus");
+			this.renderDetail();
 			return;
 		}
-		const sectionsOf = (p: string) => d.sections.get(p) ?? new Map<string, string>();
-		const missing = missingFields(d.board, sectionsOf);
-
-		this.renderHero(root, d, today, missing.length);
-
-		const legend = root.createDiv({ cls: "pb-legend" });
-		legend.createSpan({ cls: "pb-ttl", text: "영역" });
-		for (const a of d.board.areas) {
-			const [a1, a2] = areaColor(a, d.board.areas);
-			const dot = legend.createSpan({ cls: "pb-dot", text: a });
-			dot.style.setProperty("--a", a1);
-			dot.style.setProperty("--a2", a2);
-		}
-
-		const grid = root.createDiv({ cls: "pb-grid" });
-		d.board.cards.forEach((c, i) => this.renderMain(grid, c.main, c.subs, i, today, d));
-		if (d.board.orphans.length) this.renderOrphans(grid, d.board.orphans, d.board.cards.length, today, d);
-		if (!d.board.cards.length && !d.board.orphans.length) {
-			const g = grid.createDiv({ cls: "pb-goal" });
-			g.style.setProperty("--a", "#f0642e");
-			g.style.setProperty("--a2", "#ffb02e");
-			g.createDiv({ cls: "pb-goal-head" }).createEl("h2", { text: `${d.year}년 목표가 아직 없어요` });
-			g.createDiv({ cls: "pb-goal-foot" });
-		}
-
-		const todo = root.createDiv({ cls: "pb-todo" });
-		if (missing.length) {
-			todo.createEl("h2", { text: `채워 넣을 칸 ${missing.length}개` });
-			todo.createEl("p", { cls: "pb-sub", text: "비어 있는 값은 지어내지 않고 그대로 비워 두었습니다. 노트에 적으면 바로 반영됩니다." });
-			const ul = todo.createEl("ul");
-			for (const m of missing) {
-				const li = ul.createEl("li");
-				li.createSpan({ cls: "pb-gid", text: m.id });
-				li.appendText(`${m.title} — `);
-				li.createEl("b", { text: m.field });
-			}
+		this.renderHeader(page, d);
+		if (this.tab === "map") {
+			const host = page.createDiv({ cls: "pb-map-host" });
+			this.renderMap(host, d);
 		} else {
-			todo.addClass("is-clear");
-			todo.createEl("h2", { text: "모든 칸이 채워져 있어요" });
+			this.renderList(page, d);
+			root.scrollTop = scroll;
 		}
-
-		const updated = d.goals.map((g) => g.updated).filter((u) => /^\d{4}-\d{2}-\d{2}/.test(u)).sort();
-		const foot = root.createDiv({ cls: "pb-foot" });
-		foot.appendText("노트 최종 갱신 ");
-		foot.createEl("b", { text: updated[updated.length - 1] ?? "미정" });
-		foot.createEl("br");
-		foot.appendText(`원본: ${this.folder()}/${d.year}/ 노트 ${d.goals.length}개`);
+		this.renderDetail();
 	}
 
-	private renderHero(root: HTMLElement, d: Loaded, today: string, missingCount: number): void {
+	private renderHeader(page: HTMLElement, d: Loaded): void {
 		const year = d.year!;
-		const hero = root.createDiv({ cls: "pb-hero" });
-		hero.createDiv({ cls: "pb-rays" });
-		hero.createDiv({ cls: "pb-sun" });
-		hero.createDiv({ cls: "pb-horizon" });
-
-		const top = hero.createDiv({ cls: "pb-hero-top" });
-		const left = top.createDiv();
-		const eyebrow = left.createDiv({ cls: "pb-eyebrow" });
-		eyebrow.createSpan({ text: "Goals · 매일 보는 방향" });
-		const h1 = left.createEl("h1");
+		const today = todayIso();
+		const head = page.createDiv({ cls: "pb-header pb-hero" });
+		head.createDiv({ cls: "pb-rays" });
+		head.createDiv({ cls: "pb-sun" });
+		head.createDiv({ cls: "pb-horizon" });
+		const top = head.createDiv({ cls: "pb-head-top" });
+		const titleEl = top.createDiv({ cls: "pb-head-title" });
+		titleEl.createEl("h1", { text: "Pinboard" });
 		if (d.years.length > 1) {
-			const sel = h1.createEl("select", { cls: "pb-year-select", attr: { "aria-label": "연도 고르기" } });
+			const sel = titleEl.createEl("select", { cls: "dropdown pb-year-select", attr: { "aria-label": "연도 고르기" } });
 			for (const y of d.years) sel.createEl("option", { text: String(y), value: String(y) });
 			sel.value = String(year);
 			sel.addEventListener("change", () => {
 				this.year = Number(sel.value);
+				this.openId = null;
 				this.animateNext = true;
 				void this.refresh();
 				this.app.workspace.requestSaveLayout();
 			});
-		} else h1.createSpan({ cls: "pb-yr", text: String(year) });
-		h1.appendText(" Pinboard");
-		left.createEl("p", { cls: "pb-tagline", text: "오늘의 한 걸음이 올해의 나를 바꾼다. 해는 이미 떠오르고 있다." });
+		} else titleEl.createSpan({ cls: "pb-year", text: String(year) });
+
+		const tabs = top.createDiv({ cls: "pb-tabs", attr: { role: "tablist" } });
+		const tabBtn = (id: Tab, label: string, icon: string) => {
+			const b = tabs.createEl("button", {
+				cls: `pb-tab${this.tab === id ? " is-active" : ""}`,
+				attr: { type: "button", role: "tab", "aria-selected": String(this.tab === id) },
+			});
+			setIcon(b.createSpan({ cls: "pb-tab-icon" }), icon);
+			b.createSpan({ text: label });
+			b.addEventListener("click", () => {
+				if (this.tab === id) return;
+				this.setTab(id);
+				this.render();
+			});
+		};
+		tabBtn("list", "목록", "list");
+		tabBtn("map", "전략 맵", "network");
+		this.smallBtn(top, "목표 추가", "새 목표를 만들어요", () => this.createGoal(), "plus");
 
 		const yi = yearInfo(year, today);
-		const cd = top.createDiv({ cls: "pb-countdown" });
-		cd.createSpan({ cls: "pb-num", text: String(yi.daysLeft) });
-		cd.createSpan({ cls: "pb-lbl", text: yi.label });
+		const yb = head.createDiv({ cls: "pb-yearbar", attr: { title: `${year}.01.01 – ${year}.12.31` } });
+		const track = yb.createDiv({ cls: "pb-yearbar-track" });
+		track.createDiv({ cls: "pb-yearbar-fill" }).style.width = `${yi.pct.toFixed(2)}%`;
+		let label: string;
+		if (today < `${year}-01-01`) label = `${yi.daysLeft}일 뒤 시작`;
+		else if (today > `${year}-12-31`) label = "한 해 마감";
+		else label = `올해 ${Math.round(yi.pct)}% 지남 · ${yi.daysLeft}일 남음`;
+		yb.createSpan({ cls: "pb-yearbar-label", text: label });
 
-		const track = hero.createDiv({ cls: "pb-yeartrack" });
-		track.style.setProperty("--p", `${yi.pct.toFixed(2)}%`);
-		const bar = track.createDiv({ cls: "pb-bar" });
-		bar.createDiv({ cls: "pb-fill" });
-		bar.createDiv({ cls: "pb-now" });
-		const marks = track.createDiv({ cls: "pb-marks" });
-		marks.createSpan({ text: `${year}.01.01` });
-		marks.createSpan({ text: `오늘 ${moment().format("LL")} · 올해 ${Math.round(yi.pct)}% 지남` });
-		marks.createSpan({ text: `${year}.12.31` });
-
-		const b = d.board;
-		const stats = hero.createDiv({ cls: "pb-stats" });
-		const stat = (n: string, label: string, warm = false) => {
-			const s = stats.createDiv({ cls: `pb-stat${warm ? " is-warm" : ""}` });
-			s.createEl("b", { text: n });
-			s.appendText(label);
+		const c = healthCounts(d.goals);
+		const sum = head.createDiv({ cls: "pb-summary" });
+		const chip = (cls: string, icon: string, text: string, n: number) => {
+			const s = sum.createSpan({ cls: `pb-sum ${cls}`, attr: { title: `${text} ${n}개 (진행 중인 목표)` } });
+			s.createSpan({ cls: "pb-sum-icon", text: icon });
+			s.createEl("b", { text: String(n) });
+			s.createSpan({ cls: "pb-sum-label", text });
 		};
-		stat(String(b.mains.length), "핵심 목표");
-		stat(String(b.subs.length), "측정 기준");
-		stat(String(b.subs.filter((s) => s.status === "achieved").length), "달성");
-		const upcoming = b.subs
-			.filter((s) => s.due && s.due >= today && s.status === "active")
-			.sort((x, y) => (x.due < y.due ? -1 : x.due > y.due ? 1 : 0))[0];
-		if (upcoming) stat(dday(upcoming.due, today).big.replace("D-DAY", "D-0"), `다음 기한 · ${upcoming.title}`, true);
-		if (missingCount) stat(String(missingCount), "채울 칸");
-	}
-
-	private goalSection(parent: HTMLElement, area: string, idx: number, areas: string[]): HTMLElement {
-		const [a1, a2] = areaColor(area, areas);
-		const sec = parent.createDiv({ cls: "pb-goal" });
-		sec.style.setProperty("--a", a1);
-		sec.style.setProperty("--a2", a2);
-		sec.style.setProperty("--i", String(idx));
-		return sec;
-	}
-
-	private renderMain(grid: HTMLElement, m: Goal, subs: Goal[], idx: number, today: string, d: Loaded): void {
-		const area = m.area || "기타";
-		const sec = this.goalSection(grid, area, idx, d.board.areas);
-		const secs = d.sections.get(m.path) ?? new Map<string, string>();
-
-		const head = sec.createDiv({ cls: "pb-goal-head" });
-		const txt = head.createDiv({ cls: "pb-txt" });
-		const tagrow = txt.createDiv({ cls: "pb-tagrow" });
-		tagrow.createSpan({ cls: "pb-area", text: area });
-		this.statusChip(tagrow, m, d);
-		tagrow.createSpan({ cls: "pb-gid", text: m.id });
-		this.moreButton(tagrow, m, d);
-		const h2 = txt.createEl("h2", { cls: "pb-title", text: m.title });
-		this.linkToNote(h2, m);
-		head.addEventListener("contextmenu", (e) => {
-			e.preventDefault();
-			this.goalMenu(e, m, d);
+		chip("is-on-track", HEALTH_ICON["on-track"], HEALTH_KO["on-track"], c["on-track"]);
+		chip("is-at-risk", HEALTH_ICON["at-risk"], HEALTH_KO["at-risk"], c["at-risk"]);
+		chip("is-off-track", HEALTH_ICON["off-track"], HEALTH_KO["off-track"], c["off-track"]);
+		chip("is-none", HEALTH_ICON[""], HEALTH_KO[""], c.none);
+		sum.createSpan({ cls: "pb-sum-sep" });
+		sum.createSpan({ cls: "pb-sum is-plain", text: `목표 ${d.board.mains.length} · 측정 기준 ${d.board.subs.length}` });
+		const miss = sum.createEl("button", {
+			cls: `pb-sum pb-sum-missing${d.missing.length ? " is-warn" : ""}${this.showMissing ? " is-open" : ""}`,
+			attr: { type: "button", "aria-expanded": String(this.showMissing) },
 		});
-
-		const r = displayMainProgress(m, subs);
-		const ring = head.createDiv({ cls: "pb-ring" });
-		ring.style.setProperty("--p", r.progress.toFixed(1));
-		const rs = ring.createSpan();
-		rs.createEl("b", { text: `${Math.round(r.progress)}%` });
-		rs.createEl("small", { text: `${fmtNum(r.subAchieved)}/${fmtNum(r.subTotal)} 달성` });
-
-		const story = sec.createDiv({ cls: "pb-story" });
-		const why = bulletItems(findSectionText(secs, "왜 이 목표인가", "왜"));
-		const vision = bulletItems(findSectionText(secs, "달성한 모습"));
-		this.storyBox(story, "왜 이 목표인가", why, "why", "아직 비어 있어요. 이 목표가 왜 중요한지 한 줄 적어 주세요.");
-		this.storyBox(story, "달성한 모습", vision, "vision", "아직 비어 있어요. 이루어진 날의 장면을 적어 주세요.");
-
-		sec.createDiv({ cls: "pb-sec-label", text: `측정 기준 · ${subs.length}개` });
-		const krs = sec.createDiv({ cls: "pb-krs" });
-		if (subs.length) subs.forEach((s) => this.renderSub(krs, s, today, d));
-		else krs.createDiv({ cls: "pb-kr" }).createSpan({ cls: "pb-chip is-need", text: "측정 기준(Sub Goal) 입력 필요" });
-
-		sec.createDiv({ cls: "pb-sec-label", text: "수단 · 프로젝트와 습관" });
-		const chips = sec.createDiv({ cls: "pb-chips" });
-		const means = bulletItems(findSectionText(secs, "수단 (프로젝트·습관)", "수단"));
-		if (means.length) means.forEach((x) => chips.createSpan({ cls: "pb-chip", text: x }));
-		else chips.createSpan({ cls: "pb-chip is-need", text: `수단 ${NEED}` });
-		sec.createDiv({ cls: "pb-goal-foot" });
+		miss.createSpan({ text: "채울 칸 " });
+		miss.createEl("b", { text: String(d.missing.length) });
+		miss.addEventListener("click", () => {
+			this.showMissing = !this.showMissing;
+			if (this.showMissing) this.setTab("list");
+			this.render();
+		});
 	}
 
-	private renderOrphans(grid: HTMLElement, orphans: Goal[], idx: number, today: string, d: Loaded): void {
-		const sec = this.goalSection(grid, "기타", idx, d.board.areas);
-		const head = sec.createDiv({ cls: "pb-goal-head" });
-		head.createDiv({ cls: "pb-txt" }).createEl("h2", { cls: "pb-title", text: "상위 목표를 찾지 못한 Sub Goal" });
-		const story = sec.createDiv({ cls: "pb-story" });
-		this.storyBox(story, "확인", ["parent 값이 Main Goal id와 맞지 않습니다. parent를 고치면 해당 카드로 옮겨집니다."], "why", "");
-		const krs = sec.createDiv({ cls: "pb-krs" });
-		orphans.forEach((s) => this.renderSub(krs, s, today, d));
-		sec.createDiv({ cls: "pb-goal-foot" });
+	// ── 목록 ──
+
+	private renderList(page: HTMLElement, d: Loaded): void {
+		const today = todayIso();
+		if (this.showMissing) this.renderMissing(page, d);
+		const list = page.createDiv({ cls: "pb-list", attr: { role: "treegrid", "aria-label": `${d.year} 목표` } });
+		const head = list.createDiv({ cls: "pb-row is-head", attr: { role: "row" } });
+		for (const [cls, label] of [
+			["pb-c-title", "목표"],
+			["pb-c-prog", "진행"],
+			["pb-c-val", "현재 → 목표"],
+			["pb-c-due", "기한"],
+			["pb-c-rel", "관련"],
+		]) head.createDiv({ cls: `pb-cell ${cls}`, text: label, attr: { role: "columnheader" } });
+
+		for (const { main, subs } of d.board.cards) {
+			this.mainRow(list, main, subs, d);
+			if (this.collapsed.has(main.id)) continue;
+			subs.forEach((s) => this.subRow(list, s, d, today, true));
+			if (!subs.length) list.createDiv({ cls: "pb-row is-sub is-placeholder" }).createDiv({ cls: "pb-cell pb-c-title pb-muted", text: "측정 기준(Sub Goal)이 아직 없어요" });
+		}
+		if (d.board.orphans.length) {
+			list.createDiv({ cls: "pb-row is-group" }).createDiv({ cls: "pb-cell pb-c-title", text: "상위 목표를 찾지 못한 Sub Goal — parent가 Main Goal id와 맞지 않아요" });
+			d.board.orphans.forEach((s) => this.subRow(list, s, d, today, false));
+		}
+		if (!d.board.cards.length && !d.board.orphans.length) {
+			list.createDiv({ cls: "pb-row is-placeholder" }).createDiv({
+				cls: "pb-cell pb-c-title pb-muted",
+				text: `${d.year}년 목표가 아직 없어요. 위의 「목표 추가」에서 시작하세요.`,
+			});
+		}
+
+		const updated = d.goals.map((g) => g.updated).filter((u) => /^\d{4}-\d{2}-\d{2}/.test(u)).sort();
+		page.createDiv({ cls: "pb-foot", text: `노트 최종 갱신 ${updated[updated.length - 1] ?? "미정"} · 원본 ${this.folder()}/${d.year}/ 노트 ${d.goals.length}개` });
 	}
 
-	private storyBox(parent: HTMLElement, label: string, items: string[], cls: string, emptyText: string): void {
-		const q = parent.createDiv({ cls: `pb-q ${items.length ? `is-${cls}` : "is-empty"}` });
-		q.createSpan({ cls: "pb-k", text: label });
-		const p = q.createEl("p");
-		if (!items.length) {
-			p.setText(emptyText);
+	private renderMissing(page: HTMLElement, d: Loaded): void {
+		const box = page.createDiv({ cls: "pb-missing" });
+		if (!d.missing.length) {
+			box.createDiv({ cls: "pb-missing-title", text: "모든 칸이 채워져 있어요" });
 			return;
 		}
-		items.forEach((x, i) => {
-			if (i) p.createEl("br");
-			p.appendText(x);
-		});
+		box.createDiv({ cls: "pb-missing-title", text: `채워 넣을 칸 ${d.missing.length}개` });
+		box.createDiv({ cls: "pb-note", text: "비어 있는 값은 지어내지 않고 그대로 비워 두었습니다. 노트에 적으면 바로 반영됩니다." });
+		const ul = box.createEl("ul");
+		for (const m of d.missing) {
+			const b = ul.createEl("li").createEl("button", { cls: "pb-linkish", attr: { type: "button" } });
+			b.createSpan({ cls: "pb-gid", text: m.id });
+			b.appendText(` ${m.title} — `);
+			b.createEl("b", { text: m.field });
+			b.addEventListener("click", () => this.openGoal(m.id));
+		}
 	}
 
-	private renderSub(parent: HTMLElement, s: Goal, today: string, d: Loaded): void {
-		const secs = d.sections.get(s.path) ?? new Map<string, string>();
-		const kr = parent.createDiv({ cls: `pb-kr st-${s.status}` });
-		const top = kr.createDiv({ cls: "pb-kr-top" });
-		const left = top.createDiv();
-		const h3 = left.createEl("h3", { cls: "pb-title", text: s.title });
-		this.linkToNote(h3, s);
-		const meta = left.createDiv({ cls: "pb-meta" });
-		this.statusChip(meta, s, d);
-		if (MEASURE_KO[s.measure]) meta.createSpan({ cls: "pb-pill", text: MEASURE_KO[s.measure] });
-		if (KIND_KO[s.kind]) meta.createSpan({ cls: "pb-pill", text: KIND_KO[s.kind] });
-		this.moreButton(meta, s, d);
-		kr.addEventListener("contextmenu", (e) => {
-			if ((e.target as HTMLElement).closest(".pb-log li")) return;
-			e.preventDefault();
-			this.goalMenu(e, s, d);
+	private rowShell(list: HTMLElement, g: Goal, cls: string): HTMLElement {
+		const row = list.createDiv({
+			cls: `pb-row ${cls} st-${g.status}${this.openId === g.id ? " is-open" : ""}`,
+			attr: { role: "row", tabindex: "0", "data-goal": g.id, "aria-label": g.title },
 		});
-		const dd = dday(s.due, today);
-		const ddEl = top.createDiv({ cls: `pb-dday${dd.cls ? ` is-${dd.cls}` : ""}` });
-		ddEl.createEl("b", { text: dd.big });
-		if (dd.small) ddEl.createEl("small", { text: dd.small });
-
-		const prog = displaySubProgress(s);
-		const pr = kr.createDiv({ cls: `pb-prog${prog === null ? " is-unknown" : ""}` });
-		const bar = pr.createDiv({ cls: "pb-bar" });
-		const cap = pr.createDiv({ cls: "pb-pcap" });
-		if (prog === null) {
-			cap.createSpan({ text: "진척률" });
-			cap.createEl("b", { text: "미정" });
-		} else {
-			pr.style.setProperty("--p", `${prog.toFixed(1)}%`);
-			bar.createDiv({ cls: "pb-fill" });
-			bar.createDiv({ cls: "pb-spark" });
-			cap.createSpan({ text: prog === 0 ? "출발선에 섰다" : prog >= 100 ? "달성!" : "진행 중" });
-			cap.createEl("b", { text: `${Math.round(prog)}%` });
-		}
-
-		const metric = s.measure === "metric";
-		const path = kr.createDiv({ cls: `pb-path${metric ? "" : " is-two"}` });
-		const arrow = () => path.createSpan({ cls: "pb-arr", text: "→" });
-		if (metric) {
-			this.node(path, "시작", s.baseline, s.unit, "base");
-			arrow();
-			this.currentNode(path, "현재", s, d);
-			arrow();
-			this.node(path, "목표", s.target, s.unit, "tgt");
-		} else {
-			this.currentNode(path, "현재", s, d);
-			arrow();
-			this.node(path, "달성 조건", s.target, s.unit, "tgt");
-		}
-
-		const hint = paceHint(s, today);
-		if (hint) {
-			const p = kr.createEl("p", { cls: "pb-hint" });
-			p.appendText("목표까지 ");
-			p.createEl("b", { text: `${hint.remain}${s.unit}` });
-			if (hint.perWeek) {
-				p.appendText(` · 남은 ${hint.weeks}주 동안 주 `);
-				p.createEl("b", { text: `${hint.perWeek}${s.unit}` });
-				p.appendText("씩");
+		row.addEventListener("click", (e) => {
+			if ((e.target as HTMLElement).closest(".pb-fold")) return;
+			this.openGoal(g.id);
+		});
+		row.addEventListener("keydown", (e) => {
+			if ((e.key === "Enter" || e.key === " ") && e.target === row) {
+				e.preventDefault();
+				this.openGoal(g.id);
 			}
+		});
+		row.addEventListener("contextmenu", (e) => {
+			e.preventDefault();
+			this.goalMenu(e, g);
+		});
+		return row;
+	}
+
+	private mainRow(list: HTMLElement, m: Goal, subs: Goal[], d: Loaded): void {
+		const row = this.rowShell(list, m, "is-main");
+		const t = row.createDiv({ cls: "pb-cell pb-c-title", attr: { role: "gridcell" } });
+		const folded = this.collapsed.has(m.id);
+		const fold = t.createEl("button", {
+			cls: "pb-fold clickable-icon",
+			attr: { type: "button", "aria-label": folded ? "펼치기" : "접기", "aria-expanded": String(!folded) },
+		});
+		setIcon(fold, folded ? "chevron-right" : "chevron-down");
+		fold.addEventListener("click", (e) => {
+			e.stopPropagation();
+			if (folded) this.collapsed.delete(m.id);
+			else this.collapsed.add(m.id);
+			this.render();
+		});
+		this.hdot(t, m);
+		t.createSpan({ cls: "pb-row-title", text: m.title });
+		if (m.area) t.createSpan({ cls: "pb-area-tag", text: m.area });
+		this.statusBadge(t, m);
+		const r = displayMainProgress(m, subs);
+		this.progressCell(row, r.progress);
+		row.createDiv({ cls: "pb-cell pb-c-val pb-muted", text: `${r.subAchieved}/${r.subTotal} 달성`, attr: { role: "gridcell" } });
+		row.createDiv({ cls: "pb-cell pb-c-due pb-muted", text: m.period || "", attr: { role: "gridcell" } });
+		this.relCell(row, d.related.get(m.id) ?? []);
+	}
+
+	private subRow(list: HTMLElement, s: Goal, d: Loaded, today: string, nested: boolean): void {
+		const row = this.rowShell(list, s, `is-sub${nested ? "" : " is-orphan"}`);
+		const t = row.createDiv({ cls: "pb-cell pb-c-title", attr: { role: "gridcell" } });
+		this.hdot(t, s);
+		t.createSpan({ cls: "pb-row-title", text: s.title });
+		this.statusBadge(t, s);
+		this.progressCell(row, displaySubProgress(s));
+		row.createDiv({ cls: "pb-cell pb-c-val", text: this.curTarget(s), attr: { role: "gridcell" } });
+		const dd = dday(s.due, today);
+		const ended = isEnded(s.status);
+		row.createDiv({
+			cls: `pb-cell pb-c-due${!ended && dd.cls ? ` is-${dd.cls}` : ""}`,
+			text: ended ? (s.due ? s.due.replace(/-/g, ".") : "—") : dd.big,
+			attr: { role: "gridcell", title: dd.small },
+		});
+		this.relCell(row, d.related.get(s.id) ?? []);
+	}
+
+	private progressCell(row: HTMLElement, p: number | null): void {
+		const c = row.createDiv({ cls: "pb-cell pb-c-prog", attr: { role: "gridcell" } });
+		this.bar(c, p);
+		c.createSpan({ cls: "pb-pct", text: p === null ? "미정" : `${Math.round(p)}%` });
+	}
+
+	private relCell(row: HTMLElement, rel: RelatedItem[]): void {
+		const c = row.createDiv({ cls: "pb-cell pb-c-rel", attr: { role: "gridcell" } });
+		const n = (k: RelatedItem["kind"]) => rel.filter((r) => r.kind === k).length;
+		c.setAttr("title", `프로젝트 ${n("project")} · 습관 ${n("habit")} · 메모 ${n("memo")}`);
+		if (!rel.length) {
+			c.createSpan({ cls: "pb-muted", text: "—" });
+			return;
+		}
+		const b = c.createSpan({ cls: "pb-rel-count" });
+		setIcon(b.createSpan({ cls: "pb-rel-icon" }), "link-2");
+		b.createSpan({ text: String(rel.length) });
+		if (rel.some((r) => r.oneSided || r.broken)) c.createSpan({ cls: "pb-warn-dot", attr: { "aria-label": "한쪽만 연결된 항목이 있어요" } });
+	}
+
+	// ── 전략 맵 ──
+
+	private mapInput(d: Loaded): MapInput {
+		const toSub = (s: Goal): MapSub => {
+			const p = displaySubProgress(s);
+			return {
+				id: s.id,
+				title: s.title,
+				status: s.status,
+				health: s.health,
+				progress: p === null ? null : Math.round(p),
+				current: s.current,
+				target: s.target,
+				unit: s.unit,
+				due: s.due,
+				related: (d.related.get(s.id) ?? []).map((r) => ({ kind: r.kind, label: r.label, path: r.path, oneSided: r.oneSided || r.broken || undefined })),
+			};
+		};
+		return {
+			year: d.year!,
+			mains: d.board.cards.map(({ main, subs }) => ({
+				id: main.id,
+				title: main.title,
+				area: main.area,
+				status: main.status,
+				health: main.health,
+				progress: displayMainProgress(main, subs).progress,
+				subs: subs.map(toSub),
+			})),
+			orphans: d.board.orphans.map(toSub),
+		};
+	}
+
+	private renderMap(host: HTMLElement, d: Loaded): void {
+		try {
+			this.map = renderStrategyMap(host, this.mapInput(d), {
+				openGoal: (id) => this.openGoal(id),
+				openFile: (path) => this.openPath(path),
+			});
+		} catch (err) {
+			console.error("[MyLogs] Pinboard strategy map failed", err);
+			host.createDiv({ cls: "pb-empty", text: "전략 맵을 그리지 못했어요. 목록에서 볼 수 있어요." });
+		}
+	}
+
+	// ── small pieces ──
+
+	private hdot(parent: HTMLElement, g: Goal): HTMLElement {
+		const ended = isEnded(g.status);
+		const label = ended ? (STATUS_KO[g.status] ?? g.status) : HEALTH_KO[g.health];
+		return parent.createSpan({ cls: `pb-hdot ${ended ? `is-ended st-${g.status}` : `is-${g.health || "none"}`}`, attr: { "aria-label": label, title: label } });
+	}
+
+	private statusBadge(parent: HTMLElement, g: Goal): void {
+		if (g.status === "active") return;
+		parent.createSpan({ cls: `pb-badge st-${g.status}`, text: STATUS_KO[g.status] ?? g.status });
+	}
+
+	private bar(parent: HTMLElement, p: number | null): HTMLElement {
+		const b = parent.createDiv({ cls: `pb-pbar${p === null ? " is-unknown" : ""}` });
+		if (p !== null) b.createDiv({ cls: "pb-pbar-fill" }).style.width = `${Math.max(0, Math.min(100, p)).toFixed(1)}%`;
+		return b;
+	}
+
+	/** `100 → 95 kg`, `베타 사용자 5명 → 첫 결제` (empty values as `?` / `—`). */
+	private curTarget(s: Goal): string {
+		if (s.measure === "metric") {
+			const c = fmtVal(s.current, "")?.[0] ?? "?";
+			const t = fmtVal(s.target, "")?.[0] ?? "?";
+			return `${c} → ${t}${s.unit ? ` ${s.unit}` : ""}`;
+		}
+		return `${s.current || "—"} → ${s.target || "—"}`;
+	}
+
+	private openPath(path: string, newLeaf: PaneType | boolean = false): void {
+		const f = this.app.vault.getAbstractFileByPath(normalizePath(path));
+		if (f instanceof TFile) void this.app.workspace.getLeaf(newLeaf).openFile(f);
+		else new Notice(`MyLogs: ${path}을 찾지 못했어요.`);
+	}
+
+	/** Plain text with `[[wikilinks]]` as clickable links (resolved from `source`). */
+	private inline(parent: HTMLElement, text: string, source: string): void {
+		let last = 0;
+		for (const m of text.matchAll(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g)) {
+			if (m.index! > last) parent.appendText(text.slice(last, m.index));
+			const target = m[1].trim();
+			const a = parent.createEl("a", { cls: "internal-link", text: (m[2] ?? target.split("/").pop() ?? target).trim(), href: "#" });
+			a.addEventListener("click", (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				void this.app.workspace.openLinkText(target, source, Keymap.isModEvent(e));
+			});
+			last = m.index! + m[0].length;
+		}
+		if (last < text.length) parent.appendText(text.slice(last));
+	}
+
+	// ── 상세 패널 ──
+
+	openGoal(id: string): void {
+		if (!this.goalById(id)) return;
+		this.openId = id;
+		this.rootEl.querySelectorAll(".pb-row.is-open").forEach((el) => el.removeClass("is-open"));
+		this.rootEl.querySelector(`.pb-row[data-goal="${CSS.escape(id)}"]`)?.addClass("is-open");
+		this.renderDetail(true);
+	}
+
+	private closeDetail(): void {
+		this.openId = null;
+		this.rootEl.querySelectorAll(".pb-row.is-open").forEach((el) => el.removeClass("is-open"));
+		this.layerEl.removeClass("is-open");
+		this.layerEl.empty();
+	}
+
+	private renderDetail(fresh = false): void {
+		const layer = this.layerEl;
+		const prevScroll = fresh ? 0 : (layer.querySelector(".pb-d-scroll")?.scrollTop ?? 0);
+		const wasOpen = layer.hasClass("is-open");
+		layer.empty();
+		const d = this.data;
+		const g = this.openId ? this.goalById(this.openId) : null;
+		if (!d || !g) {
+			this.openId = null;
+			layer.removeClass("is-open");
+			return;
+		}
+		layer.addClass("is-open");
+		layer.toggleClass("is-entering", !wasOpen);
+		const scrim = layer.createDiv({ cls: "pb-scrim" });
+		scrim.addEventListener("click", () => this.closeDetail());
+		const panel = layer.createDiv({ cls: "pb-detail", attr: { role: "dialog", "aria-label": g.title, tabindex: "-1" } });
+		const today = todayIso();
+		const main = g.type === "main-goal";
+		const parent = main ? null : (d.board.mains.find((m) => m.id === g.parent) ?? null);
+		const subs = main ? d.board.subs.filter((s) => s.parent === g.id) : [];
+
+		// top bar
+		const topBar = panel.createDiv({ cls: "pb-d-bar" });
+		const crumb = topBar.createDiv({ cls: "pb-d-crumb" });
+		crumb.createSpan({ cls: "pb-d-kind", text: main ? "Main Goal" : "Sub Goal" });
+		if (parent) {
+			crumb.createSpan({ cls: "pb-d-sep", text: "·" });
+			const a = crumb.createEl("button", { cls: "pb-linkish", text: parent.title, attr: { type: "button" } });
+			a.addEventListener("click", () => this.openGoal(parent.id));
+		}
+		const acts = topBar.createDiv({ cls: "pb-d-acts" });
+		const more = acts.createEl("button", { cls: "clickable-icon pb-d-btn", attr: { type: "button", "aria-label": "메뉴" } });
+		setIcon(more, "more-horizontal");
+		more.addEventListener("click", (e) => this.goalMenu(e, g));
+		const close = acts.createEl("button", { cls: "clickable-icon pb-d-btn", attr: { type: "button", "aria-label": "닫기 (Esc)" } });
+		setIcon(close, "x");
+		close.addEventListener("click", () => this.closeDetail());
+
+		const scroll = panel.createDiv({ cls: "pb-d-scroll" });
+		const grid = scroll.createDiv({ cls: "pb-d-grid" });
+		const body = grid.createDiv({ cls: "pb-d-main" });
+		const side = grid.createDiv({ cls: "pb-d-side" });
+
+		// title + pickers
+		const h = body.createEl("h2", { cls: "pb-d-title" });
+		this.hdot(h, g);
+		h.createSpan({ text: g.title });
+		const pickers = body.createDiv({ cls: "pb-d-pickers" });
+		this.statusPicker(pickers, g);
+		this.healthPicker(pickers, g);
+
+		const logs = d.logs.get(g.path) ?? [];
+		const newest = newestFirst(logs.map((l) => ({ ...l, date: l.line.date })));
+
+		// latest update
+		const latest = this.card(body, "최근 업데이트");
+		if (newest.length) this.updateView(latest, newest[0].line, g, true);
+		else latest.createDiv({ cls: "pb-muted", text: "아직 진척 기록이 없어요. 아래 「업데이트 추가」로 남길 수 있어요." });
+
+		// progress
+		const pc = this.card(body, "진행");
+		if (main) this.mainProgress(pc, g, subs);
+		else
+			this.subProgress(
+				pc,
+				g,
+				logs.map((l) => l.line),
+				today,
+			);
+		if(!main){
+			const form=pc.createDiv();
+			this.smallBtn(pc,g.measure==="milestone"?"달성 확인":"결과값 갱신","실제 결과를 기록해요",async()=>{
+				if(g.measure==="milestone"){
+					const ok=await askForm(this.app,{title:"하위 목표 달성 확인",desc:`「${g.target||g.title}」 조건을 실제로 달성했나요? 연결된 프로젝트 완료와는 별도로 기록해요.`,fields:[],cta:"달성으로 기록"});
+					if(ok)await this.writeGoal(g,{status:"achieved",log:{date:todayIso(),text:"사용자가 달성 조건 충족을 확인",verify:"보고됨",evidence:"MyLogs 플러그인, 사용자 확인"}});
+				}else this.updateForm(form,g,()=>form.empty());
+			},"pencil");
 		}
 
-		const chipsList: [string, boolean][] = [
-			...s.projects.map((p) => [wikilinkName(p), true] as [string, boolean]),
-			...bulletItems(findSectionText(secs, "수단")).map((x) => [x, false] as [string, boolean]),
-		];
-		if (chipsList.length) {
-			const chips = kr.createDiv({ cls: "pb-chips" });
-			for (const [t, link] of chipsList) chips.createSpan({ cls: `pb-chip${link ? " is-link" : ""}`, text: t });
+		// description
+		const secs = d.sections.get(g.path) ?? new Map<string, string>();
+		const desc = this.card(body, "설명");
+		const descPart = (label: string, items: string[], empty: string) => {
+			const box = desc.createDiv({ cls: "pb-d-desc" });
+			box.createDiv({ cls: "pb-d-label", text: label });
+			if (!items.length) box.createDiv({ cls: "pb-muted", text: empty });
+			else {
+				const ul = box.createEl("ul");
+				for (const it of items) ul.createEl("li", { text: it });
+			}
+		};
+		if (main) {
+			descPart("왜 이 목표인가", bulletItems(findSectionText(secs, "왜 이 목표인가", "왜")), "아직 비어 있어요. 이 목표가 왜 중요한지 노트에 한 줄 적어 주세요.");
+			descPart("달성한 모습", bulletItems(findSectionText(secs, "달성한 모습")), "아직 비어 있어요.");
+		} else {
+			descPart("달성 기준", bulletItems(findSectionText(secs, "달성 기준")), "아직 비어 있어요.");
+			const memo = bulletItems(findSectionText(secs, "메모"));
+			if (memo.length) descPart("메모", memo, "");
 		}
+		const retro = bulletItems(findSectionText(secs, "종료 회고")).filter((x) => !/^[^:]+:\s*$/.test(x));
+		if (retro.length || isEnded(g.status)) descPart("종료 회고", retro, "노트의 「종료 회고」에 영향과 이유를 적어 주세요.");
 
-		// 진척 기록
-		const log = progressEntries(d.texts.get(s.path) ?? "");
-		const logEl = kr.createDiv({ cls: "pb-log" });
-		if (log.length) {
-			const ul = logEl.createEl("ul");
-			for (const l of log) {
-				const li = ul.createEl("li", { text: cleanLog(l.text) });
-				li.setAttr("title", "오른쪽 클릭: 수정 · 삭제");
-				li.addEventListener("contextmenu", (e) => {
-					e.preventDefault();
-					e.stopPropagation();
-					this.logMenu(e, s, l, d);
+		// Sub list
+		if (main) {
+			const sc = this.card(body, `Sub Goal · ${subs.length}`);
+			if (!isEnded(g.status)) this.smallBtn(sc, "하위 목표 추가", "측정 기준과 실행 공간을 함께 만들어요", () => this.createGoal(g), "plus");
+			if (!subs.length) sc.createDiv({ cls: "pb-muted", text: "측정 기준(Sub Goal)이 아직 없어요." });
+			for (const s of subs) {
+				const r = sc.createDiv({ cls: `pb-d-subrow st-${s.status}`, attr: { role: "button", tabindex: "0" } });
+				this.hdot(r, s);
+				r.createSpan({ cls: "pb-row-title", text: s.title });
+				this.statusBadge(r, s);
+				if (s.weight !== null) r.createSpan({ cls: "pb-weight", text: `×${fmtNum(s.weight)}`, attr: { title: "가중치" } });
+				const p = displaySubProgress(s);
+				const pw = r.createDiv({ cls: "pb-d-subprog" });
+				this.bar(pw, p);
+				pw.createSpan({ cls: "pb-pct", text: p === null ? "미정" : `${Math.round(p)}%` });
+				r.addEventListener("click", () => this.openGoal(s.id));
+				r.addEventListener("keydown", (e) => {
+					if (e.key === "Enter") this.openGoal(s.id);
 				});
 			}
 		}
-		const add = logEl.createEl("button", { cls: "pb-log-add", attr: { type: "button" } });
-		setIcon(add.createSpan({ cls: "pb-log-add-icon" }), "plus");
-		add.appendText("진척 기록 추가");
-		add.addEventListener("click", () => this.openLogInput(logEl, add, s, d));
-	}
 
-	private node(parent: HTMLElement, label: string, value: string, unit: string, cls: string): HTMLElement {
-		const fv = fmtVal(value, unit);
-		const n = parent.createDiv({ cls: `pb-node is-${cls}${fv ? "" : " is-need"}` });
-		n.createSpan({ cls: "pb-k", text: label });
-		const v = n.createSpan({ cls: "pb-v" });
-		if (!fv) v.setText(NEED);
-		else {
-			v.setText(fv[0]);
-			if (fv[1]) v.createEl("small", { text: fv[1] });
+		// 관련 업무
+		this.relatedCard(body, d.related.get(g.id) ?? [], g);
+
+		// 진척 기록
+		const lc = this.card(body, "진척 기록");
+		const addBtn = lc.createEl("button", { cls: "pb-add-update", attr: { type: "button" } });
+		setIcon(addBtn.createSpan({ cls: "pb-btn-icon" }), "plus");
+		addBtn.appendText("업데이트 추가");
+		const formHost = lc.createDiv();
+		addBtn.addEventListener("click", () => {
+			addBtn.hide();
+			this.updateForm(formHost, g, () => addBtn.show());
+		});
+		if (!newest.length) lc.createDiv({ cls: "pb-muted", text: "기록이 없어요." });
+		const tl = lc.createDiv({ cls: "pb-timeline" });
+		for (const it of newest) {
+			const item = tl.createDiv({ cls: "pb-tl-item", attr: { title: "오른쪽 클릭: 수정 · 삭제" } });
+			this.updateView(item, it.line, g, false);
+			item.addEventListener("contextmenu", (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				this.logMenu(e, g, it.entry);
+			});
 		}
-		return n;
+
+		// side
+		const dl = side.createEl("dl", { cls: "pb-d-props" });
+		const prop = (k: string, fill: (dd: HTMLElement) => void) => {
+			dl.createEl("dt", { text: k });
+			fill(dl.createEl("dd"));
+		};
+		prop("id", (x) => x.setText(g.id));
+		if (main) prop("기간", (x) => x.setText(g.period || "—"));
+		else
+			prop("기한", (x) => {
+				if (!g.due) return void x.setText("미정");
+				x.setText(g.due);
+				const dd = dday(g.due, today);
+				if (!isEnded(g.status)) x.createSpan({ cls: `pb-dd${dd.cls ? ` is-${dd.cls}` : ""}`, text: ` ${dd.big}` });
+			});
+		if (!main)
+			prop("상위 목표", (x) => {
+				if (!parent) return void x.setText(g.parent || "—");
+				const a = x.createEl("button", { cls: "pb-linkish", text: `${parent.id} ${parent.title}`, attr: { type: "button" } });
+				a.addEventListener("click", () => this.openGoal(parent.id));
+			});
+		prop("area", (x) => x.setText(g.area || "—"));
+		if (!main) {
+			prop("측정", (x) => x.setText([MEASURE_KO[g.measure] ?? g.measure, KIND_KO[g.kind] ?? g.kind].filter(Boolean).join(" · ") || "미정"));
+			prop("가중치", (x) => x.setText(g.weight === null ? "1 (기본)" : fmtNum(g.weight)));
+		}
+		prop("상태", (x) => x.setText(STATUS_KO[g.status] ?? g.status));
+		prop("갱신", (x) => x.setText(g.updated || "—"));
+		const sbtn = side.createDiv({ cls: "pb-d-side-btns" });
+		const openNote = sbtn.createEl("button", { cls: "mod-cta", attr: { type: "button" } });
+		setIcon(openNote.createSpan({ cls: "pb-btn-icon" }), "file-text");
+		openNote.appendText("노트 열기");
+		openNote.addEventListener("click", (e) => this.openPath(g.path, Keymap.isModEvent(e)));
+		const edit = sbtn.createEl("button", { attr: { type: "button" } });
+		setIcon(edit.createSpan({ cls: "pb-btn-icon" }), "pencil");
+		edit.appendText("수정…");
+		edit.addEventListener("click", () => void this.editGoal(g));
+
+		scroll.scrollTop = prevScroll;
+		if (fresh) panel.focus({ preventScroll: true });
 	}
 
-	/** The `current` node, editable in place. */
-	private currentNode(parent: HTMLElement, label: string, s: Goal, d: Loaded): void {
-		const n = this.node(parent, label, s.current, s.unit, "cur");
-		n.addClass("is-editable");
-		n.setAttr("role", "button");
-		n.setAttr("tabindex", "0");
-		n.setAttr("aria-label", `${s.title} 현재 값 고치기`);
-		n.setAttr("title", "눌러서 현재 값 고치기");
+	private card(parent: HTMLElement, title: string): HTMLElement {
+		const c = parent.createDiv({ cls: "pb-card" });
+		c.createDiv({ cls: "pb-card-title", text: title });
+		return c;
+	}
+
+	/** One 진척 기록 line: health · date · value · 보고됨/확인됨, the text, then 근거. */
+	private updateView(parent: HTMLElement, l: ProgressLine, g: Goal, big: boolean): void {
+		const wrap = parent.createDiv({ cls: `pb-upd${big ? " is-big" : ""}` });
+		const meta = wrap.createDiv({ cls: "pb-upd-meta" });
+		if (l.health) {
+			const hs = meta.createSpan({ cls: `pb-hpill is-${l.health}` });
+			hs.createSpan({ cls: `pb-hdot is-${l.health}` });
+			hs.appendText(HEALTH_KO[l.health]);
+		}
+		meta.createSpan({ cls: "pb-upd-date", text: l.date ? l.date.replace(/-/g, ".") : "날짜 없음" });
+		if (l.valueRaw) meta.createSpan({ cls: "pb-upd-val", text: `${l.value !== null ? fmtNum(l.value) : l.valueRaw}${g.unit ? ` ${g.unit}` : ""}` });
+		if (l.verify) meta.createSpan({ cls: `pb-verify${l.verify === "확인됨" ? " is-checked" : ""}`, text: l.verify });
+		this.inline(wrap.createDiv({ cls: "pb-upd-text" }), l.text || "(내용 없음)", g.path);
+		if (l.evidence) {
+			const ev = wrap.createDiv({ cls: "pb-upd-ev" });
+			ev.appendText("근거: ");
+			this.inline(ev, l.evidence, g.path);
+		}
+	}
+
+	private statusPicker(parent: HTMLElement, g: Goal): void {
+		const b = parent.createEl("button", {
+			cls: `pb-status-btn st-${g.status}`,
+			attr: { type: "button", "aria-label": `상태: ${STATUS_KO[g.status] ?? g.status} · 바꾸기` },
+		});
+		b.createSpan({ text: STATUS_KO[g.status] ?? g.status });
+		setIcon(b.createSpan({ cls: "pb-caret" }), "chevron-down");
+		b.addEventListener("click", (e) => {
+			const menu = new Menu();
+			const add = (st: string) =>
+				menu.addItem((it) =>
+					it
+						.setTitle(STATUS_KO[st])
+						.setChecked(st === g.status)
+						.onClick(() => {
+							if (st !== g.status) void this.writeGoal(g, { status: st });
+						}),
+				);
+			add("active");
+			add("paused");
+			menu.addSeparator();
+			for (const st of ["achieved", "partial", "missed", "dropped"]) add(st);
+			menu.showAtMouseEvent(e);
+		});
+	}
+
+	private healthPicker(parent: HTMLElement, g: Goal): void {
+		const seg = parent.createDiv({ cls: "pb-health-seg", attr: { role: "radiogroup", "aria-label": "health" } });
+		if (isEnded(g.status)) {
+			seg.addClass("is-disabled");
+			seg.createSpan({ cls: "pb-muted", text: "종료된 목표는 health를 비워요" });
+			return;
+		}
+		for (const h of [...HEALTHS, ""] as string[]) {
+			const on = g.health === h;
+			const b = seg.createEl("button", { cls: `pb-hseg is-${h || "none"}${on ? " is-active" : ""}`, attr: { type: "button", role: "radio", "aria-checked": String(on) } });
+			b.createSpan({ cls: `pb-hdot is-${h || "none"}` });
+			b.createSpan({ text: HEALTH_KO[h] });
+			b.addEventListener("click", () => {
+				if (!on) void this.writeGoal(g, { health: h });
+			});
+		}
+	}
+
+	private mainProgress(pc: HTMLElement, g: Goal, subs: Goal[]): void {
+		const r = displayMainProgress(g, subs);
+		const top = pc.createDiv({ cls: "pb-bignum" });
+		top.createEl("b", { text: `${r.progress}%` });
+		top.createSpan({ cls: "pb-muted", text: `${r.subAchieved}/${r.subTotal} 달성` });
+		this.bar(pc, r.progress).addClass("is-big");
+		const weighted = subs.some((s) => s.weight !== null);
+		pc.createDiv({ cls: "pb-note", text: `Sub Goal 진행률의 ${weighted ? "가중 " : ""}평균 (중단 제외, 미정은 0)` });
+	}
+
+	private subProgress(pc: HTMLElement, s: Goal, lines: ProgressLine[], today: string): void {
+		const p = displaySubProgress(s);
+		const top = pc.createDiv({ cls: "pb-bignum" });
+		top.createEl("b", { text: p === null ? "미정" : `${Math.round(p)}%` });
+		const path = top.createSpan({ cls: "pb-path" });
+		if (s.measure === "metric") {
+			path.createSpan({ cls: "pb-muted", text: `${fmtVal(s.baseline, "")?.[0] ?? "?"} → ` });
+			this.currentEditor(path, s);
+			path.createSpan({ cls: "pb-muted", text: ` → ${fmtVal(s.target, "")?.[0] ?? "?"}${s.unit ? ` ${s.unit}` : ""}` });
+		} else {
+			this.currentEditor(path, s);
+			path.createSpan({ cls: "pb-muted", text: ` → ${s.target || "달성 조건 미정"}` });
+		}
+		this.bar(pc, p).addClass("is-big");
+		const hint = paceHint(s, today);
+		if (hint) {
+			const n = pc.createDiv({ cls: "pb-note" });
+			n.appendText(`목표까지 ${hint.remain}${s.unit}`);
+			if (hint.perWeek) n.appendText(` · 남은 ${hint.weeks}주 동안 주 ${hint.perWeek}${s.unit}씩`);
+		}
+		if (s.measure === "metric") this.chart(pc, s, lines, today);
+	}
+
+	/** `current`, editable in place (Enter saves, Esc cancels). */
+	private currentEditor(parent: HTMLElement, s: Goal): void {
+		const shown = s.current ? (fmtVal(s.current, "")?.[0] ?? s.current) : "현재 값 입력";
+		const n = parent.createSpan({
+			cls: `pb-cur${s.current ? "" : " is-need"}`,
+			text: shown,
+			attr: { role: "button", tabindex: "0", title: "눌러서 현재 값 고치기", "aria-label": `${s.title} 현재 값 고치기` },
+		});
 		const open = () => {
 			if (n.hasClass("is-editing")) return;
 			n.addClass("is-editing");
 			this.beginEdit();
-			const v = n.querySelector(".pb-v") as HTMLElement;
-			v.hide();
+			n.empty();
 			const input = n.createEl("input", {
 				cls: "pb-input",
 				attr: { type: "text", inputmode: s.measure === "metric" ? "decimal" : "text", "aria-label": `${s.title} 현재 값`, enterkeyhint: "done" },
 			});
 			input.value = s.current;
 			let done = false;
-			const close = async (save: boolean) => {
+			const finish = async (save: boolean) => {
 				if (done) return;
 				done = true;
 				const val = input.value.trim();
 				input.remove();
-				v.show();
 				n.removeClass("is-editing");
-				if (save && val && val !== s.current) {
-					v.setText(val);
-					await this.setCurrent(s, val, d);
-				}
+				n.setText(save && val ? val : shown);
+				if (save && val && val !== s.current) await this.writeGoal(s, { current: val });
 				this.endEdit();
 			};
 			input.addEventListener("keydown", (e) => {
 				if (e.key === "Enter" && !e.isComposing) {
 					e.preventDefault();
-					void close(true);
+					void finish(true);
 				} else if (e.key === "Escape") {
 					e.preventDefault();
 					e.stopPropagation();
-					void close(false);
+					void finish(false);
 				}
 			});
-			input.addEventListener("blur", () => void close(true));
+			input.addEventListener("blur", () => void finish(true));
+			input.addEventListener("click", (e) => e.stopPropagation());
 			input.focus();
 			input.select();
 		};
@@ -623,120 +1097,335 @@ export class PinboardView extends ItemView {
 		});
 	}
 
-	private statusChip(parent: HTMLElement, g: Goal, d: Loaded): void {
-		const chip = parent.createEl("button", {
-			cls: `pb-status is-${g.status}`,
-			text: STATUS_KO[g.status] ?? g.status,
-			attr: { type: "button", "aria-label": `상태: ${STATUS_KO[g.status] ?? g.status} · 바꾸기` },
-		});
-		chip.addEventListener("click", (e) => {
-			e.stopPropagation();
-			const menu = new Menu();
-			for (const st of GOAL_STATUSES) {
-				menu.addItem((it) =>
-					it
-						.setTitle(STATUS_KO[st])
-						.setChecked(st === g.status)
-						.onClick(() => {
-							if (st !== g.status) void this.setStatus(g, st, d);
-						}),
-				);
+	/** 시간 흐름 line chart: baseline first, then the `(value::)` points; health colours the dots. */
+	private chart(parent: HTMLElement, s: Goal, lines: ProgressLine[], today: string): void {
+		const { points, target } = chartSeries(s, lines, today);
+		const box = parent.createDiv({ cls: "pb-chart" });
+		if (points.length < 2) {
+			box.createDiv({ cls: "pb-muted pb-chart-empty", text: "값(value)이 있는 진척 기록이 쌓이면 시간 흐름이 그려져요." });
+			return;
+		}
+		const W = 600;
+		const H = 190;
+		const L = 52;
+		const R = 16;
+		const T = 16;
+		const B = 26;
+		const day = (iso: string) => Date.parse(`${iso}T00:00:00Z`) / 86400000;
+		const x0 = day(points[0].date);
+		let x1 = Math.max(...points.map((p) => day(p.date)));
+		if (s.due && isIsoDate(s.due)) x1 = Math.max(x1, day(s.due));
+		if (x1 - x0 < 7) x1 = x0 + 7;
+		const vals = points.map((p) => p.value);
+		if (target !== null) vals.push(target);
+		let lo = Math.min(...vals);
+		let hi = Math.max(...vals);
+		if (hi === lo) {
+			lo -= 1;
+			hi += 1;
+		}
+		const pad = (hi - lo) * 0.12;
+		const y0 = lo - pad;
+		const y1 = hi + pad;
+		const X = (iso: string) => L + ((day(iso) - x0) / (x1 - x0)) * (W - L - R);
+		const Y = (v: number) => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
+		const el = <K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number>, p: Element): SVGElementTagNameMap[K] => {
+			const n = document.createElementNS(SVG_NS, tag);
+			for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
+			p.appendChild(n);
+			return n;
+		};
+		const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, class: "pb-chart-svg", role: "img", "aria-label": `${s.title} 시간 흐름` }, box);
+		const unit = s.unit ? ` ${s.unit}` : "";
+		for (let i = 0; i <= 2; i++) {
+			const v = lo + ((hi - lo) * i) / 2;
+			const y = Y(v);
+			el("line", { x1: L, x2: W - R, y1: y, y2: y, class: "pb-ch-grid" }, svg);
+			el("text", { x: L - 8, y: y + 4, class: "pb-ch-label", "text-anchor": "end" }, svg).textContent = fmtNum(Math.round(v * 100) / 100);
+		}
+		if (target !== null) {
+			const y = Y(target);
+			el("line", { x1: L, x2: W - R, y1: y, y2: y, class: "pb-ch-target" }, svg);
+			el("text", { x: W - R, y: y - 5, class: "pb-ch-label is-target", "text-anchor": "end" }, svg).textContent = `목표 ${fmtNum(target)}${unit}`;
+		}
+		const tx = day(today);
+		if (tx >= x0 && tx <= x1) {
+			const x = X(today);
+			el("line", { x1: x, x2: x, y1: T, y2: H - B, class: "pb-ch-today" }, svg);
+		}
+		const endIso = new Date(x1 * 86400000).toISOString().slice(0, 10);
+		el("text", { x: L, y: H - 6, class: "pb-ch-label", "text-anchor": "start" }, svg).textContent = points[0].date.slice(5).replace("-", ".");
+		el("text", { x: W - R, y: H - 6, class: "pb-ch-label", "text-anchor": "end" }, svg).textContent = endIso.slice(5).replace("-", ".");
+		el("polyline", { points: points.map((p) => `${X(p.date).toFixed(1)},${Y(p.value).toFixed(1)}`).join(" "), class: "pb-ch-line" }, svg);
+		for (const p of points) {
+			const c = el("circle", { cx: X(p.date).toFixed(1), cy: Y(p.value).toFixed(1), r: p.baseline ? 3.5 : 5, class: `pb-ch-pt ${p.baseline ? "is-base" : `is-${p.health || "none"}`}` }, svg);
+			el("title", {}, c).textContent = `${p.baseline ? "시작 값" : p.date}: ${fmtNum(p.value)}${unit}${p.health ? ` · ${HEALTH_KO[p.health]}` : ""}`;
+		}
+	}
+
+	private relatedCard(parent: HTMLElement, rel: RelatedItem[], g: Goal): void {
+		const main = g.type === "main-goal";
+		const c = this.card(parent, "관련 업무");
+		c.createDiv({ cls: "pb-note", text: main ? "이 목표와 Sub Goal에 연결된 일이에요. 진행률은 바꾸지 않아요. 프로젝트는 Sub Goal에서 연결해요." : "이 목표를 움직이는 일이에요. 진행률은 바꾸지 않아요 (진행률은 현재 값으로만)." });
+		const group = (kind: RelatedItem["kind"], label: string, icon: string, empty: string) => {
+			const items = rel.filter((r) => r.kind === kind);
+			const grp = c.createDiv({ cls: `pb-rel-group is-${kind}` });
+			const h = grp.createDiv({ cls: "pb-d-label" });
+			setIcon(h.createSpan({ cls: "pb-rel-icon" }), icon);
+			h.appendText(`${label} ${items.length}`);
+			if (!items.length) grp.createDiv({ cls: "pb-muted", text: empty });
+			const ul = grp.createEl("ul");
+			for (const r of items) {
+				const li = ul.createEl("li", { cls: "pb-rel-item" });
+				if (r.path) {
+					const a = li.createEl("a", { cls: "internal-link", text: r.label, href: "#" });
+					a.addEventListener("click", (e) => {
+						e.preventDefault();
+						this.openPath(r.path!, Keymap.isModEvent(e));
+					});
+				} else li.createSpan({ text: r.label });
+				if (r.status) li.createSpan({ cls: "pb-rel-status", text: r.status });
+				if (r.broken) li.createSpan({ cls: "pb-rel-warn", text: "찾을 수 없음", attr: { title: "projects·project_ids에 있지만 프로젝트 허브를 찾지 못했어요" } });
+				else if (r.oneSided) li.createSpan({ cls: "pb-rel-warn", text: "한쪽만 연결", attr: { title: "목표의 projects·project_ids와 허브의 goals 중 한쪽에만 있어요" } });
+				if (kind === "habit" && !main && r.id) this.smallBtn(li, "연결 해제", "요소와 결과물은 유지해요", () => this.pickFlywheel(g, r.id!), "unlink");
+				if (kind !== "project" || main) continue;
+				const acts = li.createSpan({ cls: "pb-rel-acts" });
+				if (r.oneSided && r.path) this.smallBtn(acts, "고치기", "양쪽 모두 연결해요 (목표의 projects·project_ids와 허브의 goals)", () => this.linkProject(g, r.path!, true));
+				if (r.path) this.smallBtn(acts, "연결 해제", "목표와 허브 양쪽에서 연결을 지워요", () => this.linkProject(g, r.path!, false));
+				else this.smallBtn(acts, "목록에서 빼기", "목표의 projects·project_ids에서 지워요", () => this.dropBrokenLink(g, r));
 			}
-			menu.showAtMouseEvent(e);
+			if (kind === "project" && !main) {
+				const row = grp.createDiv({ cls: "pb-rel-add" });
+				this.smallBtn(row, "프로젝트 연결…", "Project Folders의 프로젝트를 골라 양쪽에 연결해요", () => this.pickProject(g), "link");
+				this.smallBtn(row, "새 프로젝트 만들고 연결…", "새 프로젝트를 만들고 이 목표에 연결해요", () => this.newProjectFor(g), "folder-plus");
+			}
+			if (kind === "habit" && !main) this.smallBtn(grp, "Flywheel 연결", "기존 요소를 이 목표에 연결해요", () => this.pickFlywheel(g), "repeat");
+		};
+		group("project", "프로젝트", "folder-kanban", "연결된 프로젝트가 없어요.");
+		group("habit", "Flywheel", "repeat", "연결된 Flywheel 요소가 없어요.");
+		group("memo", "메모 (수단)", "sticky-note", "「수단」 섹션이 비어 있어요.");
+	}
+
+	private smallBtn(parent: HTMLElement, text: string, title: string, run: () => Promise<void>, icon?: string): void {
+		const b = parent.createEl("button", { cls: "pb-small-btn", attr: { type: "button", title } });
+		if (icon) setIcon(b.createSpan({ cls: "pb-btn-icon" }), icon);
+		b.appendText(text);
+		b.addEventListener("click", async (e) => {
+			e.stopPropagation();
+			if (b.disabled) return;
+			b.disabled = true;
+			try {
+				await run();
+			} catch (err) {
+				new Notice(`MyLogs: ${err instanceof Error ? err.message : String(err)}`, 12000);
+			} finally {
+				b.disabled = false;
+			}
 		});
 	}
 
-	private linkToNote(el: HTMLElement, g: Goal): void {
-		el.addClass("is-link");
-		el.setAttr("title", "노트 열기");
-		el.addEventListener("click", (e) => {
-			const f = this.data?.files.get(g.path);
-			if (f) void this.app.workspace.getLeaf(Keymap.isModEvent(e)).openFile(f);
-		});
+	// ── 프로젝트 연결 (Pinboard 「3-6」, both sides) ──
+
+	private async createGoal(parent?: Goal): Promise<void> {
+		if (this.creating) return;
+		this.creating = true; this.beginEdit();
+		try {
+			const f = this.app.vault.getAbstractFileByPath(normalizePath(flywheelPath(this.plugin.settings.flywheelPath)));
+			const year = this.data?.year ?? Number(todayIso().slice(0,4));
+			const answer = await askCreateGoal(this.app, { year, parent, projects: this.data?.projects ?? [], flywheel: parseFlywheel(f instanceof TFile ? await this.app.vault.read(f) : null), taken: await takenIdsAndNames(this.plugin, []), today: todayIso(), areas: [...new Set(this.data?.goals.map(g => g.area) ?? [])] });
+			if (!answer) return;
+			const goal = await createGoalFlow(this.plugin, answer, year, parent?.id, todayIso());
+			this.year = year; this.openId = goal.id;
+			new Notice(parent ? "하위 목표와 실행 공간을 저장했어요." : "목표를 만들었어요. 하위 목표를 추가해 보세요.");
+		} finally { this.creating=false; this.endEdit(); await this.refresh(); }
 	}
 
-	private openLogInput(logEl: HTMLElement, btn: HTMLElement, s: Goal, d: Loaded): void {
-		if (logEl.querySelector(".pb-log-input")) return;
+	private async pickFlywheel(g:Goal, unlinkId?:string):Promise<void> {
+		const file=this.app.vault.getAbstractFileByPath(normalizePath(flywheelPath(this.plugin.settings.flywheelPath)));
+		if(!(file instanceof TFile))throw new Error("Flywheel.md를 먼저 만들어 주세요.");
+		const elements=parseFlywheel(await this.app.vault.read(file));
+		let id=unlinkId;
+		if(!id){const it=await pickTarget(this.app,"연결할 Flywheel 요소",elements.filter(e=>e.status!=="폐기"&&e.fields.goal!==g.id).map(e=>({label:`${e.id} ${e.name}`,sub:e.fields.goal?`현재 연결: ${e.fields.goal}`:"연결 없음",id:e.id})));if(!it)return;id=it.id;}
+		const e=elements.find(e=>e.id===id);if(!e)return;
+		if(unlinkId&&e.fields.goal!==g.id)throw new Error("연결이 바뀌었어요. 다시 열어 주세요.");
+		if(!unlinkId&&e.fields.goal){const v=await askForm(this.app,{title:"Flywheel 목표 연결 교체",desc:`${e.fields.goal} 연결을 ${g.id}로 바꿉니다. 요소와 결과물은 그대로 둡니다.`,fields:[],cta:"연결 교체"});if(!v)return;}
+		await connectFlywheel(this.plugin,g,e.id,e.fields.goal??"",!unlinkId,todayIso());await this.refresh();
+	}
+
+	private async linkProject(g: Goal, hub: string, link: boolean): Promise<void> {
+		await connectProject(this.plugin, g, hub, link, todayIso());
+		const name = this.data?.projects.find((p) => p.path === hub)?.title ?? hub.split("/").pop()?.replace(/\.md$/, "");
+		new Notice(`${g.id} ↔ 「${name}」 ${link ? "연결했어요" : "연결을 해제했어요"}.`);
+		await this.refresh();
+	}
+
+	private async pickProject(g: Goal): Promise<void> {
+		const d = this.data;
+		if (!d) return;
+		const linked = new Set((d.related.get(g.id) ?? []).filter((r) => r.kind === "project" && !r.oneSided).map((r) => r.path));
+		const items: (PickItem & { path: string })[] = d.projects
+			.filter((p) => !p.archived && !linked.has(p.path))
+			.sort((a, b) => a.title.localeCompare(b.title, "ko"))
+			.map((p) => ({ label: p.title, sub: [p.id, p.status].filter(Boolean).join(" · "), icon: "folder", path: p.path }));
+		if (!items.length) {
+			new Notice("연결할 프로젝트가 없어요. 「새 프로젝트 만들고 연결」을 써 보세요.");
+			return;
+		}
+		const it = await pickTarget(this.app, `${g.id}에 연결할 프로젝트`, items);
+		if (it) await this.linkProject(g, it.path, true);
+	}
+
+	private async newProjectFor(g: Goal): Promise<void> {
+		const d = this.data;
+		const input = await askNewProject(this.app, {
+			areas: [...new Set((d?.goals ?? []).map((x) => x.area).filter(Boolean))],
+			taken: await takenIdsAndNames(this.plugin, []),
+			prefill: { area: g.area },
+			autoId: true,
+			note: `만들면 ${g.id} 「${g.title}」에 연결해요 (허브 goals와 목표의 projects·project_ids 양쪽).`,
+		});
+		if (!input) return;
+		await createProjectForGoal(this.plugin, g, input, todayIso());
+		new Notice("프로젝트를 만들고 목표에 연결했어요.");await this.refresh();
+	}
+
+	/** A `project_ids` / `projects` entry whose hub doesn't exist: drop it from the Sub Goal only. */
+	private async dropBrokenLink(g: Goal, r: RelatedItem): Promise<void> {
+		const file = this.fileOf(g);
+		if (!file) return;
+		const today = todayIso();
+		try {
+			await this.app.vault.process(file, (t) => unlinkProject(t, r.id ?? r.label, r.label, today));
+		} catch (err) {
+			console.error("[MyLogs] Pinboard save failed", err);
+			new Notice(`MyLogs: ${g.id} 저장에 실패했어요.`);
+			return;
+		}
+		await this.updateIndexWith((t) => ({ text: t, missing: [] }), `${g.id} 찾을 수 없는 프로젝트 연결 ${r.label} 제거 (플러그인)`);
+		await this.refresh();
+	}
+
+	/** 「업데이트 추가」: value (metric Sub), health, 내용, 보고됨/확인됨, 근거. */
+	private updateForm(host: HTMLElement, g: Goal, onClose: () => void): void {
+		host.empty();
 		this.beginEdit();
-		btn.hide();
-		const input = logEl.createEl("input", {
-			cls: "pb-input pb-log-input",
-			attr: { type: "text", placeholder: "무엇이 달라졌나요?", "aria-label": "진척 기록", enterkeyhint: "done" },
-		});
-		let done = false;
-		const close = async (save: boolean) => {
-			if (done) return;
-			done = true;
-			const val = input.value.trim();
-			input.remove();
-			btn.show();
-			if (save && val) await this.addProgressLog(s, val, d);
+		const today = todayIso();
+		const form = host.createEl("form", { cls: "pb-form" });
+		const metric = g.type === "sub-goal" && g.measure === "metric";
+		const field = (label: string) => {
+			const f = form.createDiv({ cls: "pb-form-field" });
+			f.createEl("label", { text: label });
+			return f;
+		};
+		let value: HTMLInputElement | null = null;
+		if (metric) {
+			value = field(`값 (지금 ${g.current || "?"}${g.unit ? ` ${g.unit}` : ""})`).createEl("input", {
+				cls: "pb-input",
+				attr: { type: "text", inputmode: "decimal", placeholder: "적으면 현재 값도 바꿔요" },
+			});
+		}
+		let health: HTMLSelectElement | null = null;
+		if (!isEnded(g.status)) {
+			health = field("health").createEl("select", { cls: "dropdown" });
+			health.createEl("option", { text: "적지 않음", value: "" });
+			for (const h of HEALTHS) health.createEl("option", { text: `${HEALTH_ICON[h]} ${HEALTH_KO[h]}`, value: h });
+			health.value = g.health;
+		}
+		const text = field("내용").createEl("textarea", { cls: "pb-input", attr: { rows: "2", placeholder: "무엇이 달라졌나요?" } });
+		const vf = field("근거 확인");
+		const seg = vf.createDiv({ cls: "pb-verify-seg" });
+		let verify: Verify = "보고됨";
+		const vbtns: HTMLButtonElement[] = [];
+		for (const v of VERIFIES) {
+			const b = seg.createEl("button", { cls: `pb-vseg${v === verify ? " is-active" : ""}`, text: v, attr: { type: "button" } });
+			b.addEventListener("click", () => {
+				verify = v;
+				vbtns.forEach((x) => x.toggleClass("is-active", x === b));
+			});
+			vbtns.push(b);
+		}
+		vf.createDiv({ cls: "pb-note", text: "보고됨: 말로 전한 것 · 확인됨: 산출물·실행 결과로 확인한 것" });
+		const ev = field("근거 (선택)").createEl("input", { cls: "pb-input", attr: { type: "text", placeholder: `비우면: ${defaultEvidence(today)}` } });
+		const err = form.createDiv({ cls: "pb-form-err" });
+		const btns = form.createDiv({ cls: "pb-form-btns" });
+		const cancel = btns.createEl("button", { text: "취소", attr: { type: "button" } });
+		btns.createEl("button", { cls: "mod-cta", text: "저장", attr: { type: "submit" } });
+		let closed = false;
+		const finish = () => {
+			if (closed) return;
+			closed = true;
+			host.empty();
+			onClose();
 			this.endEdit();
 		};
-		input.addEventListener("keydown", (e) => {
-			if (e.key === "Enter" && !e.isComposing) {
-				e.preventDefault();
-				void close(true);
-			} else if (e.key === "Escape") {
+		cancel.addEventListener("click", finish);
+		form.addEventListener("keydown", (e) => {
+			if (e.key === "Escape") {
 				e.preventDefault();
 				e.stopPropagation();
-				void close(false);
+				finish();
 			}
 		});
-		input.addEventListener("blur", () => void close(false));
-		input.focus();
-	}
-
-	// ── 수정 / 삭제 ──
-
-	/** A small ⋯ button (shown on hover) that opens the goal menu. */
-	private moreButton(parent: HTMLElement, g: Goal, d: Loaded): void {
-		const b = parent.createEl("button", { cls: "pb-more", text: "⋯", attr: { type: "button", "aria-label": `${g.title} 메뉴` } });
-		b.addEventListener("click", (e) => {
-			e.stopPropagation();
-			this.goalMenu(e, g, d);
+		form.addEventListener("submit", (e) => {
+			e.preventDefault();
+			const raw = value?.value.trim() ?? "";
+			if (raw && toNum(raw) === null) return void err.setText("값은 숫자로 적어 주세요.");
+			let t = text.value.replace(/\s+/g, " ").trim();
+			if (!t && raw) t = `현재 ${raw}${g.unit ? ` ${g.unit}` : ""}`;
+			if (!t) return void err.setText("내용을 적어 주세요.");
+			const h = health?.value ?? "";
+			const log: ProgressLineInput = { date: today, text: t, value: raw, health: h, verify, evidence: ev.value.trim() };
+			const change: GoalFieldChange = { log };
+			if (raw) change.current = raw;
+			if (h && h !== g.health) change.health = h;
+			finish();
+			void this.writeGoal(g, change);
 		});
+		(value ?? text).focus();
 	}
 
-	private goalMenu(e: MouseEvent, g: Goal, d: Loaded): void {
+	// ── menus ──
+
+	private goalMenu(e: MouseEvent, g: Goal): void {
 		const menu = new Menu();
-		menu.addItem((i) => i.setTitle("수정…").setIcon("pencil").onClick(() => void this.editGoal(g, d)));
+		menu.addItem((i) => i.setTitle("자세히 보기").setIcon("panel-right-open").onClick(() => this.openGoal(g.id)));
+		menu.addItem((i) => i.setTitle("수정…").setIcon("pencil").onClick(() => void this.editGoal(g)));
 		menu.addItem((i) =>
 			i
 				.setTitle("삭제…")
 				.setIcon("trash-2")
 				.setWarning(true)
-				.onClick(() => void this.deleteGoal(g, d)),
+				.onClick(() => void this.deleteGoal(g)),
 		);
 		menu.addSeparator();
 		menu.addItem((i) =>
 			i
 				.setTitle("노트 열기")
 				.setIcon("file-text")
-				.onClick(() => {
-					const f = this.fileOf(g, d);
-					if (f) void this.app.workspace.getLeaf(false).openFile(f);
-				}),
+				.onClick(() => this.openPath(g.path)),
 		);
 		menu.showAtMouseEvent(e);
 	}
 
-	private logMenu(e: MouseEvent, s: Goal, l: ProgressEntry, d: Loaded): void {
+	private logMenu(e: MouseEvent, s: Goal, l: ProgressEntry): void {
 		const menu = new Menu();
-		menu.addItem((i) => i.setTitle("진척 기록 수정…").setIcon("pencil").onClick(() => void this.editLog(s, l, d)));
+		menu.addItem((i) => i.setTitle("진척 기록 수정…").setIcon("pencil").onClick(() => void this.editLog(s, l)));
 		menu.addItem((i) =>
 			i
 				.setTitle("진척 기록 삭제…")
 				.setIcon("trash-2")
 				.setWarning(true)
-				.onClick(() => void this.deleteLog(s, l, d)),
+				.onClick(() => void this.deleteLog(s, l)),
 		);
 		menu.showAtMouseEvent(e);
 	}
 
-	private async editGoal(g: Goal, d: Loaded): Promise<void> {
-		const file = this.fileOf(g, d);
-		if (!file) return;
+	// ── 수정 / 삭제 ──
+
+	private async editGoal(g: Goal): Promise<void> {
+		const d = this.data;
+		const file = this.fileOf(g);
+		if (!d || !file) return;
 		const text = await this.app.vault.read(file);
 		const areas = [...new Set(d.goals.map((x) => x.area).filter(Boolean))];
 		const main = g.type === "main-goal";
@@ -744,7 +1433,7 @@ export class PinboardView extends ItemView {
 			title: `${g.id} 수정`,
 			desc: main
 				? "목표 노트와 Pinboard Index.md를 함께 고쳐요. 제목을 바꾸면 파일 이름({id} {제목})도 바꿔요. id는 그대로예요."
-				: "목표 노트와 Pinboard Index.md를 함께 고쳐요. 숫자를 바꾸면 진척률을 다시 계산해요. 제목을 바꾸면 파일 이름도 바꿔요.",
+				: "목표 노트와 Pinboard Index.md를 함께 고쳐요. 숫자·가중치를 바꾸면 진척률과 상위 목표를 다시 계산해요. 제목을 바꾸면 파일 이름도 바꿔요.",
 			fields: main
 				? [
 						{ key: "title", label: "제목", type: "text", value: g.title },
@@ -780,17 +1469,21 @@ export class PinboardView extends ItemView {
 						{ key: "target", label: g.measure === "metric" ? "목표 값 (target)" : "달성 조건 (target)", type: "text", value: g.target },
 						{ key: "unit", label: "단위", type: "text", value: g.unit, placeholder: "명, kg, 원/월" },
 						{ key: "due", label: "기한 (due)", type: "date", value: g.due, desc: "비우면 미정" },
+						{ key: "weight", label: "가중치 (weight)", type: "text", value: g.weight === null ? "" : String(g.weight), desc: "상위 목표 평균에서의 비중. 비우면 1" },
 					],
 			validate: (x) => {
 				const out: string[] = [];
 				const np = nameProblem(x.title);
 				if (np) out.push(np.replace("이름", "제목"));
 				if (x.due && !isIsoDate(x.due)) out.push("기한은 YYYY-MM-DD예요.");
+				if (x.weight && !((toNum(x.weight) ?? 0) > 0)) out.push("가중치는 0보다 큰 숫자예요.");
 				return out;
 			},
 		});
 		if (!v) return;
-		const change: GoalChange = main ? { title: v.title, area: v.area, why: v.why, vision: v.vision } : { title: v.title, measure: v.measure, kind: v.kind, baseline: v.baseline, target: v.target, unit: v.unit, due: v.due };
+		const change: GoalChange = main
+			? { title: v.title, area: v.area, why: v.why, vision: v.vision }
+			: { title: v.title, measure: v.measure, kind: v.kind, baseline: v.baseline, target: v.target, unit: v.unit, due: v.due, weight: v.weight };
 		const today = todayIso();
 		let next: Goal | null = null;
 		try {
@@ -808,35 +1501,40 @@ export class PinboardView extends ItemView {
 		if (!ng) return;
 		const parts: string[] = [];
 		if (ng.title !== g.title) parts.push(`제목 「${g.title}」 → 「${ng.title}」`);
-		for (const [k, label] of [
-			["area", "area"],
-			["measure", "measure"],
-			["kind", "kind"],
-			["baseline", "baseline"],
-			["target", "target"],
-			["unit", "unit"],
-			["due", "due"],
-		] as [keyof Goal, string][]) {
-			if (String(ng[k]) !== String(g[k])) parts.push(`${label} ${String(g[k]) || "—"} → ${String(ng[k]) || "—"}`);
+		for (const k of ["area", "measure", "kind", "baseline", "target", "unit", "due", "weight"] as (keyof Goal)[]) {
+			const a = g[k] === null ? "" : String(g[k]);
+			const b = ng[k] === null ? "" : String(ng[k]);
+			if (a !== b) parts.push(`${k} ${a || "—"} → ${b || "—"}`);
 		}
 		if (main && v.why !== sectionAsLines(text, WHY_SECTION)) parts.push("왜 이 목표인가");
 		if (main && v.vision !== sectionAsLines(text, VISION_SECTION)) parts.push("달성한 모습");
-		if (ng.title !== g.title) await this.renameGoalFile(file, g, ng, d);
-		const row = {
-			id: g.id,
-			title: ng.title !== g.title ? ng.title : undefined,
-			due: main || ng.due === g.due ? undefined : ng.due || "미정",
-			path: main || (["baseline", "target", "unit", "measure"] as const).every((k) => ng[k] === g[k]) ? undefined : indexPathCell(ng),
-			progress: !main && ng.progress !== null && ng.progress !== g.progress ? indexProgressCell(ng.progress) : undefined,
-		};
-		await this.updateIndexWith(d, (t) => setIndexCells(t, String(d.year), [row]), `${g.id} 수정${parts.length ? `: ${parts.join(", ")}` : ""} (플러그인)`);
+		if (ng.title !== g.title) await this.renameGoalFile(file, g, ng);
+		const rows: IndexCells[] = [
+			{
+				id: g.id,
+				title: ng.title !== g.title ? ng.title : undefined,
+				due: main || ng.due === g.due ? undefined : ng.due || "미정",
+				path: main || (["baseline", "target", "unit", "measure"] as const).every((k) => ng[k] === g[k]) ? undefined : indexPathCell(ng),
+				progress: !main && ng.progress !== null && ng.progress !== g.progress ? indexProgressCell(ng.progress) : undefined,
+			},
+		];
+		if (!main) {
+			const m = await this.rollupParent(ng, today);
+			if (m) {
+				rows.push(m);
+				parts.push(`${m.id} ${m.progress}`);
+			}
+		}
+		await this.updateIndexWith((t) => setIndexCells(t, String(d.year), rows), `${g.id} 수정${parts.length ? `: ${parts.join(", ")}` : ""} (플러그인)`, ng);
+		await this.refresh();
 	}
 
 	/** `{id} {제목}.md` follows the new title; links in the parent / child notes follow too. */
-	private async renameGoalFile(file: TFile, g: Goal, ng: Goal, d: Loaded): Promise<void> {
+	private async renameGoalFile(file: TFile, g: Goal, ng: Goal): Promise<void> {
+		const d = this.data;
 		const oldBase = file.basename;
 		const newBase = goalBaseName(g.id, ng.title);
-		if (oldBase === newBase) return;
+		if (oldBase === newBase || !d) return;
 		const dir = file.parent?.path ?? "";
 		const newPath = normalizePath(`${dir}/${newBase}.md`);
 		if (this.app.vault.getAbstractFileByPath(newPath)) {
@@ -853,35 +1551,39 @@ export class PinboardView extends ItemView {
 		// Obsidian updates links when that setting is on; make sure the goal's own links follow either way.
 		const related = g.type === "main-goal" ? d.board.subs.filter((x) => x.parent === g.id) : d.board.mains.filter((m) => m.id === g.parent);
 		for (const r of related) {
-			const f = this.fileOf(r, d);
+			const f = this.fileOf(r);
 			if (f) await this.app.vault.process(f, (t) => renameLinks(t, oldBase, newBase));
 		}
 	}
 
-	private async deleteGoal(g: Goal, d: Loaded): Promise<void> {
+	private async deleteGoal(g: Goal): Promise<void> {
+		if(this.creating)return;
+		this.creating=true;this.beginEdit();
+		try { await this.deleteGoalFlow(g); }
+		catch(err){new Notice(`MyLogs: ${err instanceof Error?err.message:String(err)}`,15000);}
+		finally{this.creating=false;this.endEdit();await this.refresh();}
+	}
+	private async deleteGoalFlow(g: Goal): Promise<void> {
+		const d = this.data;
+		if (!d) return;
 		const main = g.type === "main-goal";
-		const targets = main ? [g, ...d.board.subs.filter((x) => x.parent === g.id)] : [g];
+		const targets = main ? [...d.board.subs.filter((x) => x.parent === g.id), g] : [g];
 		const parent = main ? null : (d.board.mains.find((m) => m.id === g.parent) ?? null);
-		const projectIds = [...new Set(targets.flatMap((x) => x.projectIds))];
-		const notes: string[] = [`Pinboard Index.md에서 ${targets.map((x) => x.id).join(", ")} 행을 지워요.`];
-		if (main && targets.length > 1) notes.push(`이 Main Goal의 Sub Goal ${targets.length - 1}개도 함께 지워요.`);
-		if (parent) notes.push(`상위 목표 ${parent.id}의 Sub Goal 링크를 지우고 달성 수(sub_total·sub_achieved·progress)를 다시 계산해요.`);
-		if (projectIds.length) notes.push(`연결된 프로젝트 ${projectIds.join(", ")} 허브의 goals에서 이 목표 id를 빼요.`);
-		notes.push("Desk Calendar·Wall Calendar의 (goal:: …) 줄은 바꾸지 않아요.");
-		const ans = await confirmDelete(this.app, {
-			title: `${main ? "Main Goal" : "Sub Goal"} 삭제`,
-			removes: targets.map((x) => x.path),
-			notes,
-			footer: "노트는 휴지통으로 가서 되살릴 수 있어요. 잘못 만든 목표, 중복, 테스트 데이터를 지울 때 써요.",
-			alt: g.status !== "dropped" ? { label: "중단 (기록 남김)", desc: "그만두기로 한 목표면 지우지 말고 status를 중단(dropped)으로 남길 수 있어요." } : undefined,
-		});
-		if (ans === "alt") return void (await this.setStatus(g, "dropped", d));
-		if (ans !== "delete") return;
+		const ids=targets.map(t=>t.id);
+		const allGoals=await readGoals(this.plugin);
+		const connected=d.projects.map(p=>({...p,goals:[...new Set([...p.goals,...allGoals.filter(x=>x.goal.projectIds.includes(p.id)||x.goal.projects.some(l=>l.includes(p.path.replace(/\.md$/,"")))).map(x=>x.goal.id)])]})).filter(p=>p.goals.some(id=>ids.includes(id)));
+		const snapshots=new Map<string,string>();
+		for(const t of targets){const f=this.fileOf(t);if(!f)throw new Error(`목표가 없어졌어요: ${t.id}`);snapshots.set(f.path,await this.app.vault.read(f));}
+		if(parent){const f=this.fileOf(parent);if(f)snapshots.set(f.path,await this.app.vault.read(f));}
+		for(const p of connected){const f=this.app.vault.getAbstractFileByPath(p.path);if(!(f instanceof TFile))throw new Error(`프로젝트가 없어졌어요: ${p.title}`);snapshots.set(p.path,await this.app.vault.read(f));}
+		const choices=await askDeleteGoals(this.app,targets,connected);
+		if(!choices)return;
+		for(const [path,text]of snapshots){const f=this.app.vault.getAbstractFileByPath(path);if(!(f instanceof TFile)||await this.app.vault.read(f)!==text)throw new Error(`파일이 바뀌었어요. 다시 확인해 주세요: ${path}`);}
 		const today = todayIso();
-		const gBase = g.path.split("/").pop()!.replace(/\.md$/, "");
-		const done: string[] = [];
+		const done: string[] = [], failures:string[]=[];
 		for (const t of targets) {
-			const f = this.fileOf(t, d);
+			if(main&&t.id===g.id&&done.length<targets.length-1){failures.push("하위 목표 삭제 실패로 상위 목표 유지");continue;}
+			const f = this.fileOf(t);
 			if (!f) continue;
 			try {
 				await this.app.vault.trash(f, true);
@@ -889,25 +1591,32 @@ export class PinboardView extends ItemView {
 			} catch (err) {
 				console.error("[MyLogs] Pinboard trash failed", err);
 				new Notice(`MyLogs: ${t.id} 노트를 휴지통으로 옮기지 못했어요.`);
+				failures.push(`${t.id} 목표 휴지통`);
 			}
 		}
 		if (!done.length) return;
+		if (this.openId && done.includes(this.openId)) this.closeDetail();
 		let mainRow: { id: string; progress: string } | null = null;
-		if (parent && done.includes(g.id)) {
-			const pf = this.fileOf(parent, d);
-			const r = rollupMain(d.board.subs.filter((x) => x.parent === parent.id && x.path !== g.path));
+		const survivingParent=parent??(main&&!done.includes(g.id)?g:null);
+		if (survivingParent) {
+			const pf = this.fileOf(survivingParent);
+			const r = rollupMain(d.board.subs.filter((x) => x.parent === survivingParent.id && !done.includes(x.id)));
 			if (pf) {
 				try {
-					await this.app.vault.process(pf, (t) => applyMainRollup(t, r, today, gBase));
-					mainRow = { id: parent.id, progress: indexProgressCell(r.progress, r) };
+					await this.app.vault.process(pf, (t) => {
+						let out=applyMainRollup(t,r,today);
+						for(const child of targets.filter(x=>x.parent===survivingParent.id&&done.includes(x.id)))out=applyMainRollup(out,r,today,child.path.split("/").pop()!.replace(/\.md$/,""));
+						return out;
+					});
+					mainRow = { id: survivingParent.id, progress: indexProgressCell(r.progress, r) };
 				} catch (err) {
 					console.error("[MyLogs] Pinboard save failed", err);
-					new Notice(`MyLogs: ${parent.id}의 링크와 달성 수를 고치지 못했어요.`);
+					new Notice(`MyLogs: ${survivingParent.id}의 링크와 진행률을 고치지 못했어요.`);
+					failures.push(`${survivingParent.id} 집계`);
 				}
-			}
+			}else failures.push(`${survivingParent.id} 파일 없음`);
 		}
-		await this.updateIndexWith(
-			d,
+		const indexOK = await this.updateIndexWith(
 			(t) => {
 				let out = removeIndexRows(t, String(d.year), done).text;
 				out = removeUndecidedLines(out, done);
@@ -915,47 +1624,63 @@ export class PinboardView extends ItemView {
 			},
 			`${done.join(", ")} 삭제 (휴지통)${mainRow ? `, ${mainRow.id} ${mainRow.progress}` : ""} (플러그인)`,
 		);
-		await this.afterGoalsDeleted(done);
-		new Notice(`${done.join(", ")} 노트를 휴지통으로 옮겼어요.`);
+		if(!indexOK)failures.push("Pinboard 등록부");
+		await this.afterGoalsDeleted(done,failures);
+		try { await unlinkDeletedFlywheel(this.plugin,done,today); }catch(err){failures.push(`Flywheel 연결 해제: ${String(err)}`);}
+		// Only apply destructive choices when every selected goal was removed and links were updated.
+		if(done.length===targets.length&&!failures.length)for(const ref of connected){
+			const choice=choices[ref.id];if(choice==="keep"||ref.archived)continue;
+			try {const {p}=await readProject(this.plugin,ref.path);
+				const currentGoals=await readGoals(this.plugin);
+				const sharedNow=[...new Set([...p.goals,...currentGoals.filter(x=>x.goal.projectIds.includes(p.id)).map(x=>x.goal.id)])];
+				if(sharedNow.some(id=>!ref.goals.includes(id))){failures.push(`${p.title}: 새 목표 연결이 생겨 유지`);continue;}
+				if(choice==="archive")await completeProject(this.plugin,p,{result:"종료: 목표 삭제에 따라 보관",started:p.started,completed:today},failures);
+				else if(choice==="trash")await deleteProject(this.plugin,p,failures);
+			}catch(err){failures.push(`${ref.title}: ${String(err)}`);}
+		}
+		try{await refreshRelatedIndex(this.plugin,connected.flatMap(p=>p.goals).filter(id=>!done.includes(id)),today);}catch(err){failures.push(`남은 목표 관련 업무 등록부: ${String(err)}`);}
+		await this.refresh();
+		new Notice(failures.length?`부분 처리: ${failures.join(", ")}. 프로젝트 보관·삭제가 남았는지 확인해 주세요.`:`${done.join(", ")} 삭제와 선택한 프로젝트 처리를 마쳤어요.`,12000);
 	}
 
 	/** Pinboard 「10. 연결 규칙」: project hubs that listed the deleted goals drop the ids. */
-	private async afterGoalsDeleted(ids: string[]): Promise<void> {
+	private async afterGoalsDeleted(ids: string[],failures:string[]=[]): Promise<void> {
 		try {
-			await removeGoalsFromProjects(this.plugin, ids);
+			await removeGoalsFromProjects(this.plugin, ids,failures);
 		} catch (err) {
 			console.error("[MyLogs] Pinboard → Project Folders unlink failed", err);
 			new Notice("MyLogs: 프로젝트 허브의 goals에서 목표 id를 빼지 못했어요.");
+			failures.push("프로젝트 목표 연결 해제");
 		}
 	}
 
-	private async editLog(s: Goal, l: ProgressEntry, d: Loaded): Promise<void> {
-		const file = this.fileOf(s, d);
+	private async editLog(s: Goal, l: ProgressEntry): Promise<void> {
+		const file = this.fileOf(s);
 		if (!file) return;
 		const v = await askForm(this.app, {
 			title: `${s.id} 진척 기록 수정`,
-			desc: "형식: YYYY-MM-DD: 내용 (보고됨/확인됨) — 근거: [[…]]",
+			desc: "형식: YYYY-MM-DD: 내용 (value:: N) (health:: on-track|at-risk|off-track) (보고됨/확인됨) — 근거: [[…]]",
 			fields: [{ key: "text", label: "기록", type: "text", value: l.text }],
 			validate: (x) => (x.text ? [] : ["내용을 적어 주세요."]),
 		});
 		if (!v || v.text === l.text) return;
-		await this.writeLog(s, file, d, (t) => editProgressEntry(t, l, v.text), `${s.id} 진척 기록 수정: ${v.text}`);
+		await this.writeLog(s, file, (t) => editProgressEntry(t, l, v.text), `${s.id} 진척 기록 수정: ${v.text}`);
 	}
 
-	private async deleteLog(s: Goal, l: ProgressEntry, d: Loaded): Promise<void> {
-		const file = this.fileOf(s, d);
+	private async deleteLog(s: Goal, l: ProgressEntry): Promise<void> {
+		const file = this.fileOf(s);
 		if (!file) return;
 		const ans = await confirmDelete(this.app, {
 			title: "진척 기록 삭제",
 			removes: [file.path, `- ${l.text}`],
-			notes: ["current·progress 값은 바꾸지 않아요. 값이 틀렸다면 「현재」를 따로 고쳐 주세요."],
+			notes: ["current·progress·health 값은 바꾸지 않아요. 값이 틀렸다면 따로 고쳐 주세요."],
 			footer: "잘못 적은 기록, 중복, 테스트 데이터를 지울 때 써요.",
 		});
 		if (ans !== "delete") return;
-		await this.writeLog(s, file, d, (t) => deleteProgressEntry(t, l), `${s.id} 진척 기록 삭제: ${l.text}`);
+		await this.writeLog(s, file, (t) => deleteProgressEntry(t, l), `${s.id} 진척 기록 삭제: ${l.text}`);
 	}
 
-	private async writeLog(s: Goal, file: TFile, d: Loaded, fn: (t: string) => { ok: true; text: string } | { ok: false; reason: string }, log: string): Promise<void> {
+	private async writeLog(s: Goal, file: TFile, fn: (t: string) => { ok: true; text: string } | { ok: false; reason: string }, log: string): Promise<void> {
 		let failed: string | null = null;
 		try {
 			await this.app.vault.process(file, (t) => {
@@ -976,149 +1701,139 @@ export class PinboardView extends ItemView {
 			void this.refresh();
 			return;
 		}
-		await this.updateIndexWith(d, (t) => ({ text: t, missing: [] }), `${log} (플러그인)`);
-	}
-
-	/** Index write with any transform, then 변경 기록 and `updated` (「8. 인덱스 규칙」). */
-	private async updateIndexWith(d: Loaded, fn: (t: string) => { text: string; missing: string[] }, log: string): Promise<void> {
-		const file = this.indexFile();
-		if (!file) {
-			new Notice(`MyLogs: ${INDEX_FILE}을 찾지 못해 인덱스를 갱신하지 못했어요. 목표 노트는 저장됐어요.`);
-			return;
-		}
-		let missing: string[] = [];
-		const today = todayIso();
-		try {
-			await this.app.vault.process(file, (t) => {
-				const r = fn(t);
-				missing = r.missing;
-				return setFrontmatterScalar(prependChangeLog(r.text, today, log), "updated", today);
-			});
-		} catch (err) {
-			console.error("[MyLogs] Pinboard index update failed", err);
-			new Notice(`MyLogs: ${INDEX_FILE} 갱신에 실패했어요. 목표 노트는 저장됐어요.`);
-			return;
-		}
-		if (missing.length) new Notice(`MyLogs: ${INDEX_FILE}의 ${d.year} 표에서 ${missing.join(", ")} 행을 찾지 못했어요. 목표 노트는 저장됐어요.`);
+		await this.updateIndexWith((t) => ({ text: t, missing: [] }), `${log} (플러그인)`);
+		await this.refresh();
 	}
 
 	// ── writes ──
 
-	private fileOf(g: Goal, d: Loaded): TFile | null {
-		const f = d.files.get(g.path) ?? this.app.vault.getAbstractFileByPath(g.path);
+	private fileOf(g: Goal): TFile | null {
+		const f = this.data?.files.get(g.path) ?? this.app.vault.getAbstractFileByPath(g.path);
 		return f instanceof TFile ? f : null;
 	}
 
-	/** Set a Sub Goal's `current`, recompute its `progress`, then update the index. */
-	private async setCurrent(s: Goal, raw: string, d: Loaded): Promise<void> {
-		const file = this.fileOf(s, d);
-		if (!file) return;
-		const today = todayIso();
-		const value = parseInputValue(raw);
-		let old = "";
-		let next: Goal | null = null;
+	/**
+	 * A Sub Goal changed: recompute its Main (SPEC 1-2 weighted average, `sub_total`,
+	 * `sub_achieved`) and write it when it differs. Returns the Main's index progress cell.
+	 */
+	private async rollupParent(sub: Goal, today: string): Promise<{ id: string; progress: string } | null> {
+		const d = this.data;
+		const main = d?.board.mains.find((m) => m.id === sub.parent);
+		const mainFile = main ? this.fileOf(main) : null;
+		if (!d || !main || !mainFile) return null;
+		const siblings = d.board.subs.filter((x) => x.parent === main.id).map((x) => (x.path === sub.path || x.id === sub.id ? sub : x));
+		if (!siblings.includes(sub)) siblings.push(sub);
+		const r = rollupMain(siblings);
+		if (main.progress === r.progress && main.subTotal === r.subTotal && main.subAchieved === r.subAchieved) return null;
 		try {
-			await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-				old = valueToString(fm.current);
-				fm.current = value;
-				const g = parseGoal(fm, file.path);
-				const p = g ? computeSubProgress(g) : null;
-				if (p !== null) fm.progress = p;
-				fm.updated = today;
-				next = parseGoal(fm, file.path);
-			});
+			await this.app.vault.process(mainFile, (t) => applyMainRollup(t, r, today));
 		} catch (err) {
 			console.error("[MyLogs] Pinboard save failed", err);
-			new Notice(`MyLogs: ${s.id} 저장에 실패했어요.`);
-			return;
+			new Notice(`MyLogs: ${main.id}의 진행률을 저장하지 못했어요.`);
+			return null;
 		}
-		const g = next as Goal | null;
-		if (!g) return;
-		const row: RowUpdate = { id: g.id, current: indexToken(g.current, g.measure), path: indexPathCell(g) };
-		if (g.progress !== null) row.progress = indexProgressCell(g.progress);
-		await this.updateIndex(d, [row], `${g.id} current ${indexToken(old, g.measure)} → ${indexToken(g.current, g.measure)} (플러그인)`);
+		return { id: main.id, progress: indexProgressCell(r.progress, r) };
 	}
 
-	/** Change a goal's status; for a Sub Goal, also roll up its Main Goal. */
-	private async setStatus(g: Goal, status: string, d: Loaded): Promise<void> {
-		const file = this.fileOf(g, d);
+	/**
+	 * current / status / health / 진척 기록 from the panel (SPEC 2 「쓰기」): the goal note, its
+	 * Main's rollup, then `Pinboard Index.md` (row cells, 변경 기록, `updated`).
+	 */
+	private async writeGoal(g: Goal, c: GoalFieldChange): Promise<void> {
+		const file = this.fileOf(g);
 		if (!file) return;
 		const today = todayIso();
-		const old = g.status;
-		let progress: number | null = null;
+		let res: { before: Goal | null; goal: Goal | null } | null = null;
 		try {
-			await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-				fm.status = status;
-				if (g.type === "sub-goal") {
-					const cur = parseGoal(fm, file.path);
-					const p = cur ? computeSubProgress(cur) : null;
-					if (p !== null) fm.progress = p;
-				}
-				progress = parseGoal(fm, file.path)?.progress ?? null;
-				fm.updated = today;
+			await this.app.vault.process(file, (t) => {
+				const r = applyGoalChange(t, file.path, c, today);
+				res = r;
+				return r.text;
 			});
 		} catch (err) {
 			console.error("[MyLogs] Pinboard save failed", err);
 			new Notice(`MyLogs: ${g.id} 저장에 실패했어요.`);
 			return;
 		}
-
-		const rows: RowUpdate[] = [];
-		let log = `${g.id} status ${old} → ${status}`;
-		if (g.type === "main-goal") {
-			rows.push({ id: g.id, status });
-		} else {
-			const row: RowUpdate = { id: g.id, status };
-			if (progress !== null) row.progress = indexProgressCell(progress);
-			rows.push(row);
-			const main = d.board.mains.find((m) => m.id === g.parent);
-			const mainFile = main ? this.fileOf(main, d) : null;
-			if (main && mainFile) {
-				const siblings = d.board.subs.filter((x) => x.parent === main.id).map((x) => (x.path === g.path ? { ...x, status } : x));
-				const r = rollupMain(siblings);
-				try {
-					await this.app.fileManager.processFrontMatter(mainFile, (fm: Record<string, unknown>) => {
-						fm.sub_total = r.subTotal;
-						fm.sub_achieved = r.subAchieved;
-						fm.progress = r.progress;
-						fm.updated = today;
-					});
-					rows.push({ id: main.id, progress: indexProgressCell(r.progress, r) });
-					log += `, ${main.id} ${r.subAchieved}/${r.subTotal} 달성 ${r.progress}%`;
-				} catch (err) {
-					console.error("[MyLogs] Pinboard save failed", err);
-					new Notice(`MyLogs: ${main.id}의 달성 수를 저장하지 못했어요.`);
-				}
+		const r = res as { before: Goal | null; goal: Goal | null } | null;
+		const ng = r?.goal;
+		if (!r || !ng) return;
+		const og = r.before ?? g;
+		const row: RowUpdate = { id: ng.id };
+		const parts: string[] = [];
+		if (ng.status !== og.status) {
+			row.status = ng.status;
+			parts.push(`status ${og.status} → ${ng.status}`);
+		}
+		if (ng.health !== og.health) {
+			row.health = ng.health;
+			parts.push(`health ${og.health || "—"} → ${ng.health || "—"}`);
+		}
+		if (ng.type === "sub-goal") {
+			if (ng.current !== og.current) {
+				row.current = indexToken(ng.current, ng.measure);
+				row.path = indexPathCell(ng);
+				parts.push(`current ${indexToken(og.current, og.measure)} → ${indexToken(ng.current, ng.measure)}`);
+			}
+			if (ng.progress !== null && (ng.progress !== og.progress || row.status !== undefined)) row.progress = indexProgressCell(ng.progress);
+		}
+		if (c.log) parts.push(`진척 기록 추가${c.log.value ? ` (value ${c.log.value})` : ""}`);
+		const rows: RowUpdate[] = [row];
+		if (ng.type === "sub-goal") {
+			const m = await this.rollupParent(ng, today);
+			if (m) {
+				rows.push({ id: m.id, progress: m.progress });
+				parts.push(`${m.id} ${m.progress}`);
 			}
 		}
-		await this.updateIndex(d, rows, `${log} (플러그인)`);
+		if (parts.length) await this.updateIndex(rows, `${ng.id} ${parts.join(", ")} (플러그인)`, ng);
+		await this.refresh();
 	}
 
-	private async addProgressLog(s: Goal, text: string, d: Loaded): Promise<void> {
-		const file = this.fileOf(s, d);
-		if (!file) return;
+	/** Health per id for a year table that still lacks the column (the changed goal as it is now). */
+	private healthOf(changed?: Goal): (id: string) => string {
+		const goals = this.data?.goals ?? [];
+		return (id) => (changed && changed.id === id ? changed.health : (goals.find((g) => g.id === id)?.health ?? ""));
+	}
+
+	/** Index write with any transform, then 변경 기록 and `updated` (「8. 인덱스 규칙」). */
+	private async updateIndexWith(fn: (t: string) => { text: string; missing: string[] }, log: string, changed?: Goal): Promise<boolean> {
+		const d = this.data;
+		const file = this.indexFile();
+		if (!d || !file) {
+			new Notice(`MyLogs: ${INDEX_FILE}을 찾지 못해 인덱스를 갱신하지 못했어요. 목표 노트는 저장됐어요.`);
+			return false;
+		}
+		let missing: string[] = [];
 		const today = todayIso();
 		try {
-			await this.app.vault.process(file, (data) => appendProgressLog(data, today, text));
+			await this.app.vault.process(file, (t) => {
+				const r = fn(ensureHealthColumn(t, String(d.year), this.healthOf(changed)));
+				missing = r.missing;
+				return setFrontmatterScalar(prependChangeLog(r.text, today, log), "updated", today);
+			});
 		} catch (err) {
-			console.error("[MyLogs] Pinboard save failed", err);
-			new Notice(`MyLogs: ${s.id} 진척 기록을 저장하지 못했어요.`);
-			return;
+			console.error("[MyLogs] Pinboard index update failed", err);
+			new Notice(`MyLogs: ${INDEX_FILE} 갱신에 실패했어요. 목표 노트는 저장됐어요.`);
+			return false;
 		}
-		await this.updateIndex(d, [], `${s.id} 진척 기록 추가 (플러그인)`);
+		if (missing.length) new Notice(`MyLogs: ${INDEX_FILE}의 ${d.year} 표에서 ${missing.join(", ")} 행을 찾지 못했어요. 목표 노트는 저장됐어요.`);
+		return !missing.length;
 	}
 
 	/** AGENTS.md 「인덱스 규칙」: rows of the affected ids, 변경 기록, `updated`. */
-	private async updateIndex(d: Loaded, rows: RowUpdate[], log: string): Promise<void> {
+	private async updateIndex(rows: RowUpdate[], log: string, changed?: Goal): Promise<void> {
+		const d = this.data;
 		const file = this.indexFile();
-		if (!file) {
+		if (!d || !file) {
 			new Notice(`MyLogs: ${INDEX_FILE}을 찾지 못해 인덱스를 갱신하지 못했어요. 목표 노트는 저장됐어요.`);
 			return;
 		}
 		let missing: string[] = [];
 		try {
 			await this.app.vault.process(file, (data) => {
-				const r = applyIndexEdit(data, { year: String(d.year), rows, log, today: todayIso() });
+				const year = String(d.year);
+				const r = applyIndexEdit(ensureHealthColumn(data, year, this.healthOf(changed)), { year, rows, log, today: todayIso() });
 				missing = r.missing;
 				return r.text;
 			});
@@ -1127,8 +1842,6 @@ export class PinboardView extends ItemView {
 			new Notice(`MyLogs: ${INDEX_FILE} 갱신에 실패했어요. 목표 노트는 저장됐어요.`);
 			return;
 		}
-		if (missing.length) {
-			new Notice(`MyLogs: ${INDEX_FILE}의 ${d.year} 표에서 ${missing.join(", ")} 행을 찾지 못했어요. 목표 노트는 저장됐어요.`);
-		}
+		if (missing.length) new Notice(`MyLogs: ${INDEX_FILE}의 ${d.year} 표에서 ${missing.join(", ")} 행을 찾지 못했어요. 목표 노트는 저장됐어요.`);
 	}
 }

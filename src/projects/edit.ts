@@ -300,3 +300,32 @@ export function hubWithoutGoals(text: string, ids: string[], today: string): str
 	if (next.length === cur.length) return text;
 	return setFmValue(setFmList(text, "goals", next), "updated", today);
 }
+
+/** Hub `goals` with `goalId` added (`link`) or removed, and `updated`. Unchanged text when already so. */
+export function hubGoalsLinked(text: string, goalId: string, link: boolean, today: string): string {
+	const cur = getFmList(text, "goals");
+	const has = cur.includes(goalId);
+	if (has === link) return text;
+	const next = link ? [...cur, goalId] : cur.filter((g) => g !== goalId);
+	return setFmValue(setFmList(text, "goals", next), "updated", today);
+}
+
+/** The 「3-4」 texts when the Pinboard goal panel links or unlinks a Sub Goal (Pinboard 「3-6」). */
+export function goalLinkTexts(p: { id: string }, goalId: string, link: boolean, goalsAfter: string[], next: string, today: string): { entry: LogEntry; recent: string; change: string } {
+	const word = link ? "목표 연결" : "목표 연결 해제";
+	return {
+		entry: {
+			date: today,
+			title: word,
+			context: `Pinboard 목표 화면에서 사용자가 ${goalId}${link ? "에 이 프로젝트를 연결함" : "와의 연결을 해제함"}`,
+			done: link ? `허브 goals에 ${goalId} 추가, ${goalId}의 projects·project_ids에 ${p.id} 추가` : `허브 goals에서 ${goalId} 제거, ${goalId}의 projects·project_ids에서 ${p.id} 제거`,
+			result: `goals: ${goalsAfter.join(", ") || "없음"}`,
+			decision: `${word}. 사용자 결정`,
+			open: "없음",
+			next: next || "미확인",
+			evidence: "MyLogs 플러그인, 사용자 조작",
+		},
+		recent: `${word}: ${goalId}`,
+		change: `${p.id} ${word}: ${goalId} ${PLUGIN_MARK}`,
+	};
+}

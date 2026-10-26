@@ -11,6 +11,28 @@
 	background: var(--background-primary);
 }
 
+/* Pinboard creation: native form controls, one persistent primary action. */
+.mylogs-goal-create { width: min(720px, calc(100vw - 32px)); }
+.mylogs-goal-create .mylogs-form-actions {
+	position: sticky;
+	bottom: 0;
+	z-index: 1;
+	background: var(--background-primary);
+	border-top: 1px solid var(--background-modifier-border);
+	padding: 12px 0;
+	margin-top: 16px;
+}
+.mylogs-goal-create .mylogs-form-actions button { min-height: 40px; }
+.mylogs-goal-create .mylogs-form-errors:not(:empty) { color: var(--text-error); }
+@media (max-width: 600px) {
+	.mylogs-goal-create .setting-item { flex-wrap: wrap; }
+	.mylogs-goal-create .setting-item-control { width: 100%; }
+	.mylogs-goal-create .setting-item-control input:not([type="checkbox"]),
+	.mylogs-goal-create .setting-item-control select,
+	.mylogs-goal-create .setting-item-control textarea { width: 100%; min-height: 44px; }
+	.mylogs-goal-create .mylogs-form-actions { justify-content: flex-end; }
+}
+
 .mylogs-daily-pad {
 	/* tokens */
 	--ml-bg: var(--background-primary);
@@ -911,1024 +933,456 @@
 
 /* ===== Pinboard view ===== */
 /*
-   Port of 01 Pinboard/_build/pinboard.template.html: sunrise hero, area-coloured goal
-   cards, progress rings and bars. Scoped under .mylogs-pinboard; card colours come from
-   Obsidian's CSS variables so it follows light and dark themes. The hero is a fixed
-   dawn-sky gradient in both themes. Per-card area colours arrive as --a / --a2.
+   Goals, Asana-Goals style (Pinboard 개편 스펙 「2」): a quiet header (연도, 올해 경과 막대,
+   health 요약, 목록 | 전략 맵) under a slowly turning sun, a spreadsheet of Main rows with
+   nested Sub rows, and a goal panel that slides in from the right (full screen on phones).
+   Look: 「노을 따뜻함」 — a paper diary at dusk. Cream paper, warm ink, one terracotta sun used
+   sparingly (the sun, the active tab, focus, the year line). Health is only ever a small dot or a
+   thin left stripe (olive / mustard / brick). The palette is defined once here (`--pb-*`, light and
+   dark) and shared with the 전략 맵 block at the end of the file (`pbm-*`).
 */
 
+.mylogs-pinboard-container,
+.mylogs-pinboard {
+	/* paper and ink */
+	--pb-bg: #f6f1e9;
+	--pb-card: #fffdf9;
+	--pb-sunk: #f1ebe1;
+	--pb-line: rgba(43, 38, 33, 0.08);
+	--pb-line-strong: rgba(43, 38, 33, 0.14);
+	--pb-ink: #2b2621;
+	--pb-muted: #7d7369;
+	--pb-faint: #b5aca1;
+	--pb-soft: rgba(43, 38, 33, 0.04);
+	--pb-hover: rgba(43, 38, 33, 0.035);
+	--pb-track: rgba(43, 38, 33, 0.08);
+	--pb-fill: #5e554c;
+	/* the sun */
+	--pb-sun: #e2703a;
+	--pb-sun-hi: #f4b27c;
+	--pb-glow: rgba(226, 112, 58, 0.16);
+	--pb-ray: rgba(226, 112, 58, 0.13);
+	/* health */
+	--pb-on: #5b8c5a;
+	--pb-risk: #d4a24c;
+	--pb-off: #c2553f;
+	--pb-none: #c3bab0;
+	--pb-warn: #b0702a;
+	/* shape */
+	--pb-radius: 14px;
+	--pb-radius-sm: 8px;
+	--pb-shadow-sm: 0 1px 2px rgba(60, 42, 25, 0.05);
+	--pb-shadow: 0 1px 2px rgba(60, 42, 25, 0.04), 0 10px 28px -16px rgba(60, 42, 25, 0.18);
+	--pb-shadow-lg: 0 2px 6px rgba(60, 42, 25, 0.06), 0 18px 40px -18px rgba(60, 42, 25, 0.28);
+	--pb-font: "Pretendard", "Pretendard Variable", var(--font-interface), -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", "Malgun Gothic", sans-serif;
+
+	/* Obsidian's own variables, re-pointed so inputs, buttons and links inside the view match */
+	--background-primary: var(--pb-card);
+	--background-secondary: var(--pb-bg);
+	--background-modifier-border: var(--pb-line-strong);
+	--background-modifier-hover: var(--pb-hover);
+	--background-modifier-form-field: var(--pb-card);
+	--text-normal: var(--pb-ink);
+	--text-muted: var(--pb-muted);
+	--text-faint: var(--pb-faint);
+	--text-accent: var(--pb-sun);
+	--interactive-accent: var(--pb-sun);
+	--interactive-normal: var(--pb-card);
+	--interactive-hover: var(--pb-sunk);
+	--color-orange: var(--pb-warn);
+	--link-color: var(--pb-ink);
+	--link-color-hover: var(--pb-sun);
+}
+body.theme-dark .mylogs-pinboard-container,
+body.theme-dark .mylogs-pinboard {
+	/* night: near-neutral charcoal with only a hint of warmth; the sun is the one warm light */
+	--pb-bg: #141312;
+	--pb-card: #1d1c1a;
+	--pb-sunk: #262422;
+	--pb-line: rgba(255, 255, 255, 0.07);
+	--pb-line-strong: rgba(255, 255, 255, 0.1);
+	--pb-ink: #edeae5;
+	--pb-muted: #9a958e;
+	--pb-faint: #6b6761;
+	--pb-soft: rgba(255, 255, 255, 0.055);
+	--pb-hover: rgba(255, 255, 255, 0.035);
+	--pb-track: rgba(255, 255, 255, 0.08);
+	--pb-fill: #d9d4cc;
+	--pb-sun: #e2703a;
+	--pb-sun-hi: #f08a4b;
+	--pb-glow: rgba(240, 138, 75, 0.2);
+	--pb-ray: rgba(240, 150, 100, 0.07);
+	--pb-on: #7fb07d;
+	--pb-risk: #e0b25c;
+	--pb-off: #e06a55;
+	--pb-none: #5f5b56;
+	--pb-warn: #e3a95f;
+	--pb-shadow-sm: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 1px 2px rgba(0, 0, 0, 0.4);
+	--pb-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 1px 2px rgba(0, 0, 0, 0.45), 0 14px 30px -16px rgba(0, 0, 0, 0.8);
+	--pb-shadow-lg: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 2px 6px rgba(0, 0, 0, 0.45), 0 22px 46px -18px rgba(0, 0, 0, 0.85);
+}
+
 .mylogs-pinboard-container {
+	position: relative;
 	padding: 0 !important;
-	background: var(--background-primary);
+	overflow: hidden !important;
+	background: var(--pb-bg);
+	container: pbview / inline-size;
 }
 
 .mylogs-pinboard {
-	--pb-card: var(--background-primary);
-	--pb-card-edge: var(--background-modifier-border);
-	--pb-ink: var(--text-normal);
-	--pb-ink-2: var(--text-muted);
-	--pb-ink-3: var(--text-faint);
-	--pb-line: color-mix(in srgb, var(--text-normal) 9%, transparent);
-	--pb-track: color-mix(in srgb, var(--text-normal) 8%, transparent);
-	--pb-soft: color-mix(in srgb, var(--text-normal) 3.5%, transparent);
-	--pb-glow: rgba(255, 170, 110, 0.16);
-	--pb-need: #b4561f;
-	--pb-need-bg: rgba(230, 120, 50, 0.08);
-	--pb-need-edge: rgba(200, 100, 40, 0.35);
-	--pb-shadow: 0 1px 2px rgba(40, 20, 10, 0.04), 0 10px 30px -12px rgba(80, 40, 20, 0.16);
-	--pb-radius: 20px;
-	--pb-font: Pretendard, "Pretendard Variable", var(--font-interface), "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif;
-
-	box-sizing: border-box;
-	max-width: 1240px;
-	margin: 0 auto;
-	padding: 20px 20px 48px;
-	min-height: 100%;
+	height: 100%;
+	overflow-y: auto;
+	background: var(--pb-bg);
 	color: var(--pb-ink);
-	background: radial-gradient(1200px 500px at 50% -120px, var(--pb-glow), transparent 70%), var(--background-primary);
 	font-family: var(--pb-font);
-	font-size: 15px;
-	line-height: 1.55;
-	letter-spacing: -0.01em;
+	font-size: 14px;
+	line-height: 1.5;
+	letter-spacing: -0.005em;
 	word-break: keep-all;
 	overflow-wrap: anywhere;
 	-webkit-font-smoothing: antialiased;
 }
 .mylogs-pinboard *,
 .mylogs-pinboard *::before,
-.mylogs-pinboard *::after {
+.mylogs-pinboard *::after,
+.mylogs-pinboard-container .pb-detail * {
 	box-sizing: border-box;
 }
-
-.theme-dark .mylogs-pinboard {
-	--pb-glow: rgba(255, 120, 80, 0.1);
-	--pb-need: #ffad7a;
-	--pb-need-bg: rgba(255, 140, 80, 0.09);
-	--pb-need-edge: rgba(255, 150, 90, 0.38);
-	--pb-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 14px 34px -14px rgba(0, 0, 0, 0.6);
+.mylogs-pinboard .pb-page {
+	max-width: 1120px;
+	margin: 0 auto;
+	padding: 24px 28px 64px;
 }
-
-/* ── hero: the sun rising ── */
-.mylogs-pinboard .pb-hero {
-	position: relative;
-	overflow: hidden;
-	border-radius: 28px;
-	padding: 34px 34px 30px;
-	color: #fff8f0;
-	background: linear-gradient(180deg, #1a1240 0%, #3b1f63 30%, #8a3a73 56%, #e0625a 78%, #ffb15c 100%);
-	box-shadow: 0 30px 60px -30px rgba(180, 60, 60, 0.55);
-	isolation: isolate;
+.mylogs-pinboard.is-map .pb-page {
+	max-width: none;
 }
-.mylogs-pinboard .pb-hero::before {
-	content: "";
-	position: absolute;
-	inset: 0;
-	background-image:
-		radial-gradient(1.4px 1.4px at 12% 18%, rgba(255, 255, 255, 0.8), transparent 60%),
-		radial-gradient(1px 1px at 28% 9%, rgba(255, 255, 255, 0.6), transparent 60%),
-		radial-gradient(1.2px 1.2px at 46% 22%, rgba(255, 255, 255, 0.5), transparent 60%),
-		radial-gradient(1px 1px at 63% 12%, rgba(255, 255, 255, 0.7), transparent 60%),
-		radial-gradient(1.4px 1.4px at 82% 20%, rgba(255, 255, 255, 0.55), transparent 60%),
-		radial-gradient(1px 1px at 91% 7%, rgba(255, 255, 255, 0.6), transparent 60%);
-	opacity: 0.9;
-	z-index: -2;
-	animation: pb-twinkle 6s ease-in-out infinite alternate;
-}
-.mylogs-pinboard .pb-sun {
-	position: absolute;
-	right: 7%;
-	bottom: -150px;
-	width: 340px;
-	height: 340px;
-	border-radius: 50%;
-	background: radial-gradient(circle at 50% 50%, #fff6d8 0%, #ffd77a 34%, #ff9f4a 58%, rgba(255, 120, 60, 0) 72%);
-	z-index: -1;
-	animation: pb-breathe 7s ease-in-out infinite;
-}
-.mylogs-pinboard.pb-animate .pb-sun {
-	animation: pb-rise 3.2s cubic-bezier(0.2, 0.7, 0.1, 1) both, pb-breathe 7s ease-in-out 3.2s infinite;
-}
-.mylogs-pinboard .pb-rays {
-	position: absolute;
-	right: calc(7% - 230px);
-	bottom: -380px;
-	width: 800px;
-	height: 800px;
-	border-radius: 50%;
-	background: repeating-conic-gradient(from 0deg, rgba(255, 230, 170, 0.13) 0deg 4deg, transparent 4deg 16deg);
-	-webkit-mask: radial-gradient(circle, #000 18%, transparent 62%);
-	mask: radial-gradient(circle, #000 18%, transparent 62%);
-	z-index: -1;
-	animation: pb-spin 120s linear infinite;
-}
-.mylogs-pinboard .pb-horizon {
-	position: absolute;
-	left: 0;
-	right: 0;
-	bottom: 0;
-	height: 46px;
-	background: linear-gradient(180deg, rgba(255, 190, 120, 0), rgba(120, 30, 60, 0.35));
-	z-index: -1;
-}
-.mylogs-pinboard .pb-hero-top {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 24px 40px;
-	align-items: flex-end;
-	justify-content: space-between;
-}
-.mylogs-pinboard .pb-eyebrow {
-	font-size: 13px;
-	letter-spacing: 0.18em;
-	text-transform: uppercase;
-	opacity: 0.78;
-	font-weight: 600;
-}
-.mylogs-pinboard .pb-hero h1 {
-	margin: 6px 0 8px;
-	font-size: clamp(40px, 7vw, 72px);
-	line-height: 1;
-	letter-spacing: -0.035em;
-	font-weight: 800;
-	color: inherit;
-}
-.mylogs-pinboard .pb-yr,
-.mylogs-pinboard .pb-year-select {
-	background: linear-gradient(90deg, #fff 0%, #ffe3b0 60%, #ffc27a 100%);
-	-webkit-background-clip: text;
-	background-clip: text;
-	color: transparent;
-}
-.mylogs-pinboard .pb-year-select {
-	appearance: none;
-	-webkit-appearance: none;
-	height: auto;
-	padding: 0 2px;
-	margin: 0;
-	border: none;
-	border-bottom: 2px dashed rgba(255, 235, 200, 0.45);
-	border-radius: 0;
-	box-shadow: none;
-	font: inherit;
-	letter-spacing: inherit;
-	cursor: pointer;
-}
-.mylogs-pinboard .pb-year-select:hover,
-.mylogs-pinboard .pb-year-select:focus-visible {
-	border-bottom-color: #ffe3b0;
-	box-shadow: none;
-	outline: none;
-}
-.mylogs-pinboard .pb-year-select option {
-	color: var(--text-normal);
-	background: var(--background-primary);
-}
-.mylogs-pinboard .pb-tagline {
-	margin: 0;
-	font-size: 16px;
-	opacity: 0.9;
-	max-width: 42ch;
-}
-.mylogs-pinboard .pb-countdown {
-	text-align: right;
-}
-.mylogs-pinboard .pb-countdown .pb-num {
-	display: block;
-	font-size: clamp(56px, 10vw, 104px);
-	font-weight: 800;
-	line-height: 0.92;
-	letter-spacing: -0.05em;
-	font-variant-numeric: tabular-nums;
-	text-shadow: 0 6px 30px rgba(255, 180, 90, 0.45);
-}
-.mylogs-pinboard .pb-countdown .pb-lbl {
-	font-size: 15px;
-	opacity: 0.9;
-	font-weight: 600;
-}
-.mylogs-pinboard .pb-yeartrack {
-	margin-top: 28px;
-}
-.mylogs-pinboard .pb-yeartrack .pb-bar {
-	position: relative;
-	height: 8px;
-	border-radius: 99px;
-	background: rgba(255, 255, 255, 0.18);
-}
-.mylogs-pinboard .pb-yeartrack .pb-fill {
-	position: absolute;
-	left: 0;
-	top: 0;
-	bottom: 0;
-	width: var(--p);
-	border-radius: 99px;
-	background: linear-gradient(90deg, rgba(255, 255, 255, 0.35), #ffe1a6 70%, #fff);
-}
-.mylogs-pinboard .pb-yeartrack .pb-now {
-	position: absolute;
-	top: 50%;
-	left: var(--p);
-	width: 16px;
-	height: 16px;
-	margin: -8px 0 0 -8px;
-	border-radius: 50%;
-	background: #fff;
-	box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.22), 0 0 22px 4px rgba(255, 220, 150, 0.9);
-	animation: pb-pulse 2.6s ease-in-out infinite;
-}
-.mylogs-pinboard .pb-yeartrack .pb-marks {
-	display: flex;
-	justify-content: space-between;
-	gap: 8px;
-	margin-top: 10px;
-	font-size: 12.5px;
-	opacity: 0.85;
-	font-variant-numeric: tabular-nums;
-}
-.mylogs-pinboard .pb-stats {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 10px;
-	margin-top: 22px;
-}
-.mylogs-pinboard .pb-stat {
-	padding: 9px 14px;
-	border-radius: 14px;
-	background: rgba(255, 255, 255, 0.12);
-	border: 1px solid rgba(255, 255, 255, 0.16);
-	backdrop-filter: blur(6px);
-	-webkit-backdrop-filter: blur(6px);
-	font-size: 13px;
-}
-.mylogs-pinboard .pb-stat b {
-	font-size: 18px;
-	font-weight: 750;
-	margin-right: 4px;
-	font-variant-numeric: tabular-nums;
-}
-.mylogs-pinboard .pb-stat.is-warm {
-	background: rgba(255, 210, 150, 0.2);
-	border-color: rgba(255, 220, 170, 0.35);
-}
-
-/* ── legend ── */
-.mylogs-pinboard .pb-legend {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px 18px;
-	margin: 26px 4px 14px;
-	font-size: 13px;
-	color: var(--pb-ink-2);
-	align-items: center;
-}
-.mylogs-pinboard .pb-legend .pb-ttl {
-	font-weight: 700;
-	color: var(--pb-ink);
-	margin-right: 4px;
-}
-.mylogs-pinboard .pb-dot {
-	display: inline-flex;
-	align-items: center;
-	gap: 7px;
-}
-.mylogs-pinboard .pb-dot::before {
-	content: "";
-	width: 10px;
-	height: 10px;
-	border-radius: 50%;
-	background: linear-gradient(135deg, var(--a), var(--a2));
-}
-
-/* ── goal cards ── */
-.mylogs-pinboard .pb-grid {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(min(100%, 370px), 1fr));
-	gap: 18px;
-	align-items: start;
-}
-.mylogs-pinboard .pb-goal {
-	position: relative;
-	background: var(--pb-card);
-	border: 1px solid var(--pb-card-edge);
-	border-radius: var(--pb-radius);
-	box-shadow: var(--pb-shadow);
-	overflow: hidden;
-}
-.mylogs-pinboard.pb-animate .pb-goal {
-	animation: pb-up 0.8s cubic-bezier(0.2, 0.7, 0.1, 1) both;
-	animation-delay: calc(var(--i, 0) * 90ms + 200ms);
-}
-.mylogs-pinboard .pb-goal::before {
-	content: "";
-	position: absolute;
-	left: 0;
-	right: 0;
-	top: 0;
-	height: 5px;
-	background: linear-gradient(90deg, var(--a), var(--a2));
-}
-.mylogs-pinboard .pb-goal::after {
-	content: "";
-	position: absolute;
-	right: -80px;
-	top: -80px;
-	width: 220px;
-	height: 220px;
-	border-radius: 50%;
-	background: radial-gradient(circle, var(--a), transparent 70%);
-	opacity: 0.1;
-	pointer-events: none;
-}
-.mylogs-pinboard .pb-goal-head {
-	display: flex;
-	gap: 16px;
-	align-items: flex-start;
-	padding: 24px 22px 6px;
-}
-.mylogs-pinboard .pb-txt {
-	flex: 1;
-	min-width: 0;
-}
-.mylogs-pinboard .pb-tagrow {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 6px;
-	align-items: center;
-	margin-bottom: 8px;
-}
-.mylogs-pinboard .pb-area {
-	font-size: 12px;
-	font-weight: 700;
-	padding: 3px 10px;
-	border-radius: 99px;
-	color: #fff;
-	background: linear-gradient(135deg, var(--a), var(--a2));
+.mylogs-pinboard .pb-muted,
+.mylogs-pinboard-container .pb-detail .pb-muted {
+	color: var(--pb-muted);
 }
 .mylogs-pinboard .pb-gid {
+	color: var(--pb-faint);
 	font-size: 12px;
-	color: var(--pb-ink-3);
 	font-variant-numeric: tabular-nums;
 }
-.mylogs-pinboard .pb-goal h2 {
-	margin: 0;
-	font-size: 22px;
-	line-height: 1.3;
-	letter-spacing: -0.03em;
-	font-weight: 780;
-	color: var(--pb-ink);
-}
-.mylogs-pinboard .pb-title.is-link {
+.mylogs-pinboard button.pb-linkish,
+.mylogs-pinboard-container .pb-detail button.pb-linkish {
+	height: auto;
+	padding: 0;
+	border: none;
+	background: none;
+	box-shadow: none;
+	color: inherit;
+	font: inherit;
+	text-align: left;
 	cursor: pointer;
 }
-.mylogs-pinboard .pb-title.is-link:hover {
+.mylogs-pinboard button.pb-linkish:hover,
+.mylogs-pinboard-container .pb-detail button.pb-linkish:hover {
+	color: var(--pb-sun);
 	text-decoration: underline;
-	text-decoration-color: color-mix(in srgb, var(--a) 60%, transparent);
+	text-decoration-thickness: 1px;
 	text-underline-offset: 3px;
 }
-.mylogs-pinboard .pb-ring {
-	--deg: calc(var(--p) * 3.6deg);
-	flex: none;
-	width: 66px;
-	height: 66px;
-	border-radius: 50%;
-	background: conic-gradient(var(--a) 0deg, var(--a2) var(--deg), var(--pb-track) var(--deg));
-	display: grid;
-	place-items: center;
-	position: relative;
-}
-.mylogs-pinboard .pb-ring::before {
-	content: "";
-	position: absolute;
-	inset: 6px;
-	border-radius: 50%;
-	background: var(--pb-card);
-}
-.mylogs-pinboard .pb-ring span {
-	position: relative;
-	text-align: center;
-	line-height: 1.05;
-}
-.mylogs-pinboard .pb-ring b {
-	display: block;
-	font-size: 16px;
-	font-weight: 800;
-	font-variant-numeric: tabular-nums;
-}
-.mylogs-pinboard .pb-ring small {
-	font-size: 10.5px;
-	color: var(--pb-ink-3);
+.mylogs-pinboard-container :is(button, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+	outline: 2px solid color-mix(in srgb, var(--pb-sun) 70%, transparent);
+	outline-offset: 2px;
 }
 
-.mylogs-pinboard .pb-story {
-	display: grid;
-	gap: 10px;
-	padding: 12px 22px 4px;
+/* ── header ── */
+.mylogs-pinboard .pb-header {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+	margin-bottom: 20px;
 }
-.mylogs-pinboard .pb-q {
-	padding: 11px 14px;
-	border-radius: 14px;
-	background: var(--pb-soft);
-	border: 1px solid var(--pb-line);
-}
-.mylogs-pinboard .pb-q .pb-k {
-	display: block;
-	font-size: 11.5px;
-	font-weight: 700;
-	color: var(--pb-ink-3);
-	letter-spacing: 0.02em;
-	margin-bottom: 2px;
-}
-.mylogs-pinboard .pb-q p {
-	margin: 0;
-	color: var(--pb-ink);
-	font-size: 14.5px;
-}
-.mylogs-pinboard .pb-q.is-vision {
-	background: linear-gradient(135deg, color-mix(in srgb, var(--a) 10%, transparent), color-mix(in srgb, var(--a2) 6%, transparent));
-	border-color: color-mix(in srgb, var(--a) 22%, transparent);
-}
-.mylogs-pinboard .pb-q.is-vision p {
-	font-weight: 650;
-}
-.mylogs-pinboard .pb-q.is-empty {
-	background: transparent;
-	border: 1px dashed var(--pb-need-edge);
-}
-.mylogs-pinboard .pb-q.is-empty p {
-	color: var(--pb-need);
-	font-size: 13.5px;
-}
-.mylogs-pinboard .pb-sec-label {
+.mylogs-pinboard .pb-head-top {
 	display: flex;
 	align-items: center;
-	gap: 8px;
-	margin: 16px 22px 8px;
-	font-size: 12px;
-	font-weight: 700;
-	color: var(--pb-ink-3);
-	letter-spacing: 0.04em;
-}
-.mylogs-pinboard .pb-sec-label::after {
-	content: "";
-	flex: 1;
-	height: 1px;
-	background: var(--pb-line);
-}
-
-/* ── sub goal (key result) ── */
-.mylogs-pinboard .pb-krs {
-	display: grid;
-	gap: 10px;
-	padding: 0 14px;
-}
-.mylogs-pinboard .pb-kr {
-	padding: 14px 14px 13px;
-	border-radius: 16px;
-	border: 1px solid var(--pb-line);
-	background: var(--pb-card);
-}
-.mylogs-pinboard .pb-kr.st-dropped {
-	opacity: 0.5;
-}
-.mylogs-pinboard .pb-kr.st-achieved {
-	border-color: color-mix(in srgb, var(--a) 45%, transparent);
-	background: color-mix(in srgb, var(--a) 7%, var(--pb-card));
-}
-.mylogs-pinboard .pb-kr-top {
-	display: flex;
-	gap: 10px;
-	align-items: flex-start;
 	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 10px 20px;
 }
-.mylogs-pinboard .pb-kr h3 {
+.mylogs-pinboard .pb-head-title {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+}
+.mylogs-pinboard .pb-head-title h1 {
 	margin: 0;
-	font-size: 16px;
-	font-weight: 720;
-	line-height: 1.35;
+	color: var(--pb-ink);
+	font-size: 22px;
+	font-weight: 700;
+	line-height: 1.2;
+	letter-spacing: -0.025em;
+}
+.mylogs-pinboard .pb-year {
+	color: var(--pb-muted);
+	font-size: 22px;
+	font-weight: 500;
+	line-height: 1.2;
 	letter-spacing: -0.02em;
-	color: var(--pb-ink);
+	font-variant-numeric: tabular-nums;
 }
-.mylogs-pinboard .pb-meta {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 5px;
-	margin-top: 5px;
-	align-items: center;
-}
-.mylogs-pinboard .pb-pill {
-	font-size: 11px;
-	padding: 1.5px 8px;
-	border-radius: 99px;
-	color: var(--pb-ink-2);
-	background: var(--pb-soft);
-	border: 1px solid var(--pb-line);
-	white-space: nowrap;
-}
-.mylogs-pinboard button.pb-status {
-	height: auto;
-	min-height: 0;
-	font: inherit;
-	font-size: 11.5px;
-	font-weight: 700;
-	line-height: 1.5;
-	padding: 2px 9px;
-	border-radius: 99px;
-	white-space: nowrap;
-	border: 1px solid transparent;
+.mylogs-pinboard select.pb-year-select {
+	height: 30px;
+	padding-top: 0;
+	padding-bottom: 0;
+	border: 1px solid var(--pb-line-strong);
+	border-radius: var(--pb-radius-sm);
+	background-color: transparent;
 	box-shadow: none;
-	cursor: pointer;
-}
-.mylogs-pinboard button.pb-status:focus-visible {
-	outline: 2px solid var(--a);
-	outline-offset: 1px;
-}
-.mylogs-pinboard .pb-status.is-active {
-	color: var(--a);
-	background: color-mix(in srgb, var(--a) 12%, transparent);
-}
-.mylogs-pinboard .pb-status.is-active::before {
-	content: "";
-	display: inline-block;
-	width: 6px;
-	height: 6px;
-	border-radius: 50%;
-	background: currentColor;
-	margin-right: 5px;
-	vertical-align: 1.5px;
-	animation: pb-pulse 2.4s ease-in-out infinite;
-}
-.mylogs-pinboard .pb-status.is-achieved {
-	color: #fff;
-	background: linear-gradient(135deg, var(--a), var(--a2));
-}
-.mylogs-pinboard .pb-status.is-paused {
-	color: var(--pb-ink-2);
-	background: var(--pb-soft);
-	border-color: var(--pb-line);
-}
-.mylogs-pinboard .pb-status.is-dropped {
-	color: var(--pb-ink-3);
-	background: transparent;
-	border-color: var(--pb-line);
-	text-decoration: line-through;
-}
-.mylogs-pinboard .pb-status:hover {
-	filter: brightness(1.06);
-	border-color: color-mix(in srgb, var(--a) 40%, transparent);
-}
-
-.mylogs-pinboard .pb-dday {
-	flex: none;
-	text-align: right;
-}
-.mylogs-pinboard .pb-dday b {
-	display: block;
-	font-size: 19px;
-	font-weight: 800;
-	letter-spacing: -0.03em;
-	font-variant-numeric: tabular-nums;
-	color: var(--a);
-	line-height: 1.1;
-}
-.mylogs-pinboard .pb-dday small {
-	font-size: 11px;
-	color: var(--pb-ink-3);
-	font-variant-numeric: tabular-nums;
-}
-.mylogs-pinboard .pb-dday.is-none b {
-	font-size: 13px;
-	font-weight: 700;
-	color: var(--pb-need);
-}
-.mylogs-pinboard .pb-dday.is-over b {
-	color: var(--pb-ink-3);
-}
-.mylogs-pinboard .pb-dday.is-soon b {
-	color: #e2483d;
-}
-
-.mylogs-pinboard .pb-prog {
-	margin-top: 12px;
-}
-.mylogs-pinboard .pb-prog .pb-bar {
-	position: relative;
-	height: 10px;
-	border-radius: 99px;
-	background: var(--pb-track);
-	overflow: hidden;
-}
-.mylogs-pinboard .pb-prog .pb-fill {
-	position: absolute;
-	left: 0;
-	top: 0;
-	bottom: 0;
-	width: var(--p);
-	border-radius: 99px;
-	background: linear-gradient(90deg, var(--a), var(--a2));
-	overflow: hidden;
-}
-.mylogs-pinboard.pb-animate .pb-prog .pb-fill,
-.mylogs-pinboard.pb-animate .pb-yeartrack .pb-fill {
-	animation: pb-grow 1.8s cubic-bezier(0.2, 0.7, 0.1, 1) both;
-	animation-delay: calc(var(--i, 0) * 90ms + 500ms);
-}
-.mylogs-pinboard .pb-prog .pb-fill::after {
-	content: "";
-	position: absolute;
-	inset: 0;
-	background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
-	transform: translateX(-100%);
-	animation: pb-sheen 3.2s ease-in-out 2.4s infinite;
-}
-.mylogs-pinboard .pb-prog .pb-spark {
-	position: absolute;
-	top: 50%;
-	left: max(5px, var(--p));
-	width: 10px;
-	height: 10px;
-	margin: -5px 0 0 -5px;
-	border-radius: 50%;
-	background: var(--a2);
-	box-shadow: 0 0 0 3px color-mix(in srgb, var(--a2) 25%, transparent), 0 0 12px 2px var(--a2);
-	animation: pb-pulse 2.2s ease-in-out infinite;
-}
-.mylogs-pinboard .pb-pcap {
-	display: flex;
-	justify-content: space-between;
-	gap: 8px;
-	margin-top: 6px;
-	font-size: 12px;
-	color: var(--pb-ink-3);
-}
-.mylogs-pinboard .pb-pcap b {
-	color: var(--pb-ink);
-	font-weight: 750;
-	font-variant-numeric: tabular-nums;
-}
-.mylogs-pinboard .pb-prog.is-unknown .pb-bar {
-	background: repeating-linear-gradient(-45deg, var(--pb-track) 0 6px, transparent 6px 12px);
-}
-
-.mylogs-pinboard .pb-path {
-	display: grid;
-	grid-template-columns: 1fr auto 1fr auto 1fr;
-	align-items: stretch;
-	gap: 6px;
-	margin-top: 12px;
-}
-.mylogs-pinboard .pb-path.is-two {
-	grid-template-columns: 1fr auto 1.4fr;
-}
-.mylogs-pinboard .pb-node {
-	padding: 7px 9px;
-	border-radius: 12px;
-	background: var(--pb-soft);
-	border: 1px solid var(--pb-line);
-	min-width: 0;
-}
-.mylogs-pinboard .pb-node .pb-k {
-	display: block;
-	font-size: 10.5px;
-	color: var(--pb-ink-3);
-	font-weight: 700;
-	letter-spacing: 0.02em;
-}
-.mylogs-pinboard .pb-node .pb-v {
-	display: block;
-	font-size: 14px;
-	font-weight: 720;
-	font-variant-numeric: tabular-nums;
-	line-height: 1.3;
-}
-.mylogs-pinboard .pb-node .pb-v small {
-	font-size: 11px;
+	color: var(--pb-muted);
+	font-size: 15px;
 	font-weight: 600;
-	color: var(--pb-ink-2);
-	margin-left: 2px;
+	font-variant-numeric: tabular-nums;
 }
-.mylogs-pinboard .pb-node.is-cur {
-	border-color: color-mix(in srgb, var(--a) 40%, transparent);
-	background: color-mix(in srgb, var(--a) 8%, transparent);
+/* 목록 | 전략 맵: text tabs with a terracotta underline */
+.mylogs-pinboard .pb-tabs {
+	display: inline-flex;
+	gap: 20px;
 }
-.mylogs-pinboard .pb-node.is-tgt .pb-v {
-	color: var(--a);
-}
-.mylogs-pinboard .pb-node.is-need {
-	background: var(--pb-need-bg);
-	border: 1px dashed var(--pb-need-edge);
-}
-.mylogs-pinboard .pb-node.is-need .pb-v {
-	color: var(--pb-need);
-	font-size: 12.5px;
-}
-.mylogs-pinboard .pb-node.is-editable {
-	cursor: text;
-	transition: border-color 0.15s, box-shadow 0.15s;
-}
-.mylogs-pinboard .pb-node.is-editable:hover,
-.mylogs-pinboard .pb-node.is-editable:focus-visible {
-	border-color: var(--a);
-	box-shadow: 0 0 0 2px color-mix(in srgb, var(--a) 18%, transparent);
-	outline: none;
-}
-.mylogs-pinboard .pb-arr {
-	align-self: center;
-	color: var(--pb-ink-3);
-	font-size: 13px;
-}
-.mylogs-pinboard input.pb-input {
-	width: 100%;
-	height: auto;
-	margin-top: 2px;
-	padding: 2px 6px;
-	border-radius: 8px;
-	border: 1px solid var(--a, var(--interactive-accent));
-	background: var(--background-primary);
-	color: var(--pb-ink);
-	font: inherit;
-	font-size: 14px;
-	font-weight: 650;
-	box-shadow: 0 0 0 2px color-mix(in srgb, var(--a, var(--interactive-accent)) 18%, transparent);
-}
-
-.mylogs-pinboard .pb-hint {
-	margin: 9px 0 0;
-	font-size: 12.5px;
-	color: var(--pb-ink-2);
-}
-.mylogs-pinboard .pb-hint b {
-	color: var(--a);
-	font-weight: 750;
-}
-
-.mylogs-pinboard .pb-chips {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 6px;
-}
-.mylogs-pinboard .pb-chip {
-	font-size: 12.5px;
-	line-height: 1.35;
-	padding: 5px 11px;
-	border-radius: 99px;
-	color: var(--pb-ink-2);
-	background: var(--pb-soft);
-	border: 1px solid var(--pb-line);
-	max-width: 100%;
-}
-.mylogs-pinboard .pb-chip::before {
-	content: "→ ";
-	color: var(--a);
-	font-weight: 800;
-}
-.mylogs-pinboard .pb-chip.is-link {
-	color: var(--pb-ink);
-	border-color: color-mix(in srgb, var(--a) 35%, transparent);
-}
-.mylogs-pinboard .pb-chip.is-link::before {
-	content: "◆ ";
-	font-size: 10px;
-	vertical-align: 1px;
-}
-.mylogs-pinboard .pb-chip.is-need {
-	color: var(--pb-need);
-	background: var(--pb-need-bg);
-	border: 1px dashed var(--pb-need-edge);
-}
-.mylogs-pinboard .pb-chip.is-need::before {
-	content: "+ ";
-	color: var(--pb-need);
-}
-.mylogs-pinboard .pb-kr .pb-chips {
-	margin-top: 10px;
-}
-.mylogs-pinboard .pb-goal > .pb-chips {
-	padding: 0 22px;
-}
-.mylogs-pinboard .pb-goal-foot {
-	height: 22px;
-}
-
-/* 진척 기록 */
-.mylogs-pinboard .pb-log {
-	margin-top: 10px;
-	padding-top: 8px;
-	border-top: 1px dashed var(--pb-line);
-}
-.mylogs-pinboard .pb-log ul {
-	margin: 0 0 6px;
-	padding: 0;
-	list-style: none;
-	display: grid;
-	gap: 2px;
-}
-.mylogs-pinboard .pb-log li {
-	font-size: 12.5px;
-	color: var(--pb-ink-2);
-	padding-left: 12px;
-	position: relative;
-}
-.mylogs-pinboard .pb-log li::before {
-	content: "";
-	position: absolute;
-	left: 2px;
-	top: 0.62em;
-	width: 5px;
-	height: 5px;
-	border-radius: 50%;
-	background: var(--a);
-}
-.mylogs-pinboard button.pb-log-add {
+.mylogs-pinboard button.pb-tab {
 	display: inline-flex;
 	align-items: center;
-	gap: 4px;
-	height: auto;
-	padding: 2px 8px 2px 4px;
+	gap: 6px;
+	height: 32px;
+	padding: 0 1px;
 	border: none;
-	border-radius: 8px;
+	border-radius: 0;
 	background: transparent;
-	box-shadow: none;
-	color: var(--pb-ink-3);
-	font: inherit;
-	font-size: 12px;
-	font-weight: 650;
+	box-shadow: inset 0 -2px 0 transparent;
+	color: var(--pb-muted);
+	font-size: 13px;
+	font-weight: 500;
 	cursor: pointer;
+	transition: color 120ms ease, box-shadow 160ms ease;
 }
-.mylogs-pinboard button.pb-log-add:hover {
-	color: var(--a);
-	background: color-mix(in srgb, var(--a) 8%, transparent);
+.mylogs-pinboard button.pb-tab:hover {
+	background: transparent;
+	color: var(--pb-ink);
 }
-.mylogs-pinboard .pb-log-add-icon {
+.mylogs-pinboard button.pb-tab.is-active {
+	background: transparent;
+	box-shadow: inset 0 -2px 0 var(--pb-sun);
+	color: var(--pb-ink);
+	font-weight: 600;
+}
+.mylogs-pinboard .pb-tab-icon,
+.mylogs-pinboard .pb-rel-icon,
+.mylogs-pinboard-container .pb-detail .pb-rel-icon,
+.mylogs-pinboard-container .pb-detail .pb-btn-icon {
 	display: inline-flex;
 }
-.mylogs-pinboard .pb-log-add-icon svg {
+.mylogs-pinboard .pb-tab-icon svg,
+.mylogs-pinboard-container .pb-detail .pb-btn-icon svg {
+	width: 14px;
+	height: 14px;
+}
+.mylogs-pinboard .pb-rel-icon svg,
+.mylogs-pinboard-container .pb-detail .pb-rel-icon svg {
 	width: 13px;
 	height: 13px;
 }
-.mylogs-pinboard input.pb-log-input {
-	font-size: 13px;
-	font-weight: 500;
+/* 올해 경과: a thin line that warms toward the sun, with a dot for today */
+.mylogs-pinboard .pb-yearbar {
+	display: flex;
+	align-items: center;
+	gap: 14px;
 }
-
-/* ── 채워 넣을 칸 ── */
-.mylogs-pinboard .pb-todo {
-	margin-top: 26px;
-	padding: 20px 22px;
-	border-radius: var(--pb-radius);
-	background: var(--pb-card);
-	border: 1px dashed var(--pb-need-edge);
+.mylogs-pinboard .pb-yearbar-track {
+	position: relative;
+	flex: 1;
+	height: 2px;
+	border-radius: 2px;
+	background: var(--pb-track);
 }
-.mylogs-pinboard .pb-todo h2 {
-	margin: 0 0 4px;
-	font-size: 16px;
-	font-weight: 780;
-	color: var(--pb-ink);
+.mylogs-pinboard .pb-yearbar-fill {
+	position: relative;
+	height: 100%;
+	border-radius: 2px;
+	background: linear-gradient(90deg, color-mix(in srgb, var(--pb-sun) 18%, transparent), var(--pb-sun));
 }
-.mylogs-pinboard .pb-todo .pb-sub {
-	margin: 0 0 12px;
-	font-size: 13px;
-	color: var(--pb-ink-3);
+.mylogs-pinboard .pb-yearbar-fill::after {
+	content: "";
+	position: absolute;
+	top: 50%;
+	right: -4px;
+	width: 8px;
+	height: 8px;
+	margin-top: -4px;
+	border-radius: 50%;
+	background: var(--pb-sun);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--pb-sun) 18%, transparent);
 }
-.mylogs-pinboard .pb-todo ul {
-	margin: 0;
-	padding: 0;
-	list-style: none;
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
-	gap: 6px 18px;
-}
-.mylogs-pinboard .pb-todo li {
-	font-size: 13.5px;
-	color: var(--pb-ink-2);
-	padding: 5px 0;
-	border-bottom: 1px solid var(--pb-line);
-}
-.mylogs-pinboard .pb-todo li .pb-gid {
-	margin-right: 6px;
-}
-.mylogs-pinboard .pb-todo li b {
-	color: var(--pb-need);
-	font-weight: 700;
-}
-.mylogs-pinboard .pb-todo.is-clear {
-	border-style: solid;
-	border-color: var(--pb-line);
-}
-.mylogs-pinboard .pb-foot {
-	margin-top: 26px;
-	text-align: center;
-	font-size: 12.5px;
-	color: var(--pb-ink-3);
-}
-.mylogs-pinboard .pb-foot b {
-	color: var(--pb-ink-2);
-	font-weight: 650;
+.mylogs-pinboard .pb-yearbar-label {
+	white-space: nowrap;
+	color: var(--pb-muted);
+	font-size: 12px;
 	font-variant-numeric: tabular-nums;
 }
-.mylogs-pinboard .pb-empty {
-	display: grid;
-	gap: 8px;
-	justify-items: center;
-	padding: 64px 16px;
-	color: var(--pb-ink-2);
+.mylogs-pinboard .pb-summary {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 18px;
+	color: var(--pb-muted);
+	font-size: 13px;
 }
-.mylogs-pinboard .pb-empty-title {
-	font-size: 17px;
-	font-weight: 750;
+.mylogs-pinboard .pb-sum {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+/* health counts: the emoji stays in the DOM for screen readers' sake, a quiet dot is shown instead */
+.mylogs-pinboard .pb-sum-icon {
+	display: none;
+}
+.mylogs-pinboard .pb-sum.is-on-track::before,
+.mylogs-pinboard .pb-sum.is-at-risk::before,
+.mylogs-pinboard .pb-sum.is-off-track::before,
+.mylogs-pinboard .pb-sum.is-none::before {
+	content: "";
+	flex: none;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--pb-none);
+}
+.mylogs-pinboard .pb-sum.is-on-track::before {
+	background: var(--pb-on);
+}
+.mylogs-pinboard .pb-sum.is-at-risk::before {
+	background: var(--pb-risk);
+}
+.mylogs-pinboard .pb-sum.is-off-track::before {
+	background: var(--pb-off);
+}
+.mylogs-pinboard .pb-sum.is-none::before {
+	background: transparent;
+	box-shadow: inset 0 0 0 1.5px var(--pb-none);
+}
+.mylogs-pinboard .pb-sum b {
+	color: var(--pb-ink);
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-pinboard .pb-sum.is-plain {
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-pinboard .pb-sum-sep {
+	width: 1px;
+	height: 12px;
+	background: var(--pb-line-strong);
+}
+.mylogs-pinboard button.pb-sum-missing {
+	height: 24px;
+	padding: 0 10px;
+	border: 1px solid var(--pb-line-strong);
+	border-radius: 999px;
+	background: transparent;
+	box-shadow: none;
+	color: var(--pb-muted);
+	font-size: 12.5px;
+	font-weight: 500;
+	cursor: pointer;
+}
+.mylogs-pinboard button.pb-sum-missing:hover,
+.mylogs-pinboard button.pb-sum-missing.is-open {
+	background: var(--pb-soft);
 	color: var(--pb-ink);
 }
-
-/* ── narrow panes ── */
-@media (max-width: 560px) {
-	.mylogs-pinboard {
-		font-size: 14.5px;
-		padding: 12px 12px 36px;
-	}
-	.mylogs-pinboard .pb-hero {
-		padding: 24px 20px 22px;
-		border-radius: 22px;
-	}
-	.mylogs-pinboard .pb-hero-top {
-		flex-direction: column;
-		align-items: flex-start;
-		gap: 16px;
-	}
-	.mylogs-pinboard .pb-countdown {
-		text-align: left;
-		display: flex;
-		align-items: baseline;
-		gap: 10px;
-	}
-	.mylogs-pinboard .pb-sun {
-		width: 230px;
-		height: 230px;
-		right: -40px;
-		bottom: -110px;
-	}
-	.mylogs-pinboard .pb-rays {
-		width: 560px;
-		height: 560px;
-		right: -205px;
-		bottom: -275px;
-	}
-	.mylogs-pinboard .pb-goal-head {
-		padding: 22px 16px 4px;
-		gap: 12px;
-	}
-	.mylogs-pinboard .pb-goal h2 {
-		font-size: 19.5px;
-	}
-	.mylogs-pinboard .pb-ring {
-		width: 56px;
-		height: 56px;
-	}
-	.mylogs-pinboard .pb-story {
-		padding: 10px 16px 2px;
-	}
-	.mylogs-pinboard .pb-sec-label {
-		margin: 14px 16px 8px;
-	}
-	.mylogs-pinboard .pb-krs {
-		padding: 0 10px;
-	}
-	.mylogs-pinboard .pb-goal > .pb-chips {
-		padding: 0 16px;
-	}
-	.mylogs-pinboard .pb-path,
-	.mylogs-pinboard .pb-path.is-two {
-		grid-template-columns: 1fr;
-		gap: 4px;
-	}
-	.mylogs-pinboard .pb-arr {
-		display: none;
-	}
-	.mylogs-pinboard .pb-node {
-		display: flex;
-		justify-content: space-between;
-		align-items: baseline;
-		gap: 10px;
-	}
-	.mylogs-pinboard .pb-node .pb-v {
-		text-align: right;
-	}
-	.mylogs-pinboard .pb-todo {
-		padding: 16px;
-	}
+.mylogs-pinboard button.pb-sum-missing.is-warn {
+	border-color: color-mix(in srgb, var(--pb-warn) 40%, transparent);
 }
-@media (max-width: 400px) {
-	.mylogs-pinboard .pb-yeartrack .pb-marks span:first-child,
-	.mylogs-pinboard .pb-yeartrack .pb-marks span:last-child {
-		display: none;
-	}
-	.mylogs-pinboard .pb-yeartrack .pb-marks {
-		justify-content: center;
-	}
+.mylogs-pinboard button.pb-sum-missing.is-warn b {
+	margin-left: 2px;
+	color: var(--pb-warn);
 }
 
+/* ── hero: a paper card with the sun turning slowly at the horizon (bottom right) ── */
+.mylogs-pinboard .pb-hero {
+	position: relative;
+	overflow: hidden;
+	isolation: isolate;
+	padding: 22px 26px 22px;
+	border: 1px solid var(--pb-line);
+	border-radius: 18px;
+	background:
+		radial-gradient(560px 260px at calc(100% - 150px) 118%, var(--pb-glow), transparent 72%),
+		var(--pb-card);
+	box-shadow: var(--pb-shadow);
+	color: var(--pb-ink);
+}
+.mylogs-pinboard .pb-hero .pb-yearbar,
+.mylogs-pinboard .pb-hero .pb-summary {
+	padding-right: 250px;
+}
+.mylogs-pinboard .pb-hero .pb-sun {
+	position: absolute;
+	right: 84px;
+	bottom: -62px;
+	width: 132px;
+	height: 132px;
+	border-radius: 50%;
+	background: radial-gradient(circle at 50% 30%, var(--pb-sun-hi) 0%, color-mix(in srgb, var(--pb-sun-hi) 40%, var(--pb-sun)) 45%, var(--pb-sun) 85%);
+	box-shadow:
+		0 0 0 1px color-mix(in srgb, var(--pb-sun-hi) 30%, transparent),
+		0 0 24px 4px color-mix(in srgb, var(--pb-sun) 22%, transparent),
+		0 0 90px 30px color-mix(in srgb, var(--pb-sun) 14%, transparent);
+	z-index: -1;
+	animation: pb-breathe 7s ease-in-out infinite;
+}
+.mylogs-pinboard.pb-animate .pb-hero .pb-sun {
+	animation: pb-rise 3.2s cubic-bezier(0.2, 0.7, 0.1, 1) both, pb-breathe 7s ease-in-out 3.2s infinite;
+}
+/* rays: fine spokes around (not over) the sun, turning once every two minutes */
+.mylogs-pinboard .pb-hero .pb-rays {
+	position: absolute;
+	right: calc(84px + 66px - 230px);
+	bottom: calc(-62px + 66px - 230px);
+	width: 460px;
+	height: 460px;
+	border-radius: 50%;
+	background: repeating-conic-gradient(from 0deg, var(--pb-ray) 0deg 0.9deg, transparent 0.9deg 7.5deg);
+	-webkit-mask: radial-gradient(circle, transparent 31%, #000 35%, rgba(0, 0, 0, 0.35) 52%, transparent 68%);
+	mask: radial-gradient(circle, transparent 31%, #000 35%, rgba(0, 0, 0, 0.35) 52%, transparent 68%);
+	z-index: -2;
+	animation: pb-spin 120s linear infinite;
+}
+.mylogs-pinboard .pb-hero .pb-horizon {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 40px;
+	background: linear-gradient(0deg, color-mix(in srgb, var(--pb-sun) 7%, transparent), transparent);
+	z-index: -1;
+}
+/* dark: a deep neutral night sky, the sun glowing low at the horizon */
+body.theme-dark .mylogs-pinboard .pb-hero {
+	border-color: rgba(255, 255, 255, 0.09);
+	background:
+		radial-gradient(520px 230px at calc(100% - 150px) 112%, rgba(240, 138, 75, 0.3), rgba(226, 112, 58, 0.08) 45%, transparent 72%),
+		linear-gradient(180deg, #1a1918 0%, #1f1d1b 70%, #24201d 100%);
+	box-shadow: var(--pb-shadow-lg);
+}
+body.theme-dark .mylogs-pinboard .pb-hero .pb-sun {
+	background: radial-gradient(circle at 50% 34%, #ffc896 0%, #f6a066 26%, #f08a4b 50%, #e2703a 82%);
+	box-shadow:
+		0 0 0 1px rgba(255, 200, 150, 0.25),
+		0 0 22px 6px rgba(240, 138, 75, 0.45),
+		0 0 70px 24px rgba(240, 138, 75, 0.22),
+		0 0 150px 60px rgba(226, 112, 58, 0.1);
+}
+body.theme-dark .mylogs-pinboard .pb-hero .pb-horizon {
+	background: linear-gradient(0deg, rgba(240, 138, 75, 0.1), transparent);
+}
 @keyframes pb-rise {
 	from {
-		transform: translateY(120px) scale(0.92);
-		opacity: 0.4;
+		transform: translateY(70px) scale(0.94);
+		opacity: 0.3;
 	}
 	to {
 		transform: none;
@@ -1941,7 +1395,7 @@
 		transform: scale(1);
 	}
 	50% {
-		transform: scale(1.04);
+		transform: scale(1.035);
 	}
 }
 @keyframes pb-spin {
@@ -1949,51 +1403,1235 @@
 		transform: rotate(360deg);
 	}
 }
-@keyframes pb-twinkle {
-	from {
-		opacity: 0.55;
+
+/* ── health dots and small badges ── */
+.mylogs-pinboard .pb-hdot,
+.mylogs-pinboard-container .pb-detail .pb-hdot {
+	display: inline-block;
+	flex: none;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--pb-none);
+}
+.mylogs-pinboard .pb-hdot.is-none,
+.mylogs-pinboard-container .pb-detail .pb-hdot.is-none {
+	background: transparent;
+	box-shadow: inset 0 0 0 1.5px var(--pb-none);
+}
+.mylogs-pinboard .pb-hdot.is-on-track,
+.mylogs-pinboard-container .pb-detail .pb-hdot.is-on-track {
+	background: var(--pb-on);
+}
+.mylogs-pinboard .pb-hdot.is-at-risk,
+.mylogs-pinboard-container .pb-detail .pb-hdot.is-at-risk {
+	background: var(--pb-risk);
+}
+.mylogs-pinboard .pb-hdot.is-off-track,
+.mylogs-pinboard-container .pb-detail .pb-hdot.is-off-track {
+	background: var(--pb-off);
+}
+/* finished goals: a small rounded square in the result's colour */
+.mylogs-pinboard .pb-hdot.is-ended,
+.mylogs-pinboard-container .pb-detail .pb-hdot.is-ended {
+	border-radius: 2.5px;
+	opacity: 0.8;
+}
+.mylogs-pinboard .pb-hdot.is-ended.st-achieved,
+.mylogs-pinboard-container .pb-detail .pb-hdot.is-ended.st-achieved {
+	background: var(--pb-on);
+}
+.mylogs-pinboard .pb-hdot.is-ended.st-partial,
+.mylogs-pinboard-container .pb-detail .pb-hdot.is-ended.st-partial {
+	background: var(--pb-risk);
+}
+.mylogs-pinboard .pb-hdot.is-ended.st-missed,
+.mylogs-pinboard-container .pb-detail .pb-hdot.is-ended.st-missed {
+	background: var(--pb-off);
+}
+.mylogs-pinboard .pb-area-tag {
+	flex: none;
+	padding: 0 8px;
+	border-radius: 999px;
+	background: var(--pb-soft);
+	color: var(--pb-muted);
+	font-size: 11.5px;
+	font-weight: 500;
+	line-height: 20px;
+}
+.mylogs-pinboard .pb-badge,
+.mylogs-pinboard-container .pb-detail .pb-badge {
+	flex: none;
+	padding: 0 8px;
+	border-radius: 999px;
+	background: var(--pb-soft);
+	color: var(--pb-muted);
+	font-size: 11.5px;
+	font-weight: 500;
+	line-height: 20px;
+}
+.mylogs-pinboard .pb-badge.st-achieved,
+.mylogs-pinboard-container .pb-detail .pb-badge.st-achieved {
+	background: color-mix(in srgb, var(--pb-on) 12%, transparent);
+	color: color-mix(in srgb, var(--pb-on) 80%, var(--pb-ink));
+}
+.mylogs-pinboard .pb-badge.st-partial,
+.mylogs-pinboard-container .pb-detail .pb-badge.st-partial {
+	background: color-mix(in srgb, var(--pb-risk) 16%, transparent);
+	color: color-mix(in srgb, var(--pb-risk) 55%, var(--pb-ink));
+}
+.mylogs-pinboard .pb-badge.st-missed,
+.mylogs-pinboard-container .pb-detail .pb-badge.st-missed {
+	background: color-mix(in srgb, var(--pb-off) 11%, transparent);
+	color: var(--pb-off);
+}
+
+/* ── progress bars ── */
+.mylogs-pinboard .pb-pbar,
+.mylogs-pinboard-container .pb-detail .pb-pbar {
+	position: relative;
+	flex: 1;
+	min-width: 40px;
+	height: 4px;
+	border-radius: 999px;
+	background: var(--pb-track);
+	overflow: hidden;
+}
+.mylogs-pinboard .pb-pbar-fill,
+.mylogs-pinboard-container .pb-detail .pb-pbar-fill {
+	height: 100%;
+	border-radius: inherit;
+	background: var(--pb-fill);
+}
+.mylogs-pinboard .pb-pbar.is-unknown,
+.mylogs-pinboard-container .pb-detail .pb-pbar.is-unknown {
+	background: repeating-linear-gradient(-45deg, var(--pb-track) 0 3px, transparent 3px 6px);
+}
+.mylogs-pinboard-container .pb-detail .pb-pbar.is-big {
+	height: 6px;
+	margin: 14px 0 8px;
+}
+.mylogs-pinboard .pb-pct,
+.mylogs-pinboard-container .pb-detail .pb-pct {
+	flex: none;
+	width: 40px;
+	white-space: nowrap;
+	text-align: right;
+	color: var(--pb-muted);
+	font-size: 12.5px;
+	font-variant-numeric: tabular-nums;
+}
+
+/* ── 목록 ── */
+.mylogs-pinboard .pb-list {
+	border: 1px solid var(--pb-line);
+	border-radius: var(--pb-radius);
+	background: var(--pb-card);
+	box-shadow: var(--pb-shadow);
+	overflow: hidden;
+}
+.mylogs-pinboard .pb-row {
+	position: relative;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 176px 156px 92px 52px;
+	align-items: center;
+	gap: 0 16px;
+	min-height: 44px;
+	padding: 0 20px;
+	border-top: 1px solid var(--pb-line);
+	cursor: pointer;
+	transition: background-color 100ms ease;
+}
+.mylogs-pinboard .pb-row:first-child {
+	border-top: none;
+}
+.mylogs-pinboard .pb-row:hover {
+	background-color: var(--pb-hover);
+}
+.mylogs-pinboard .pb-row:focus-visible {
+	outline: 2px solid color-mix(in srgb, var(--pb-sun) 70%, transparent);
+	outline-offset: -2px;
+}
+.mylogs-pinboard .pb-row.is-open {
+	background-color: color-mix(in srgb, var(--pb-sun) 7%, transparent);
+}
+.mylogs-pinboard .pb-row.is-open::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	top: 8px;
+	bottom: 8px;
+	width: 2px;
+	border-radius: 0 2px 2px 0;
+	background: var(--pb-sun);
+}
+.mylogs-pinboard .pb-row.is-head,
+.mylogs-pinboard .pb-row.is-group {
+	min-height: 36px;
+	background-color: var(--pb-soft);
+	color: var(--pb-muted);
+	font-size: 11.5px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	cursor: default;
+}
+.mylogs-pinboard .pb-row.is-head .pb-c-prog,
+.mylogs-pinboard .pb-row.is-head .pb-c-rel {
+	display: block;
+}
+.mylogs-pinboard .pb-row.is-head .pb-c-rel {
+	text-align: right;
+}
+.mylogs-pinboard .pb-row.is-group {
+	margin-top: 0;
+	border-top-color: var(--pb-line-strong);
+	font-weight: 500;
+	letter-spacing: 0;
+}
+.mylogs-pinboard .pb-row.is-placeholder {
+	cursor: default;
+	background: none;
+	font-size: 13px;
+}
+.mylogs-pinboard .pb-row.is-main {
+	min-height: 54px;
+	font-size: 14.5px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+}
+.mylogs-pinboard .pb-row.is-main:not(:first-child) {
+	border-top-color: var(--pb-line-strong);
+}
+/* Sub rows: lighter, with an inset divider and a thin guide line under the Main */
+.mylogs-pinboard .pb-row.is-sub {
+	min-height: 42px;
+	border-top-color: transparent;
+	background-image: linear-gradient(var(--pb-line), var(--pb-line));
+	background-size: calc(100% - 58px) 1px;
+	background-position: right top;
+	background-repeat: no-repeat;
+	font-size: 13.5px;
+}
+.mylogs-pinboard .pb-row.is-sub .pb-c-title {
+	padding-left: 34px;
+}
+.mylogs-pinboard .pb-row.is-sub:not(.is-orphan) .pb-c-title::before {
+	content: "";
+	position: absolute;
+	left: 46px;
+	top: 0;
+	bottom: 0;
+	width: 1px;
+	background: var(--pb-line-strong);
+}
+.mylogs-pinboard .pb-row.is-sub.is-orphan {
+	background-size: calc(100% - 40px) 1px;
+}
+.mylogs-pinboard .pb-row.is-sub.is-orphan .pb-c-title {
+	padding-left: 6px;
+}
+.mylogs-pinboard .pb-cell {
+	min-width: 0;
+}
+.mylogs-pinboard .pb-c-title {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+.mylogs-pinboard .pb-row-title,
+.mylogs-pinboard-container .pb-detail .pb-row-title {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.mylogs-pinboard .pb-row.st-paused .pb-row-title {
+	color: var(--pb-muted);
+}
+.mylogs-pinboard .pb-row.st-dropped .pb-row-title,
+.mylogs-pinboard-container .pb-detail .pb-d-subrow.st-dropped .pb-row-title {
+	color: var(--pb-faint);
+	text-decoration: line-through;
+}
+/* finished goals read quieter: grey bar, softer numbers */
+.mylogs-pinboard .pb-row:is(.st-achieved, .st-partial, .st-missed, .st-dropped, .st-paused) .pb-pbar-fill,
+.mylogs-pinboard-container .pb-detail .pb-d-subrow:is(.st-achieved, .st-partial, .st-missed, .st-dropped, .st-paused) .pb-pbar-fill {
+	background: var(--pb-faint);
+}
+.mylogs-pinboard .pb-row:is(.st-achieved, .st-partial, .st-missed, .st-dropped) .pb-pct {
+	color: var(--pb-muted);
+	font-weight: 500;
+}
+.mylogs-pinboard button.pb-fold {
+	flex: none;
+	width: 22px;
+	height: 22px;
+	margin-left: -6px;
+	margin-right: -4px;
+	padding: 0;
+	border-radius: 6px;
+	color: var(--pb-faint);
+}
+.mylogs-pinboard button.pb-fold:hover {
+	color: var(--pb-ink);
+	background: var(--pb-soft) !important;
+}
+.mylogs-pinboard button.pb-fold svg {
+	width: 14px;
+	height: 14px;
+}
+.mylogs-pinboard .pb-c-prog {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+.mylogs-pinboard .pb-row.is-main .pb-pct {
+	color: var(--pb-ink);
+	font-weight: 600;
+}
+.mylogs-pinboard .pb-c-val,
+.mylogs-pinboard .pb-c-due {
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	font-size: 13px;
+	font-weight: 400;
+	letter-spacing: 0;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-pinboard .pb-c-due {
+	color: var(--pb-muted);
+}
+.mylogs-pinboard .pb-c-due.is-none {
+	color: var(--pb-faint);
+}
+.mylogs-pinboard .pb-c-due.is-soon {
+	color: var(--pb-warn);
+	font-weight: 500;
+}
+.mylogs-pinboard .pb-c-due.is-over {
+	color: var(--pb-off);
+	font-weight: 500;
+}
+.mylogs-pinboard .pb-c-rel {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 5px;
+	color: var(--pb-muted);
+	font-size: 12.5px;
+	font-weight: 400;
+}
+.mylogs-pinboard .pb-c-rel > .pb-muted {
+	color: var(--pb-faint);
+}
+.mylogs-pinboard .pb-rel-count {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-pinboard .pb-rel-count .pb-rel-icon {
+	color: var(--pb-faint);
+}
+.mylogs-pinboard .pb-warn-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--pb-warn);
+}
+.mylogs-pinboard .pb-foot {
+	margin-top: 16px;
+	padding: 0 4px;
+	color: var(--pb-faint);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-pinboard .pb-missing {
+	margin-bottom: 16px;
+	padding: 16px 20px;
+	border: 1px dashed color-mix(in srgb, var(--pb-warn) 40%, transparent);
+	border-radius: var(--pb-radius);
+	background: color-mix(in srgb, var(--pb-warn) 4%, var(--pb-card));
+}
+.mylogs-pinboard .pb-missing-title {
+	font-size: 14px;
+	font-weight: 600;
+}
+.mylogs-pinboard .pb-missing .pb-note {
+	margin-top: 2px;
+	color: var(--pb-muted);
+	font-size: 12px;
+}
+.mylogs-pinboard .pb-missing ul {
+	margin: 10px 0 0;
+	padding-left: 18px;
+	columns: 2 280px;
+	column-gap: 28px;
+	font-size: 13px;
+}
+.mylogs-pinboard .pb-missing li {
+	margin: 3px 0;
+	break-inside: avoid;
+}
+.mylogs-pinboard .pb-missing li::marker {
+	color: var(--pb-faint);
+}
+.mylogs-pinboard .pb-missing .pb-gid {
+	margin-right: 6px;
+}
+.mylogs-pinboard .pb-empty {
+	padding: 56px 16px;
+	text-align: center;
+	color: var(--pb-muted);
+}
+.mylogs-pinboard .pb-empty-title {
+	margin-bottom: 8px;
+	color: var(--pb-ink);
+	font-size: 16px;
+	font-weight: 600;
+}
+
+/* ── 상세 패널 (slide-over) ── */
+.mylogs-pinboard-container .pb-detail-layer {
+	display: none;
+	position: absolute;
+	inset: 0;
+	z-index: 5;
+	pointer-events: none;
+}
+.mylogs-pinboard-container .pb-detail-layer.is-open {
+	display: block;
+}
+.mylogs-pinboard-container .pb-scrim {
+	position: absolute;
+	inset: 0;
+	background: rgba(43, 38, 33, 0.12);
+	pointer-events: auto;
+}
+body.theme-dark .mylogs-pinboard-container .pb-scrim {
+	background: rgba(0, 0, 0, 0.4);
+}
+.mylogs-pinboard-container .pb-detail {
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	display: flex;
+	flex-direction: column;
+	width: min(860px, 94%);
+	border-left: 1px solid var(--pb-line-strong);
+	background: var(--pb-bg);
+	box-shadow: -28px 0 56px -28px rgba(43, 30, 20, 0.35);
+	color: var(--pb-ink);
+	font-family: var(--pb-font);
+	font-size: 14px;
+	line-height: 1.55;
+	letter-spacing: -0.005em;
+	word-break: keep-all;
+	overflow-wrap: anywhere;
+	-webkit-font-smoothing: antialiased;
+	pointer-events: auto;
+	outline: none;
+}
+.mylogs-pinboard-container .pb-detail-layer.is-entering .pb-detail {
+	animation: pb-slide-in 0.2s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.mylogs-pinboard-container .pb-detail-layer.is-entering .pb-scrim {
+	animation: pb-fade-in 0.2s ease-out;
+}
+.mylogs-pinboard-container .pb-d-bar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	min-height: 50px;
+	padding: 8px 12px 8px 28px;
+	border-bottom: 1px solid var(--pb-line);
+	background: var(--pb-bg);
+}
+.mylogs-pinboard-container .pb-d-crumb {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	color: var(--pb-muted);
+	font-size: 13px;
+}
+.mylogs-pinboard-container .pb-d-crumb .pb-linkish {
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+.mylogs-pinboard-container .pb-d-kind {
+	flex: none;
+	color: var(--pb-ink);
+	font-size: 11.5px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+.mylogs-pinboard-container .pb-d-sep {
+	color: var(--pb-faint);
+}
+.mylogs-pinboard-container .pb-d-acts {
+	display: flex;
+	flex: none;
+	gap: 2px;
+}
+.mylogs-pinboard-container button.pb-d-btn {
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border-radius: var(--pb-radius-sm);
+	color: var(--pb-muted);
+}
+.mylogs-pinboard-container button.pb-d-btn:hover {
+	background: var(--pb-soft) !important;
+	color: var(--pb-ink);
+}
+.mylogs-pinboard-container .pb-d-scroll {
+	flex: 1;
+	overflow-y: auto;
+}
+.mylogs-pinboard-container .pb-d-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 228px;
+	gap: 28px;
+	padding: 26px 28px 56px;
+}
+.mylogs-pinboard-container .pb-d-title {
+	display: flex;
+	align-items: baseline;
+	gap: 12px;
+	margin: 0 0 14px;
+	color: var(--pb-ink);
+	font-size: 23px;
+	font-weight: 700;
+	line-height: 1.3;
+	letter-spacing: -0.025em;
+}
+.mylogs-pinboard-container .pb-d-title .pb-hdot {
+	width: 10px;
+	height: 10px;
+	transform: translateY(-3px);
+}
+.mylogs-pinboard-container .pb-d-pickers {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 20px;
+}
+.mylogs-pinboard-container button.pb-status-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 30px;
+	padding: 0 10px 0 12px;
+	border: 1px solid var(--pb-line-strong);
+	border-radius: var(--pb-radius-sm);
+	background: var(--pb-card);
+	box-shadow: var(--pb-shadow-sm);
+	color: var(--pb-ink);
+	font-size: 13px;
+	font-weight: 500;
+	cursor: pointer;
+}
+.mylogs-pinboard-container button.pb-status-btn:hover {
+	background: var(--pb-sunk);
+}
+.mylogs-pinboard-container .pb-caret {
+	display: inline-flex;
+	color: var(--pb-faint);
+}
+.mylogs-pinboard-container .pb-caret svg {
+	width: 12px;
+	height: 12px;
+}
+.mylogs-pinboard-container .pb-health-seg,
+.mylogs-pinboard-container .pb-verify-seg {
+	display: inline-flex;
+	padding: 2px;
+	gap: 2px;
+	border: 1px solid var(--pb-line-strong);
+	border-radius: var(--pb-radius-sm);
+	background: var(--pb-card);
+	box-shadow: var(--pb-shadow-sm);
+	overflow: hidden;
+}
+.mylogs-pinboard-container .pb-health-seg.is-disabled {
+	padding: 0;
+	border: none;
+	background: none;
+	box-shadow: none;
+	font-size: 12px;
+}
+.mylogs-pinboard-container button.pb-hseg,
+.mylogs-pinboard-container button.pb-vseg {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 26px;
+	padding: 0 10px;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	box-shadow: none;
+	color: var(--pb-muted);
+	font-size: 13px;
+	font-weight: 500;
+	cursor: pointer;
+}
+.mylogs-pinboard-container button.pb-hseg:hover,
+.mylogs-pinboard-container button.pb-vseg:hover {
+	background: var(--pb-soft);
+	color: var(--pb-ink);
+}
+.mylogs-pinboard-container button.pb-hseg.is-active,
+.mylogs-pinboard-container button.pb-vseg.is-active {
+	background: var(--pb-sunk);
+	color: var(--pb-ink);
+	font-weight: 600;
+}
+.mylogs-pinboard-container button.pb-hseg.is-on-track.is-active {
+	background: color-mix(in srgb, var(--pb-on) 14%, transparent);
+}
+.mylogs-pinboard-container button.pb-hseg.is-at-risk.is-active {
+	background: color-mix(in srgb, var(--pb-risk) 18%, transparent);
+}
+.mylogs-pinboard-container button.pb-hseg.is-off-track.is-active {
+	background: color-mix(in srgb, var(--pb-off) 13%, transparent);
+}
+.mylogs-pinboard-container .pb-card {
+	margin-bottom: 14px;
+	padding: 18px 20px;
+	border: 1px solid var(--pb-line);
+	border-radius: var(--pb-radius);
+	background: var(--pb-card);
+	box-shadow: var(--pb-shadow-sm);
+}
+.mylogs-pinboard-container .pb-card-title {
+	margin-bottom: 10px;
+	color: var(--pb-muted);
+	font-size: 11.5px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+}
+.mylogs-pinboard-container .pb-note {
+	margin-top: 4px;
+	color: var(--pb-muted);
+	font-size: 12px;
+	line-height: 1.5;
+}
+.mylogs-pinboard-container .pb-bignum {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 6px 14px;
+	font-size: 14px;
+}
+.mylogs-pinboard-container .pb-bignum > b {
+	color: var(--pb-ink);
+	font-size: 34px;
+	font-weight: 700;
+	line-height: 1.05;
+	letter-spacing: -0.035em;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-pinboard-container .pb-path {
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-pinboard-container .pb-cur {
+	padding: 0 2px;
+	border-bottom: 1px dashed var(--pb-faint);
+	color: var(--pb-ink);
+	font-weight: 600;
+	cursor: text;
+}
+.mylogs-pinboard-container .pb-cur:hover,
+.mylogs-pinboard-container .pb-cur:focus-visible {
+	border-bottom-color: var(--pb-sun);
+	color: var(--pb-sun);
+	outline: none;
+}
+.mylogs-pinboard-container .pb-cur.is-need {
+	color: var(--pb-warn);
+	font-weight: 500;
+}
+.mylogs-pinboard-container .pb-cur.is-editing {
+	border: none;
+}
+.mylogs-pinboard-container .pb-cur input.pb-input {
+	width: 9em;
+	height: 28px;
+}
+.mylogs-pinboard-container .pb-detail input.pb-input,
+.mylogs-pinboard-container .pb-detail textarea.pb-input,
+.mylogs-pinboard-container .pb-detail select {
+	border: 1px solid var(--pb-line-strong);
+	border-radius: var(--pb-radius-sm);
+	background-color: var(--pb-card);
+	box-shadow: none;
+	color: var(--pb-ink);
+}
+.mylogs-pinboard-container .pb-detail input.pb-input,
+.mylogs-pinboard-container .pb-detail textarea.pb-input {
+	width: 100%;
+	font-size: 13px;
+}
+.mylogs-pinboard-container .pb-detail input.pb-input:focus,
+.mylogs-pinboard-container .pb-detail textarea.pb-input:focus,
+.mylogs-pinboard-container .pb-detail select:focus {
+	border-color: color-mix(in srgb, var(--pb-sun) 60%, transparent);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--pb-sun) 15%, transparent);
+	outline: none;
+}
+.mylogs-pinboard-container .pb-detail input.pb-input::placeholder,
+.mylogs-pinboard-container .pb-detail textarea.pb-input::placeholder {
+	color: var(--pb-faint);
+}
+.mylogs-pinboard-container .pb-detail textarea.pb-input {
+	min-height: 3.4em;
+	padding: 8px 10px;
+	resize: vertical;
+	font-family: inherit;
+	line-height: 1.5;
+}
+
+/* 시간 흐름 chart */
+.mylogs-pinboard-container .pb-chart {
+	margin-top: 16px;
+	padding-top: 14px;
+	border-top: 1px solid var(--pb-line);
+}
+.mylogs-pinboard-container .pb-chart-svg {
+	display: block;
+	width: 100%;
+	height: auto;
+	overflow: visible;
+}
+.mylogs-pinboard-container .pb-chart-empty {
+	font-size: 12px;
+}
+.mylogs-pinboard-container .pb-ch-grid {
+	stroke: var(--pb-line);
+	stroke-width: 1;
+}
+.mylogs-pinboard-container .pb-ch-label {
+	fill: var(--pb-faint);
+	font-family: var(--pb-font);
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-pinboard-container .pb-ch-label.is-target {
+	fill: var(--pb-muted);
+	font-weight: 600;
+}
+.mylogs-pinboard-container .pb-ch-target {
+	stroke: var(--pb-muted);
+	stroke-opacity: 0.7;
+	stroke-width: 1;
+	stroke-dasharray: 3 4;
+}
+.mylogs-pinboard-container .pb-ch-today {
+	stroke: var(--pb-sun);
+	stroke-opacity: 0.55;
+	stroke-width: 1;
+	stroke-dasharray: 2 3;
+}
+.mylogs-pinboard-container .pb-ch-line {
+	fill: none;
+	stroke: var(--pb-fill);
+	stroke-width: 1.75;
+	stroke-linejoin: round;
+	stroke-linecap: round;
+}
+.mylogs-pinboard-container .pb-ch-pt {
+	fill: var(--pb-fill);
+	stroke: var(--pb-card);
+	stroke-width: 2;
+}
+.mylogs-pinboard-container .pb-ch-pt.is-on-track {
+	fill: var(--pb-on);
+}
+.mylogs-pinboard-container .pb-ch-pt.is-at-risk {
+	fill: var(--pb-risk);
+}
+.mylogs-pinboard-container .pb-ch-pt.is-off-track {
+	fill: var(--pb-off);
+}
+.mylogs-pinboard-container .pb-ch-pt.is-base {
+	fill: var(--pb-card);
+	stroke: var(--pb-muted);
+	stroke-width: 1.5;
+}
+
+/* 설명, Sub 목록, 관련 업무 */
+.mylogs-pinboard-container .pb-d-label {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 6px;
+	color: var(--pb-ink);
+	font-size: 12.5px;
+	font-weight: 600;
+}
+.mylogs-pinboard-container .pb-d-label .pb-rel-icon {
+	color: var(--pb-muted);
+}
+.mylogs-pinboard-container .pb-d-desc + .pb-d-desc,
+.mylogs-pinboard-container .pb-rel-group + .pb-rel-group {
+	margin-top: 16px;
+}
+.mylogs-pinboard-container .pb-card > .pb-note + .pb-rel-group {
+	margin-top: 14px;
+}
+.mylogs-pinboard-container .pb-d-desc ul,
+.mylogs-pinboard-container .pb-rel-group ul {
+	margin: 0;
+	padding-left: 18px;
+}
+.mylogs-pinboard-container .pb-d-desc li,
+.mylogs-pinboard-container .pb-rel-group li {
+	margin: 4px 0;
+}
+.mylogs-pinboard-container .pb-d-desc li::marker,
+.mylogs-pinboard-container .pb-rel-group li::marker {
+	color: var(--pb-faint);
+}
+.mylogs-pinboard-container .pb-d-subrow {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin: 0 -10px;
+	padding: 8px 10px;
+	border-radius: var(--pb-radius-sm);
+	cursor: pointer;
+}
+.mylogs-pinboard-container .pb-d-subrow + .pb-d-subrow {
+	box-shadow: 0 -1px 0 var(--pb-line);
+}
+.mylogs-pinboard-container .pb-d-subrow:hover {
+	background: var(--pb-hover);
+	box-shadow: none;
+}
+.mylogs-pinboard-container .pb-d-subrow .pb-row-title {
+	flex: 1;
+}
+.mylogs-pinboard-container .pb-d-subprog {
+	display: flex;
+	flex: none;
+	align-items: center;
+	gap: 10px;
+	width: 156px;
+}
+.mylogs-pinboard-container .pb-weight {
+	color: var(--pb-faint);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-pinboard-container .pb-rel-group.is-memo li {
+	color: var(--pb-muted);
+}
+.mylogs-pinboard-container .pb-rel-item {
+	line-height: 1.8;
+}
+.mylogs-pinboard-container .pb-detail a.internal-link {
+	color: var(--pb-ink);
+	text-decoration: underline;
+	text-decoration-color: color-mix(in srgb, var(--pb-sun) 45%, transparent);
+	text-decoration-thickness: 1px;
+	text-underline-offset: 3px;
+}
+.mylogs-pinboard-container .pb-detail a.internal-link:hover {
+	color: var(--pb-sun);
+	text-decoration-color: var(--pb-sun);
+}
+.mylogs-pinboard-container .pb-rel-status {
+	margin-left: 8px;
+	color: var(--pb-faint);
+	font-size: 12px;
+}
+.mylogs-pinboard-container .pb-rel-warn {
+	margin-left: 8px;
+	padding: 1px 7px;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--pb-warn) 11%, transparent);
+	color: var(--pb-warn);
+	font-size: 11.5px;
+	font-weight: 500;
+}
+
+.mylogs-pinboard-container .pb-rel-acts {
+	display: inline-flex;
+	gap: 4px;
+	margin-left: 8px;
+	vertical-align: middle;
+}
+.mylogs-pinboard-container .pb-rel-add {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 10px;
+}
+.mylogs-pinboard-container button.pb-small-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	height: 26px;
+	padding: 0 10px;
+	border: 1px solid var(--pb-line-strong);
+	border-radius: 7px;
+	background: var(--pb-card);
+	box-shadow: none;
+	color: var(--pb-ink);
+	font-size: 12px;
+	font-weight: 500;
+	cursor: pointer;
+}
+.mylogs-pinboard-container button.pb-small-btn:hover {
+	background: var(--pb-sunk);
+}
+.mylogs-pinboard-container button.pb-small-btn .pb-btn-icon svg {
+	width: 13px;
+	height: 13px;
+	color: var(--pb-muted);
+}
+/* 진척 기록 */
+.mylogs-pinboard-container .pb-upd-meta {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 10px;
+	color: var(--pb-muted);
+	font-size: 12px;
+}
+.mylogs-pinboard-container .pb-hpill {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--pb-ink);
+	font-weight: 600;
+}
+.mylogs-pinboard-container .pb-upd-date,
+.mylogs-pinboard-container .pb-upd-val {
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-pinboard-container .pb-upd-val {
+	color: var(--pb-ink);
+	font-weight: 600;
+}
+.mylogs-pinboard-container .pb-verify {
+	padding: 0 7px;
+	border: 1px solid var(--pb-line-strong);
+	border-radius: 999px;
+	font-size: 11px;
+	line-height: 18px;
+}
+.mylogs-pinboard-container .pb-verify.is-checked {
+	border-color: color-mix(in srgb, var(--pb-on) 40%, transparent);
+	background: color-mix(in srgb, var(--pb-on) 8%, transparent);
+	color: color-mix(in srgb, var(--pb-on) 85%, var(--pb-ink));
+}
+.mylogs-pinboard-container .pb-upd-text {
+	margin-top: 4px;
+	color: var(--pb-ink);
+}
+.mylogs-pinboard-container .pb-upd.is-big .pb-upd-text {
+	font-size: 15px;
+	line-height: 1.5;
+}
+.mylogs-pinboard-container .pb-upd-ev {
+	margin-top: 3px;
+	color: var(--pb-faint);
+	font-size: 12px;
+}
+.mylogs-pinboard-container button.pb-add-update {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 30px;
+	padding: 0 12px 0 10px;
+	border: 1px solid var(--pb-line-strong);
+	border-radius: var(--pb-radius-sm);
+	background: var(--pb-card);
+	box-shadow: var(--pb-shadow-sm);
+	color: var(--pb-ink);
+	font-size: 13px;
+	font-weight: 500;
+	cursor: pointer;
+}
+.mylogs-pinboard-container button.pb-add-update:hover {
+	background: var(--pb-sunk);
+}
+.mylogs-pinboard-container .pb-timeline {
+	margin: 16px 0 0 4px;
+	padding-left: 18px;
+	border-left: 1px solid var(--pb-line-strong);
+}
+.mylogs-pinboard-container .pb-tl-item {
+	position: relative;
+	padding: 8px 0 10px;
+	cursor: context-menu;
+}
+.mylogs-pinboard-container .pb-tl-item + .pb-tl-item {
+	border-top: 1px dashed var(--pb-line);
+}
+.mylogs-pinboard-container .pb-tl-item::before {
+	content: "";
+	position: absolute;
+	top: 13px;
+	left: -23px;
+	width: 9px;
+	height: 9px;
+	border: 1.5px solid var(--pb-faint);
+	border-radius: 50%;
+	background: var(--pb-card);
+}
+.mylogs-pinboard-container .pb-tl-item:has(.pb-hpill.is-on-track)::before {
+	border-color: var(--pb-on);
+	background: var(--pb-on);
+}
+.mylogs-pinboard-container .pb-tl-item:has(.pb-hpill.is-at-risk)::before {
+	border-color: var(--pb-risk);
+	background: var(--pb-risk);
+}
+.mylogs-pinboard-container .pb-tl-item:has(.pb-hpill.is-off-track)::before {
+	border-color: var(--pb-off);
+	background: var(--pb-off);
+}
+.mylogs-pinboard-container .pb-form {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	margin-top: 12px;
+	padding: 14px 16px;
+	border: 1px solid var(--pb-line);
+	border-radius: 10px;
+	background: var(--pb-bg);
+}
+.mylogs-pinboard-container .pb-form-field {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	min-width: 0;
+}
+.mylogs-pinboard-container .pb-form-field > label {
+	color: var(--pb-muted);
+	font-size: 12px;
+	font-weight: 600;
+}
+.mylogs-pinboard-container .pb-form-field select {
+	align-self: flex-start;
+}
+.mylogs-pinboard-container .pb-verify-seg {
+	align-self: flex-start;
+}
+.mylogs-pinboard-container .pb-form-err {
+	color: var(--pb-off);
+	font-size: 12px;
+}
+.mylogs-pinboard-container .pb-form-err:empty {
+	display: none;
+}
+.mylogs-pinboard-container .pb-form-btns {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+}
+.mylogs-pinboard-container .pb-form-btns button {
+	height: 32px;
+	padding: 0 14px;
+	border-radius: var(--pb-radius-sm);
+	font-size: 13px;
+}
+.mylogs-pinboard-container .pb-form-btns button:not(.mod-cta) {
+	border: 1px solid var(--pb-line-strong);
+	background: var(--pb-card);
+	box-shadow: none;
+	color: var(--pb-ink);
+}
+/* the primary button is ink on paper, not a coloured block */
+.mylogs-pinboard-container .pb-detail button.mod-cta {
+	border: none;
+	background: var(--pb-ink);
+	box-shadow: var(--pb-shadow-sm);
+	color: var(--pb-bg);
+	font-weight: 600;
+}
+.mylogs-pinboard-container .pb-detail button.mod-cta:hover {
+	background: color-mix(in srgb, var(--pb-ink) 86%, var(--pb-bg));
+}
+
+/* side column */
+.mylogs-pinboard-container .pb-d-side {
+	font-size: 13px;
+}
+.mylogs-pinboard-container .pb-d-props {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	gap: 9px 14px;
+	margin: 0 0 18px;
+	padding: 16px 18px;
+	border: 1px solid var(--pb-line);
+	border-radius: var(--pb-radius);
+	background: var(--pb-card);
+	box-shadow: var(--pb-shadow-sm);
+}
+.mylogs-pinboard-container .pb-d-props dt {
+	color: var(--pb-muted);
+	font-size: 12px;
+	line-height: 20px;
+	white-space: nowrap;
+}
+.mylogs-pinboard-container .pb-d-props dd {
+	margin: 0;
+	color: var(--pb-ink);
+	line-height: 20px;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-pinboard-container .pb-dd {
+	color: var(--pb-muted);
+}
+.mylogs-pinboard-container .pb-dd.is-soon {
+	color: var(--pb-warn);
+	font-weight: 500;
+}
+.mylogs-pinboard-container .pb-dd.is-over {
+	color: var(--pb-off);
+	font-weight: 500;
+}
+.mylogs-pinboard-container .pb-d-side-btns {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.mylogs-pinboard-container .pb-d-side-btns button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	height: 34px;
+	border-radius: var(--pb-radius-sm);
+	font-size: 13px;
+	cursor: pointer;
+}
+.mylogs-pinboard-container .pb-d-side-btns button:not(.mod-cta) {
+	border: 1px solid var(--pb-line-strong);
+	background: var(--pb-card);
+	box-shadow: none;
+	color: var(--pb-ink);
+}
+.mylogs-pinboard-container .pb-d-side-btns button:not(.mod-cta):hover {
+	background: var(--pb-sunk);
+}
+
+/* ── narrow panes (sidebar, split view) ── */
+@container pbview (max-width: 780px) {
+	.mylogs-pinboard .pb-page {
+		padding: 18px 18px 56px;
 	}
-	to {
-		opacity: 1;
+	.mylogs-pinboard .pb-row {
+		grid-template-columns: minmax(0, 1fr) 132px 76px;
+		padding: 0 16px;
+	}
+	.mylogs-pinboard .pb-c-val,
+	.mylogs-pinboard .pb-c-rel {
+		display: none !important;
+	}
+	.mylogs-pinboard .pb-hero .pb-yearbar,
+	.mylogs-pinboard .pb-hero .pb-summary {
+		padding-right: 150px;
+	}
+	.mylogs-pinboard .pb-hero .pb-sun {
+		right: 40px;
+		bottom: -52px;
+		width: 104px;
+		height: 104px;
+	}
+	.mylogs-pinboard .pb-hero .pb-rays {
+		right: calc(40px + 52px - 190px);
+		bottom: calc(-52px + 52px - 190px);
+		width: 380px;
+		height: 380px;
+	}
+	.mylogs-pinboard-container .pb-detail {
+		width: 100%;
+	}
+	.mylogs-pinboard-container .pb-d-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.mylogs-pinboard-container .pb-d-side {
+		order: -1;
 	}
 }
-@keyframes pb-grow {
-	from {
-		width: 0;
+@container pbview (max-width: 480px) {
+	.mylogs-pinboard .pb-page {
+		padding: 12px 10px 48px;
+	}
+	.mylogs-pinboard .pb-hero {
+		padding: 18px 18px 18px;
+	}
+	.mylogs-pinboard .pb-hero .pb-yearbar,
+	.mylogs-pinboard .pb-hero .pb-summary {
+		padding-right: 0;
+	}
+	.mylogs-pinboard .pb-hero .pb-summary {
+		gap: 4px 12px;
+	}
+	.mylogs-pinboard .pb-hero .pb-sun {
+		right: 18px;
+		bottom: -60px;
+		width: 92px;
+		height: 92px;
+		opacity: 0.85;
+	}
+	.mylogs-pinboard .pb-hero .pb-rays {
+		right: calc(18px + 46px - 160px);
+		bottom: calc(-60px + 46px - 160px);
+		width: 320px;
+		height: 320px;
+	}
+	.mylogs-pinboard .pb-row {
+		grid-template-columns: minmax(0, 1fr) 96px;
+		padding: 0 12px;
+	}
+	.mylogs-pinboard .pb-c-due {
+		display: none;
+	}
+	.mylogs-pinboard .pb-row.is-sub .pb-c-title {
+		padding-left: 22px;
+	}
+	.mylogs-pinboard .pb-row.is-sub:not(.is-orphan) .pb-c-title::before {
+		left: 30px;
+	}
+	.mylogs-pinboard .pb-area-tag {
+		display: none;
+	}
+	.mylogs-pinboard-container .pb-d-grid {
+		padding: 18px 14px 40px;
+	}
+	.mylogs-pinboard-container .pb-d-subprog {
+		width: 96px;
 	}
 }
-@keyframes pb-up {
+
+@keyframes pb-slide-in {
 	from {
-		transform: translateY(14px);
+		transform: translateX(32px);
 		opacity: 0;
 	}
-	to {
-		transform: none;
-		opacity: 1;
-	}
 }
-@keyframes pb-pulse {
-	0%,
-	100% {
-		opacity: 1;
-	}
-	50% {
-		opacity: 0.45;
-	}
-}
-@keyframes pb-sheen {
-	0% {
-		transform: translateX(-100%);
-	}
-	60%,
-	100% {
-		transform: translateX(100%);
+@keyframes pb-fade-in {
+	from {
+		opacity: 0;
 	}
 }
 @media (prefers-reduced-motion: reduce) {
-	.mylogs-pinboard *,
-	.mylogs-pinboard *::before,
-	.mylogs-pinboard *::after {
+	.mylogs-pinboard-container *,
+	.mylogs-pinboard-container *::before,
+	.mylogs-pinboard-container *::after {
 		animation: none !important;
 	}
 }
@@ -4511,13 +5149,6 @@
 .mylogs-delete-modal .mylogs-delete-notes p { margin: 2px 0; font-size: var(--font-ui-small); }
 .mylogs-delete-modal .mylogs-delete-alt { font-style: italic; }
 
-/* Pinboard: ⋯ menu (수정·삭제), shown on hover; long-press / right-click also opens it */
-.mylogs-pinboard .pb-more { opacity: 0; border: none; background: transparent; box-shadow: none; padding: 0 6px; height: auto; min-height: 0; cursor: pointer; color: var(--text-muted); font-size: 1em; line-height: 1.2; transition: opacity .15s; }
-.mylogs-pinboard .pb-goal-head:hover .pb-more,
-.mylogs-pinboard .pb-kr:hover .pb-more,
-.mylogs-pinboard .pb-more:focus-visible { opacity: 1; }
-.is-mobile .mylogs-pinboard .pb-more { opacity: .6; }
-.mylogs-pinboard .pb-log li { cursor: context-menu; }
 
 /* ===== Drawer view ===== */
 /*
@@ -7391,9 +8022,8 @@ body.is-mobile .mylogs-touch .wc-item,
 body.is-mobile .mylogs-touch .pf-card,
 body.is-mobile .mylogs-touch .dy-row,
 body.is-mobile .mylogs-touch .tb-row,
-body.is-mobile .mylogs-touch .pb-kr,
-body.is-mobile .mylogs-touch .pb-goal-head,
-body.is-mobile .mylogs-touch .pb-log li {
+body.is-mobile .mylogs-touch .pb-row,
+body.is-mobile .mylogs-touch .pb-tl-item {
 	-webkit-touch-callout: none;
 	-webkit-user-select: none;
 	user-select: none;
@@ -8041,30 +8671,48 @@ body.is-mobile .mylogs-my-life {
 	padding-bottom: calc(48px + var(--mylogs-kb, 0px));
 }
 
-/* ── Pinboard: full-width cards, tappable inputs ── */
-body.is-mobile .mylogs-pinboard .pb-grid {
-	grid-template-columns: minmax(0, 1fr);
+/* ── Pinboard: bigger rows and buttons, the goal panel full screen ── */
+body.is-mobile .mylogs-pinboard .pb-row {
+	min-height: 48px;
 }
-body.is-mobile .mylogs-pinboard .pb-more {
+body.is-mobile .mylogs-pinboard button.pb-tab {
+	height: 36px;
+}
+body.is-mobile .mylogs-pinboard button.pb-fold {
+	width: 36px;
+	height: 36px;
+}
+body.is-mobile .mylogs-pinboard-container .pb-scrim {
+	display: none;
+}
+body.is-mobile .mylogs-pinboard-container .pb-detail {
+	width: 100%;
+	border-left: none;
+	box-shadow: none;
+}
+body.is-mobile .mylogs-pinboard-container .pb-d-grid {
+	grid-template-columns: minmax(0, 1fr);
+	padding-bottom: calc(48px + var(--mylogs-kb, 0px));
+}
+body.is-mobile .mylogs-pinboard-container button.pb-d-btn {
 	min-width: 44px;
 	min-height: 44px;
-	opacity: 1;
-	font-size: 18px;
 }
-body.is-mobile .mylogs-pinboard input.pb-input,
-body.is-mobile .mylogs-pinboard input.pb-log-input {
+body.is-mobile .mylogs-pinboard-container button.pb-hseg,
+body.is-mobile .mylogs-pinboard-container button.pb-vseg,
+body.is-mobile .mylogs-pinboard-container button.pb-status-btn,
+body.is-mobile .mylogs-pinboard-container button.pb-add-update,
+body.is-mobile .mylogs-pinboard-container button.pb-small-btn {
+	height: 40px;
+}
+body.is-mobile .mylogs-pinboard-container .pb-detail input.pb-input,
+body.is-mobile .mylogs-pinboard-container .pb-detail textarea.pb-input,
+body.is-mobile .mylogs-pinboard-container .pb-detail select {
 	min-height: 44px;
 	font-size: 16px;
 }
-body.is-mobile .mylogs-pinboard button.pb-log-add {
-	min-height: 44px;
-}
-body.is-mobile .mylogs-pinboard .pb-log li {
-	padding-top: 6px;
-	padding-bottom: 6px;
-}
-body.is-mobile .mylogs-pinboard .pb-status {
-	min-height: 32px;
+body.is-mobile .mylogs-pinboard-container .pb-tl-item {
+	padding: 8px 0;
 }
 
 /* ── Toolbox: one card per skill, status as a picker (src/toolbox/mobile.ts) ── */
@@ -8148,4 +8796,669 @@ body.is-mobile .mylogs-toolbox .tb-m-caret {
 }
 body.is-mobile .mylogs-toolbox .tb-link-btn {
 	min-height: 36px;
+}
+
+/* Pinboard strategy map */
+/*
+   전략 맵 (src/pinboard/map.ts): Main → Sub → 관련 업무 cards on a pannable, zoomable canvas.
+   Calm and information-first, on the same cream paper as the list. Colours come from the Pinboard
+   palette (`--pb-*`, defined once on .mylogs-pinboard for light and dark); health is a thin left
+   stripe and a small dot, progress a thin neutral line. All classes are pbm-*, scoped under .mylogs-pinboard.
+*/
+.mylogs-pinboard .pbm-map {
+	--pbm-on: var(--pb-on);
+	--pbm-risk: var(--pb-risk);
+	--pbm-off: var(--pb-off);
+	--pbm-card: var(--pb-card);
+	--pbm-edge: color-mix(in srgb, var(--pb-ink) 24%, transparent);
+	--pbm-edge-soft: color-mix(in srgb, var(--pb-ink) 14%, transparent);
+	--pbm-grid: color-mix(in srgb, var(--pb-ink) 12%, transparent);
+	--pbm-track: var(--pb-track);
+	--pbm-shadow: var(--pb-shadow-sm), 0 6px 16px -10px rgba(60, 42, 25, 0.16);
+
+	position: relative;
+	height: clamp(420px, calc(100vh - 260px), 1100px);
+	overflow: hidden;
+	border: 1px solid var(--pb-line);
+	border-radius: var(--pb-radius);
+	background: var(--pb-bg);
+	box-shadow: inset 0 1px 3px rgba(60, 42, 25, 0.04);
+	color: var(--pb-ink);
+	font-family: var(--pb-font);
+	font-size: 13px;
+	line-height: 1.4;
+	letter-spacing: -0.005em;
+	word-break: keep-all;
+	user-select: none;
+	-webkit-user-select: none;
+}
+body.theme-dark .mylogs-pinboard .pbm-map {
+	--pbm-edge: rgba(255, 255, 255, 0.22);
+	--pbm-edge-soft: rgba(255, 255, 255, 0.14);
+	--pbm-grid: rgba(255, 255, 255, 0.06);
+	--pbm-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 1px 2px rgba(0, 0, 0, 0.45), 0 10px 22px -12px rgba(0, 0, 0, 0.8);
+	box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+body.theme-dark .mylogs-pinboard .pbm-node {
+	border-color: rgba(255, 255, 255, 0.09);
+}
+.mylogs-pinboard .pbm-map:has(> .pbm-empty) {
+	height: 280px;
+}
+
+/* canvas */
+.mylogs-pinboard .pbm-viewport {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+	touch-action: none;
+	cursor: grab;
+	background-image: radial-gradient(circle, var(--pbm-grid) 1px, transparent 1.4px);
+}
+.mylogs-pinboard .pbm-viewport.is-panning {
+	cursor: grabbing;
+}
+.mylogs-pinboard .pbm-viewport.is-panning .pbm-node {
+	cursor: grabbing;
+}
+.mylogs-pinboard .pbm-canvas {
+	position: absolute;
+	left: 0;
+	top: 0;
+	transform-origin: 0 0;
+	will-change: transform;
+}
+.mylogs-pinboard .pbm-edges {
+	position: absolute;
+	left: 0;
+	top: 0;
+	overflow: visible;
+	pointer-events: none;
+}
+.mylogs-pinboard .pbm-nodes {
+	position: absolute;
+	left: 0;
+	top: 0;
+}
+
+/* edges: solid = counts toward progress, dashed = 관련 업무 */
+.mylogs-pinboard .pbm-edge {
+	fill: none;
+	stroke: var(--pbm-edge);
+	stroke-width: 1.5;
+	stroke-linecap: round;
+}
+.mylogs-pinboard .pbm-edge-root {
+	stroke: var(--pbm-edge-soft);
+}
+.mylogs-pinboard .pbm-edge-dashed {
+	stroke: var(--pbm-edge-soft);
+	stroke-dasharray: 4 4;
+	stroke-linecap: butt;
+}
+.mylogs-pinboard .pbm-edge-group {
+	stroke: var(--pbm-edge-soft);
+	stroke-dasharray: 1 5;
+	stroke-linecap: round;
+}
+.mylogs-pinboard .pbm-edge.is-closed {
+	opacity: 0.55;
+}
+
+/* nodes */
+.mylogs-pinboard .pbm-node {
+	position: absolute;
+	border: 1px solid var(--pb-line-strong);
+	border-radius: 12px;
+	background: var(--pbm-card);
+	box-shadow: var(--pbm-shadow);
+	transition: border-color 120ms ease, box-shadow 160ms ease;
+}
+.mylogs-pinboard .pbm-node.is-clickable {
+	cursor: pointer;
+}
+.mylogs-pinboard .pbm-node.is-clickable:hover {
+	border-color: color-mix(in srgb, var(--pb-sun) 40%, var(--pb-line-strong));
+}
+.mylogs-pinboard .pbm-node:focus-visible {
+	outline: 2px solid color-mix(in srgb, var(--pb-sun) 70%, transparent);
+	outline-offset: 2px;
+}
+.mylogs-pinboard .pbm-icon,
+.mylogs-pinboard .pbm-root-icon,
+.mylogs-pinboard .pbm-rel-icon,
+.mylogs-pinboard .pbm-warn,
+.mylogs-pinboard .pbm-toggle-icon,
+.mylogs-pinboard .pbm-empty-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: none;
+}
+.mylogs-pinboard .pbm-icon svg {
+	width: 16px;
+	height: 16px;
+}
+
+/* year root and 상위 목표 없음 group */
+.mylogs-pinboard .pbm-root,
+.mylogs-pinboard .pbm-group {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 0 14px;
+}
+.mylogs-pinboard .pbm-root {
+	border-color: color-mix(in srgb, var(--pb-sun) 22%, var(--pb-line-strong));
+}
+.mylogs-pinboard .pbm-group {
+	border-style: dashed;
+	background: color-mix(in srgb, var(--pbm-card) 55%, transparent);
+	box-shadow: none;
+}
+.mylogs-pinboard .pbm-root-icon {
+	color: var(--pb-sun);
+}
+.mylogs-pinboard .pbm-group .pbm-root-icon {
+	color: var(--pb-faint);
+}
+.mylogs-pinboard .pbm-root-icon svg {
+	width: 20px;
+	height: 20px;
+}
+.mylogs-pinboard .pbm-root-text {
+	min-width: 0;
+}
+.mylogs-pinboard .pbm-root-title {
+	font-size: 14px;
+	font-weight: 700;
+	letter-spacing: -0.015em;
+	white-space: nowrap;
+}
+.mylogs-pinboard .pbm-root-sub {
+	color: var(--pb-muted);
+	font-size: 11px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* Main / Sub goal cards: health as a thin stripe on the left edge */
+.mylogs-pinboard .pbm-card {
+	--pbm-h: transparent;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 11px 13px 11px 16px;
+}
+.mylogs-pinboard .pbm-card::before {
+	content: "";
+	position: absolute;
+	left: -1px;
+	top: 12px;
+	bottom: 12px;
+	width: 3px;
+	border-radius: 0 3px 3px 0;
+	background: var(--pbm-h);
+	pointer-events: none;
+}
+.mylogs-pinboard .pbm-card[data-health="on-track"] {
+	--pbm-h: var(--pbm-on);
+}
+.mylogs-pinboard .pbm-card[data-health="at-risk"] {
+	--pbm-h: var(--pbm-risk);
+}
+.mylogs-pinboard .pbm-card[data-health="off-track"] {
+	--pbm-h: var(--pbm-off);
+}
+.mylogs-pinboard .pbm-card-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+	color: var(--pb-faint);
+	font-size: 11px;
+	white-space: nowrap;
+}
+.mylogs-pinboard .pbm-dot {
+	display: inline-block;
+	flex: none;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: transparent;
+	box-shadow: inset 0 0 0 1.5px var(--pb-none);
+}
+.mylogs-pinboard .pbm-dot[data-health="on-track"] {
+	background: var(--pbm-on);
+	box-shadow: none;
+}
+.mylogs-pinboard .pbm-dot[data-health="at-risk"] {
+	background: var(--pbm-risk);
+	box-shadow: none;
+}
+.mylogs-pinboard .pbm-dot[data-health="off-track"] {
+	background: var(--pbm-off);
+	box-shadow: none;
+}
+.mylogs-pinboard .pbm-area {
+	flex: none;
+	padding: 0 7px;
+	border-radius: 999px;
+	background: var(--pb-soft);
+	color: var(--pb-muted);
+	font-size: 10.5px;
+	font-weight: 500;
+	line-height: 17px;
+}
+.mylogs-pinboard .pbm-id {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	font-size: 10.5px;
+	letter-spacing: 0.01em;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-pinboard .pbm-spacer {
+	flex: 1;
+}
+.mylogs-pinboard .pbm-result {
+	flex: none;
+	padding: 0 7px;
+	border-radius: 999px;
+	background: var(--pb-soft);
+	color: var(--pb-muted);
+	font-size: 10.5px;
+	font-weight: 500;
+	line-height: 17px;
+}
+.mylogs-pinboard .pbm-result-achieved {
+	background: color-mix(in srgb, var(--pbm-on) 13%, transparent);
+	color: color-mix(in srgb, var(--pbm-on) 80%, var(--pb-ink));
+}
+.mylogs-pinboard .pbm-result-partial {
+	background: color-mix(in srgb, var(--pbm-risk) 17%, transparent);
+	color: color-mix(in srgb, var(--pbm-risk) 55%, var(--pb-ink));
+}
+.mylogs-pinboard .pbm-result-missed {
+	background: color-mix(in srgb, var(--pbm-off) 12%, transparent);
+	color: var(--pbm-off);
+}
+.mylogs-pinboard .pbm-result-dropped,
+.mylogs-pinboard .pbm-result-paused {
+	color: var(--pb-muted);
+}
+.mylogs-pinboard .pbm-title {
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	color: var(--pb-ink);
+	font-size: 13.5px;
+	font-weight: 600;
+	line-height: 1.35;
+	letter-spacing: -0.01em;
+	overflow-wrap: anywhere;
+}
+.mylogs-pinboard .pbm-main .pbm-title {
+	font-size: 14.5px;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+}
+.mylogs-pinboard .pbm-progress {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-top: auto;
+}
+.mylogs-pinboard .pbm-bar {
+	flex: 1;
+	height: 4px;
+	overflow: hidden;
+	border-radius: 999px;
+	background: var(--pbm-track);
+}
+.mylogs-pinboard .pbm-bar.is-unknown {
+	background: repeating-linear-gradient(-45deg, var(--pbm-track) 0 3px, transparent 3px 6px);
+}
+.mylogs-pinboard .pbm-bar-fill {
+	height: 100%;
+	border-radius: inherit;
+	background: var(--pb-fill);
+}
+.mylogs-pinboard .pbm-pct {
+	flex: none;
+	min-width: 34px;
+	text-align: right;
+	color: var(--pb-ink);
+	font-size: 12px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-pinboard .pbm-meta {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+	min-width: 0;
+	color: var(--pb-muted);
+	font-size: 11.5px;
+	white-space: nowrap;
+}
+.mylogs-pinboard .pbm-metric {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-pinboard .pbm-cur {
+	color: var(--pb-ink);
+	font-weight: 600;
+}
+.mylogs-pinboard .pbm-due {
+	flex: none;
+	color: var(--pb-faint);
+	font-variant-numeric: tabular-nums;
+}
+
+/* closed (달성·부분 달성·미달성·중단) and paused goals: muted */
+.mylogs-pinboard .pbm-card.is-closed {
+	background: color-mix(in srgb, var(--pbm-card) 50%, var(--pb-bg));
+	box-shadow: none;
+}
+.mylogs-pinboard .pbm-card.is-closed .pbm-title,
+.mylogs-pinboard .pbm-card.is-closed .pbm-cur {
+	color: var(--pb-muted);
+}
+.mylogs-pinboard .pbm-card.is-closed .pbm-bar-fill,
+.mylogs-pinboard .pbm-card.is-paused .pbm-bar-fill {
+	background: var(--pb-faint);
+}
+.mylogs-pinboard .pbm-card.is-closed .pbm-pct,
+.mylogs-pinboard .pbm-card.is-paused .pbm-pct {
+	color: var(--pb-muted);
+	font-weight: 500;
+}
+
+/* 관련 업무: projects, habits, memos */
+.mylogs-pinboard .pbm-related {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 0 11px;
+	border-color: var(--pb-line);
+	border-radius: 9px;
+	color: var(--pb-muted);
+	font-size: 12.5px;
+	box-shadow: var(--pb-shadow-sm);
+}
+.mylogs-pinboard .pbm-rel-icon {
+	color: var(--pb-faint);
+}
+.mylogs-pinboard .pbm-rel-project .pbm-rel-icon {
+	color: var(--pb-muted);
+}
+.mylogs-pinboard .pbm-rel-icon svg,
+.mylogs-pinboard .pbm-warn svg {
+	width: 14px;
+	height: 14px;
+}
+.mylogs-pinboard .pbm-rel-label {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.mylogs-pinboard .pbm-related.is-clickable .pbm-rel-label {
+	color: var(--pb-ink);
+	font-weight: 500;
+}
+.mylogs-pinboard .pbm-rel-memo {
+	border-style: dashed;
+	border-color: var(--pb-line-strong);
+	background: color-mix(in srgb, var(--pbm-card) 45%, transparent);
+	box-shadow: none;
+}
+.mylogs-pinboard .pbm-warn {
+	color: var(--pb-warn);
+	cursor: help;
+}
+
+/* expand/collapse pill under a card */
+.mylogs-pinboard button.pbm-toggle {
+	position: absolute;
+	left: 50%;
+	bottom: -10px;
+	z-index: 1;
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	height: 20px;
+	min-height: 0;
+	padding: 0 7px 0 4px;
+	transform: translateX(-50%);
+	border: 1px solid var(--pb-line-strong);
+	border-radius: 999px;
+	background: var(--pb-card);
+	box-shadow: var(--pb-shadow-sm);
+	color: var(--pb-muted);
+	font-size: 10.5px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	line-height: 1;
+	cursor: pointer;
+}
+.mylogs-pinboard button.pbm-toggle:hover {
+	border-color: color-mix(in srgb, var(--pb-sun) 45%, var(--pb-line-strong));
+	background: var(--pb-card);
+	color: var(--pb-ink);
+}
+.mylogs-pinboard button.pbm-toggle.is-collapsed {
+	border-color: color-mix(in srgb, var(--pb-sun) 35%, var(--pb-line-strong));
+	color: var(--pb-sun);
+}
+.mylogs-pinboard .pbm-toggle-icon svg {
+	width: 12px;
+	height: 12px;
+}
+
+/* toolbar */
+.mylogs-pinboard .pbm-toolbar {
+	position: absolute;
+	top: 12px;
+	right: 12px;
+	z-index: 2;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding: 3px;
+	border: 1px solid var(--pb-line-strong);
+	border-radius: 11px;
+	background: var(--pb-card);
+	box-shadow: var(--pb-shadow);
+}
+.mylogs-pinboard button.pbm-tool,
+.mylogs-pinboard button.pbm-zoom-label {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: 28px;
+	min-width: 28px;
+	padding: 0 6px;
+	border: none;
+	border-radius: 8px;
+	background: transparent;
+	box-shadow: none;
+	color: var(--pb-muted);
+	cursor: pointer;
+}
+.mylogs-pinboard button.pbm-tool svg {
+	width: 15px;
+	height: 15px;
+}
+.mylogs-pinboard button.pbm-zoom-label {
+	min-width: 48px;
+	color: var(--pb-ink);
+	font-size: 12px;
+	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-pinboard button.pbm-tool:hover,
+.mylogs-pinboard button.pbm-zoom-label:hover {
+	background: var(--pb-soft);
+	color: var(--pb-ink);
+}
+.mylogs-pinboard button.pbm-tool.is-active {
+	background: color-mix(in srgb, var(--pb-sun) 12%, transparent);
+	color: var(--pb-sun);
+}
+.mylogs-pinboard .pbm-tool-sep {
+	align-self: stretch;
+	width: 1px;
+	margin: 5px 3px;
+	background: var(--pb-line-strong);
+}
+
+/* legend (decorative: lets pointer events through to the canvas) */
+.mylogs-pinboard .pbm-legend {
+	position: absolute;
+	left: 12px;
+	bottom: 12px;
+	z-index: 2;
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	padding: 10px 12px;
+	border: 1px solid var(--pb-line);
+	border-radius: 11px;
+	background: color-mix(in srgb, var(--pb-card) 92%, transparent);
+	box-shadow: var(--pb-shadow-sm);
+	color: var(--pb-muted);
+	font-size: 11.5px;
+	pointer-events: none;
+	-webkit-backdrop-filter: blur(6px);
+	backdrop-filter: blur(6px);
+}
+.mylogs-pinboard .pbm-legend-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	white-space: nowrap;
+}
+.mylogs-pinboard .pbm-legend-line {
+	width: 24px;
+	height: 8px;
+	flex: none;
+	overflow: visible;
+}
+.mylogs-pinboard .pbm-legend-health {
+	gap: 12px;
+	padding-top: 4px;
+	margin-top: 1px;
+	border-top: 1px solid var(--pb-line);
+}
+.mylogs-pinboard .pbm-legend-h {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+}
+
+/* minimap */
+.mylogs-pinboard .pbm-minimap {
+	position: absolute;
+	right: 12px;
+	bottom: 12px;
+	z-index: 2;
+	overflow: hidden;
+	border: 1px solid var(--pb-line-strong);
+	border-radius: 11px;
+	background: color-mix(in srgb, var(--pb-card) 94%, transparent);
+	box-shadow: var(--pb-shadow);
+	cursor: pointer;
+	touch-action: none;
+}
+.mylogs-pinboard .pbm-minimap.is-hidden {
+	display: none;
+}
+.mylogs-pinboard .pbm-minimap svg {
+	display: block;
+}
+.mylogs-pinboard .pbm-mm-node {
+	fill: color-mix(in srgb, var(--pb-ink) 14%, transparent);
+}
+.mylogs-pinboard .pbm-mm-related,
+.mylogs-pinboard .pbm-mm-group {
+	fill: color-mix(in srgb, var(--pb-ink) 7%, transparent);
+}
+.mylogs-pinboard .pbm-mm-root {
+	fill: color-mix(in srgb, var(--pb-sun) 55%, transparent);
+}
+.mylogs-pinboard .pbm-mm-node[data-health="on-track"] {
+	fill: color-mix(in srgb, var(--pbm-on) 50%, transparent);
+}
+.mylogs-pinboard .pbm-mm-node[data-health="at-risk"] {
+	fill: color-mix(in srgb, var(--pbm-risk) 55%, transparent);
+}
+.mylogs-pinboard .pbm-mm-node[data-health="off-track"] {
+	fill: color-mix(in srgb, var(--pbm-off) 50%, transparent);
+}
+.mylogs-pinboard .pbm-mm-view {
+	fill: color-mix(in srgb, var(--pb-sun) 6%, transparent);
+	stroke: color-mix(in srgb, var(--pb-sun) 75%, transparent);
+	stroke-width: 1.25;
+}
+
+/* empty state */
+.mylogs-pinboard .pbm-empty {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	padding: 24px;
+	text-align: center;
+	color: var(--pb-muted);
+}
+.mylogs-pinboard .pbm-empty-icon {
+	margin-bottom: 4px;
+	color: var(--pb-sun);
+	opacity: 0.8;
+}
+.mylogs-pinboard .pbm-empty-icon svg {
+	width: 28px;
+	height: 28px;
+}
+.mylogs-pinboard .pbm-empty-title {
+	color: var(--pb-ink);
+	font-size: 15px;
+	font-weight: 600;
+}
+.mylogs-pinboard .pbm-empty-hint {
+	color: var(--pb-muted);
+	font-size: 12.5px;
+}
+
+/* mobile: taller canvas, bigger tap targets, compact legend */
+body.is-mobile .mylogs-pinboard .pbm-map {
+	height: max(360px, calc(100vh - 220px));
+	border-radius: 12px;
+}
+body.is-mobile .mylogs-pinboard button.pbm-tool,
+body.is-mobile .mylogs-pinboard button.pbm-zoom-label {
+	height: 36px;
+	min-width: 36px;
+}
+body.is-mobile .mylogs-pinboard button.pbm-toggle {
+	height: 26px;
+	bottom: -13px;
+	padding: 0 10px 0 7px;
+}
+body.is-mobile .mylogs-pinboard .pbm-legend {
+	font-size: 10.5px;
+	padding: 6px 8px;
+}
+body.is-mobile .mylogs-pinboard .pbm-legend-health {
+	display: none;
 }
