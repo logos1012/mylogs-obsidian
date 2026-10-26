@@ -20,6 +20,7 @@ import { addDays, fromIsoDate } from "../parser.ts";
 import { shiftMonthKey, type DiaryMonth, isMonthKey } from "../mylife/model.ts";
 import { todayIsoLocal } from "../desk/model.ts";
 import { askForm, confirmDelete } from "../ui/modals.ts";
+import { AutoGrow } from "../ui/autogrow.ts";
 import { addFrom, attachmentFiles, createEntry, deleteEntry, type DiaryData, editMeta, loadDiary, loadMaterial, loadMyLifeMonth, type Material, readEntry, registryPath, root, saveAttachment, saveBody, togglePinned, toggleStarred } from "./actions.ts";
 import { isOwnWrite, lastWritten } from "./sync.ts";
 import {
@@ -80,6 +81,8 @@ class EntryEditor {
 	/** The text a save in flight is writing (so a modify event carrying it is ours, not a conflict). */
 	private inFlight: string | null = null;
 	private textarea: HTMLTextAreaElement | null = null;
+	/** Auto-grow + caret follow for the mounted textarea (`src/ui/autogrow.ts`). */
+	private grow: AutoGrow | null = null;
 	private statusEl: HTMLElement | null = null;
 	private barEl: HTMLElement | null = null;
 	private saveTimer: number | null = null;
@@ -114,10 +117,11 @@ class EntryEditor {
 		});
 		ta.value = this.pending ?? this.base;
 		this.textarea = ta;
+		this.grow?.dispose();
+		this.grow = new AutoGrow(ta, { minHeight: 320 });
 		ta.addEventListener("input", () => {
 			this.pending = ta.value;
 			this.dirty = !bodiesEqual(ta.value, this.base);
-			this.autosize();
 			if (!this.conflict) this.setStatus(this.dirty ? "입력 중" : "");
 			this.scheduleSave();
 		});
@@ -134,7 +138,6 @@ class EntryEditor {
 		ta.addEventListener("dragover", (e) => {
 			if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
 		});
-		this.autosize();
 		if (this.conflict) this.showConflict();
 	}
 
@@ -155,11 +158,9 @@ class EntryEditor {
 		ta.selectionStart = ta.selectionEnd = Math.min(pos, ta.value.length);
 	}
 
+	/** Refit the height after a programmatic value change (no caret follow). */
 	private autosize(): void {
-		const ta = this.textarea;
-		if (!ta) return;
-		ta.style.height = "auto";
-		ta.style.height = `${Math.max(ta.scrollHeight + 2, 320)}px`;
+		this.grow?.fit();
 	}
 
 	/**
@@ -366,6 +367,8 @@ class EntryEditor {
 
 	destroy(): void {
 		if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
+		this.grow?.dispose();
+		this.grow = null;
 	}
 }
 

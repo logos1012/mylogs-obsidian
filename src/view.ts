@@ -28,6 +28,7 @@ import {
 import { MAIN_SECTION_KEYS, type MainSectionKey } from "./settings.ts";
 import { flywheelIdOf, flywheelLines, flywheelPath, isFlywheelLine, missedCount, parseFlywheel, weeklyDone } from "./flywheel/model.ts";
 import { weekMonday } from "./mylife/model.ts";
+import { AutoGrow } from "./ui/autogrow.ts";
 import {
 	appendToSection,
 	dailyPadSkeleton,
@@ -199,6 +200,8 @@ class SectionPanel {
 	private statusEl!: HTMLElement;
 	private editBtn!: HTMLElement;
 	private textarea: HTMLTextAreaElement | null = null;
+	/** Auto-grow + caret follow for the mounted textarea (`src/ui/autogrow.ts`). */
+	private grow: AutoGrow | null = null;
 	private renderChild: Component | null = null;
 
 	/** Section content as last synced with the file (null = section missing). */
@@ -287,6 +290,8 @@ class SectionPanel {
 	}
 
 	async renderView(): Promise<void> {
+		this.grow?.dispose();
+		this.grow = null;
 		this.textarea = null;
 		this.el.removeClass("is-editing");
 		this.editBtn.setText("편집");
@@ -370,9 +375,10 @@ class SectionPanel {
 		});
 		ta.value = this.base ?? "";
 		this.textarea = ta;
+		this.grow?.dispose();
+		this.grow = new AutoGrow(ta, { minHeight: 96 });
 		ta.addEventListener("input", () => {
 			this.dirty = normalizeContent(ta.value) !== (this.base ?? "");
-			this.autosize();
 			this.setStatus(this.dirty ? "입력 중" : "");
 			this.scheduleSave();
 		});
@@ -390,16 +396,13 @@ class SectionPanel {
 				void this.exitEdit();
 			}, 120);
 		});
-		this.autosize();
 		ta.focus();
 		ta.selectionStart = ta.selectionEnd = ta.value.length;
 	}
 
+	/** Refit the height after a programmatic value change (no caret follow). */
 	private autosize(): void {
-		const ta = this.textarea;
-		if (!ta) return;
-		ta.style.height = "auto";
-		ta.style.height = `${Math.max(ta.scrollHeight + 2, 96)}px`;
+		this.grow?.fit();
 	}
 
 	async exitEdit(): Promise<void> {
