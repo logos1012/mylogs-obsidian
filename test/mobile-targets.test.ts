@@ -135,3 +135,30 @@ test("drawer targets: a 후보 → any column (acceptCand with that section) or 
 		["dropCand", "cand"],
 	]);
 });
+
+// ── Project Folders ──
+
+import { projectStatusTargets, runProjectTarget } from "../src/projects/mobile-targets.ts";
+
+test("project targets: every other column for a live card; none for an archived one", async () => {
+	const t = projectStatusTargets({ status: "진행", archived: false });
+	assert.deepEqual(
+		t.map((x) => x.status),
+		["후보", "대기", "보류", "완료"],
+	);
+	assert.equal(t.find((x) => x.status === "완료")?.label, "완료하고 보관…");
+	assert.deepEqual(projectStatusTargets({ status: "완료", archived: true }), []);
+	assert.deepEqual(
+		projectStatusTargets({ status: "이상한 값", archived: false }).map((x) => x.status),
+		["진행", "대기", "보류", "완료"],
+		"an unknown status sits in 후보 (columnOf)",
+	);
+	const calls: unknown[][] = [];
+	for (const x of t) await runProjectTarget(x, "P", { moveTo: async (...a) => void calls.push(a) });
+	assert.deepEqual(calls, [
+		["P", "후보"],
+		["P", "대기"],
+		["P", "보류"],
+		["P", "완료"],
+	]);
+});

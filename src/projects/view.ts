@@ -1,4 +1,4 @@
-import { debounce, ItemView, Keymap, Menu, normalizePath, setIcon, type TAbstractFile, TFile, TFolder, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
+import { debounce, ItemView, Keymap, Menu, normalizePath, Platform, setIcon, type TAbstractFile, TFile, TFolder, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { toIsoDate } from "../parser.ts";
 import { valueToString } from "../pinboard/model.ts";
@@ -8,6 +8,8 @@ import { askForm, confirmDelete } from "../ui/modals.ts";
 import { goalIdProblems, parseGoalIds } from "./edit.ts";
 import { askComplete, askNewProject } from "./modals.ts";
 import { withRo } from "./ops.ts";
+import { type ProjectsMobileHost, renderProjectsMobile } from "./mobile.ts";
+import { runProjectTarget } from "./mobile-targets.ts";
 import {
 	buildKanban,
 	columnOf,
@@ -308,6 +310,7 @@ export class ProjectFoldersView extends ItemView {
 	// ── rendering ──
 
 	private render(): void {
+		if (Platform.isMobile) return renderProjectsMobile(this.mobileHost());
 		const root = this.rootEl;
 		if (!root) return;
 		root.empty();
@@ -319,6 +322,31 @@ export class ProjectFoldersView extends ItemView {
 		else this.renderKanban(root, d);
 		const foot = root.createDiv({ cls: "pf-foot" });
 		foot.appendText(`원본: ${activeRoot(this.plugin)}/<개인|회사>/ · 완료: ${archiveRoot(this.plugin)}/ · 허브 ${d.projects.length}개`);
+	}
+
+	/** What the mobile layout (`./mobile.ts`) may use: the desktop pieces, and the kanban drop's call. */
+	private mobileHost(): ProjectsMobileHost {
+		const d = (): Loaded => this.data!;
+		return {
+			app: this.app,
+			contentEl: this.contentEl,
+			rootEl: this.rootEl,
+			mode: this.mode,
+			loaded: () => !!this.data,
+			projectCount: () => d().projects.length,
+			kanban: () => buildKanban(d().projects, this.filter),
+			groups: () => groupByArea(d().projects, this.filter, d().pinAreas),
+			renderTop: (root) => this.renderTop(root, d()),
+			renderEmpty: (root) => this.renderEmpty(root),
+			renderList: (root) => this.renderList(root, d()),
+			renderTimeline: (root) => this.renderTimeline(root, d()),
+			renderCard: (parent, p, showStatus) => this.renderCard(parent, p, todayIso(), showStatus),
+			showTimeline: () => this.setMode("timeline"),
+			footText: () => `원본: ${activeRoot(this.plugin)}/<개인|회사>/ · 완료: ${archiveRoot(this.plugin)}/ · 허브 ${d().projects.length}개`,
+			// The same call as the kanban column drop (dropZone).
+			move: (t, p) => runProjectTarget(t, p, { moveTo: (x, st) => this.moveTo(x, st) }),
+			register: (cb) => this.register(cb),
+		};
 	}
 
 	private btn(parent: HTMLElement, text: string, onClick: () => void, o: { icon?: string; cls?: string; active?: boolean; label?: string } = {}): HTMLButtonElement {

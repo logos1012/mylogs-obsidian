@@ -7890,3 +7890,68 @@ body.is-mobile .mylogs-drawer .dr-m-send-icon svg {
 body.is-mobile .mylogs-drawer .dr-when.is-goal {
 	min-height: 32px;
 }
+
+/* ── Project Folders: status tabs, cards full width (src/projects/mobile.ts) ── */
+body.is-mobile .mylogs-projects.pf-m .pf-top {
+	align-items: flex-start;
+	gap: 12px;
+	padding-bottom: 14px;
+	margin-bottom: 14px;
+}
+body.is-mobile .mylogs-projects.pf-m .pf-right,
+body.is-mobile .mylogs-projects.pf-m .pf-controls {
+	width: 100%;
+	flex-wrap: wrap;
+}
+body.is-mobile .mylogs-projects .pf-btn {
+	min-height: 44px;
+	padding: 0 14px;
+	font-size: 14px;
+}
+body.is-mobile .mylogs-projects.pf-m .pf-m-col {
+	min-height: 0;
+	padding: 0;
+	border: 0;
+	background: transparent;
+}
+body.is-mobile .mylogs-projects.pf-m .pf-col-list {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+body.is-mobile .mylogs-projects.pf-m .pf-grid {
+	grid-template-columns: minmax(0, 1fr);
+}
+body.is-mobile .mylogs-projects.pf-m .pf-name {
+	min-height: 32px;
+	font-size: 17px;
+}
+body.is-mobile .mylogs-projects .pf-m-actions {
+	display: flex;
+	justify-content: flex-end;
+	align-items: center;
+	gap: 6px;
+	margin-top: 8px;
+	padding-top: 6px;
+	border-top: 1px solid var(--pf-line);
+}
+body.is-mobile .mylogs-projects button.pf-m-status {
+	min-height: 44px;
+	padding: 0 14px;
+	border: 1px solid var(--pf-line-strong);
+	border-radius: 999px;
+	background: transparent;
+	box-shadow: none;
+	color: var(--pf-ink-2);
+	font-size: 14px;
+}
+body.is-mobile .mylogs-projects button.pf-more {
+	min-height: 44px;
+}
+body.is-mobile .mylogs-projects .pf-tl {
+	-webkit-overflow-scrolling: touch;
+	overscroll-behavior-x: contain;
+}
+body.is-mobile .mylogs-projects .pf-tl-nav button {
+	min-width: 44px;
+}
