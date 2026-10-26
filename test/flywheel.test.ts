@@ -10,6 +10,7 @@ import {
 	flywheelLines,
 	flywheelPath,
 	isFlywheelLine,
+	missingStatus,
 	missedCount,
 	parseFlywheel,
 	weeklyDone,
@@ -40,7 +41,7 @@ test("parseFlywheel reads the vault's Flywheel.md: id, name, fields, status", ()
 	assert.ok(els.every((e) => e.id.startsWith("F-")));
 });
 
-test("parseFlywheel: 쉼·폐기, missing status defaults to 사용, empty 최소, missing file", () => {
+test("parseFlywheel: 쉼·폐기, missing status is left out (쉼), empty 최소, missing file", () => {
 	const els = parseFlywheel(mixed);
 	assert.deepEqual(
 		els.map((e) => [e.id, e.status]),
@@ -48,13 +49,18 @@ test("parseFlywheel: 쉼·폐기, missing status defaults to 사용, empty 최�
 			["F-1", "사용"],
 			["F-2", "사용"],
 			["F-3", "쉼"],
-			["F-4", "사용"],
+			["F-4", ""],
 			["F-5", "폐기"],
 		],
 	);
 	assert.equal(els[1].fields["최소"], "");
-	assert.equal(els[3].fields["status"], undefined, "no status field → status 사용 (new_day.py default)");
-	assert.deepEqual(activeElements(els).map((e) => e.id), ["F-1", "F-2", "F-4"]);
+	assert.equal(els[3].fields["status"], undefined);
+	assert.deepEqual(missingStatus(els).map((e) => e.id), ["F-4"], "no status field → warned and left out (new_day.py)");
+	assert.deepEqual(activeElements(els).map((e) => e.id), ["F-1", "F-2"]);
+	assert.deepEqual(missingStatus(parseFlywheel(vault)), []);
+	// An empty `status::` is present (not warned) but still not 사용.
+	const empty = parseFlywheel("## F-7 빈 상태\n- status:: \n");
+	assert.deepEqual([missingStatus(empty).length, activeElements(empty).length], [0, 0]);
 	assert.deepEqual(parseFlywheel(null), [], "no Flywheel.md → no elements");
 	assert.deepEqual(parseFlywheel(""), []);
 	assert.deepEqual(parseFlywheel("# Flywheel\n\n## 변경 기록\n- 2026-10-26: 비움\n"), []);
@@ -70,7 +76,6 @@ test("flywheelLine formats exactly like new_day.py (omits ' — ' when 최소 is
 	assert.deepEqual(flywheelLines(els), [
 		"- [ ] F-1 몸 만들기 — 걷기 15분 (flywheel:: F-1)",
 		"- [ ] F-2 공부 (flywheel:: F-2)",
-		"- [ ] F-4 팔기 — 글 하나 올리기 (flywheel:: F-4)",
 	]);
 	assert.deepEqual(flywheelLines(parseFlywheel(vault)), [
 		"- [ ] F-1 건강 — (채우기 — 바쁜 날 버전, 2분이면 되는 것) (flywheel:: F-1)",
