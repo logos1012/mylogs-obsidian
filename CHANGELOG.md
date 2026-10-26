@@ -16,7 +16,8 @@
 - 설정 「Diary 폴더」(`diaryPath`, 기본 `09 Diary`). 리본 아이콘·명령 "Diary 열기", "Diary 오늘 쓰기"
 - 플러그인은 Diary 본문을 쓰지 않는다(AGENTS 「1」「5」): 빈 엔트리를 만들고, 재료를 보여 주고, 사용자가 쓴 것을 저장할 뿐
 - 뒤로 뺀 것: Day One JSON 가져오기, 지도, 미디어 그리드, 날씨 자동 채우기, Obsidian 마크다운 에디터 내장(문서화되지 않은 `WorkspaceLeaf` 생성이 필요해 textarea로)
-- 테스트 202개 (Diary 19: 엔트리 파싱·제목 대체·미리보기·첫 사진, 타임라인 묶기·정렬·고정, 필터, 같은 분 파일 이름, 새 엔트리·답하기, 제목↔frontmatter·updated, 메타 수정·★·고정, from 링크, 첨부 경로·번호·임베드 삽입, 그날의 기록, 질문 시드·90일 제외, 캘린더·연속 일수, 등록부 파싱·갱신·월별·삭제)
+- **Flywheel** (`12 Flywheel/Flywheel.md`, AGENTS 「4-2」, 계획 「10」): 별도 화면 없음. Daily Pad **새 날을 만들 때** `status:: 사용` 요소를 `## 오늘 할 일` 맨 위에 `- [ ] F-1 이름 — 최소 (flywheel:: F-1)`로 넣음(`최소`가 비면 ` — ` 생략, `status` 없으면 사용; `new_day.py`의 `render()`와 바이트까지 같음 — 픽스처 `new_day-2026-10-24.flywheel*.md`). `Flywheel.md`가 없으면 전과 같은 틀. Daily Pad 화면에서 `(flywheel:: F-N)` 줄은 체크하거나 두기만 — 못 한 일 메뉴 대상이 아님(`isFlywheelLine`, `li.is-flywheel`) — 줄 옆에 **이번 주 수행 `n/7`** 배지(그 ISO 주 월~일 Daily Pad의 `[x]`를 셈, 캐시 읽기), Tear-off가 붙인 `(missed:: N)`은 빨간 점. 설정 「Flywheel 폴더」(`flywheelPath`, 기본 `12 Flywheel`). 플러그인은 `Flywheel.md`를 읽기만 한다
+- 테스트 208개 (Flywheel 6: 파싱·쉼/폐기/기본 status·빈 최소·파일 없음, 줄 형식, 틀 바이트 일치, id·missed 읽기, 주간 집계; Diary 19: 엔트리 파싱·제목 대체·미리보기·첫 사진, 타임라인 묶기·정렬·고정, 필터, 같은 분 파일 이름, 새 엔트리·답하기, 제목↔frontmatter·updated, 메타 수정·★·고정, from 링크, 첨부 경로·번호·임베드 삽입, 그날의 기록, 질문 시드·90일 제외, 캘린더·연속 일수, 등록부 파싱·갱신·월별·삭제)
 
 ## 0.7.0 — 2026-10-26
 

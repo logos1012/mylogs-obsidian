@@ -689,6 +689,34 @@
 	color: var(--ml-muted);
 	text-decoration: none;
 }
+/* Flywheel lines `(flywheel:: F-N)`: this week's n/7 badge and the (missed:: N) red dot (12 Flywheel AGENTS 「4-2」「4-3」) */
+.mylogs-daily-pad .ml-fw-week {
+	display: inline-block;
+	margin-inline-start: 7px;
+	padding: 0 5px;
+	border-radius: 3px;
+	background: var(--ml-accent-soft);
+	color: var(--ml-accent);
+	font-size: 10px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0.02em;
+	line-height: 16px;
+	vertical-align: 1px;
+	text-decoration: none;
+}
+.mylogs-daily-pad .ml-fw-missed {
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	margin-inline-start: 5px;
+	border-radius: 50%;
+	background: var(--ml-sun);
+	vertical-align: 2px;
+}
+.mylogs-daily-pad .ml-item.is-flywheel .ml-fw-week {
+	margin-inline-start: 0;
+}
 .mylogs-daily-pad .ml-md a.tag {
 	padding: 0;
 	border: 0;

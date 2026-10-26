@@ -33,6 +33,8 @@ export interface MyLogsSettings {
 	diaryPath: string;
 	/** Diary view: the material pane is folded away (remembered). */
 	diaryMaterialCollapsed: boolean;
+	/** Flywheel folder: `<folder>/Flywheel.md` (read only; its `status:: 사용` elements open each new Daily Pad). */
+	flywheelPath: string;
 	sections: SectionNames;
 	/** Show `#test` markers on test data. */
 	showTestMarkers: boolean;
@@ -52,6 +54,7 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	toolboxPath: "11 Toolbox",
 	diaryPath: "09 Diary",
 	diaryMaterialCollapsed: false,
+	flywheelPath: "12 Flywheel",
 	sections: {
 		pending: "결정 대기",
 		today: "오늘 할 일",
@@ -161,6 +164,18 @@ export class MyLogsSettingTab extends PluginSettingTab {
 					.setValue(s.diaryPath)
 					.onChange(async (v) => {
 						s.diaryPath = cleanFolder(v) || DEFAULT_SETTINGS.diaryPath;
+						await this.plugin.saveSettings();
+					}),
+			);
+		new Setting(containerEl)
+			.setName("Flywheel 폴더")
+			.setDesc("바퀴 한 장: <폴더>/Flywheel.md · 읽기만 함. status:: 사용 요소를 새 Daily Pad의 오늘 할 일 맨 위에 넣습니다")
+			.addText((t) =>
+				t
+					.setPlaceholder(DEFAULT_SETTINGS.flywheelPath)
+					.setValue(s.flywheelPath)
+					.onChange(async (v) => {
+						s.flywheelPath = cleanFolder(v) || DEFAULT_SETTINGS.flywheelPath;
 						await this.plugin.saveSettings();
 					}),
 			);

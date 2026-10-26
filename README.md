@@ -28,6 +28,7 @@
 
 - **날짜 이동**: 맨 위의 ◀ / 오늘 / ▶ 와 날짜 선택. 기본은 오늘(기기 시간 기준)입니다. 요일은 Obsidian 언어 설정에 맞춰 화면에만 표시하고, 파일 링크에는 쓰지 않습니다.
 - **오늘 페이지 만들기**: 그날 파일이 없으면 빈 화면과 **"오늘 페이지 만들기"** 버튼이 나옵니다. `new_day.py`와 똑같은 틀(frontmatter, 제목, Desk Calendar 임베드 줄, 다섯 섹션)로 파일을 만듭니다.
+- **Flywheel** (`12 Flywheel/Flywheel.md`): 새 날을 만들 때 `status:: 사용`인 요소를 `## 오늘 할 일` 맨 위에 `- [ ] F-1 이름 — 최소 (flywheel:: F-1)`로 넣습니다(`new_day.py`와 같음; 파일이 없으면 넣지 않음). 이 줄은 체크하거나 그대로 두기만 하고 못 한 일 메뉴 대상이 아닙니다. 줄 옆에 이번 주(ISO 주, 월~일) 수행 **`n/7`** 배지가 붙고, Tear-off가 `(missed:: N)`을 붙인 줄은 빨간 점이 보입니다. 플러그인은 `Flywheel.md`를 읽기만 합니다.
 - **Desk Calendar에서 온 일** (맨 위 고정): `03 Desk Calendar/<YYYY>/<YYYY-MM>.md`의 `### YYYY-MM-DD` 칸을 읽어 할 일·행사·메모를 보여 줍니다.
   - 체크박스를 누르면 **Desk Calendar 파일의 그 줄**에서 `[ ]` ↔ `[x]` 글자 하나만 바뀝니다.
   - 줄이 그사이 바뀌었으면 내용으로 다시 찾고, 못 찾으면 알림을 띄운 뒤 다시 불러옵니다. 추측해서 고치지 않습니다.
@@ -125,6 +126,7 @@ updated: 2026-10-24
 | My Life 폴더 | `08 My Life` (`01 Daily/<YYYY>/<YYYY-MM>/`, `02 Weekly/<GGGG>/`, `03 Monthly/<YYYY>/`, `04 Yearly/`) |
 | Toolbox 폴더 | `11 Toolbox` (`<이름>.md`, `Toolbox Index.md`, `_Templates/스킬.md`) |
 | Diary 폴더 | `09 Diary` (`<YYYY>/<YYYY-MM>/<YYYY-MM-DD HHMM>.md`, `Diary Index.md`, `_Templates/엔트리.md`, `99 작업실/프롬프트.md`·`첨부/`) |
+| Flywheel 폴더 | `12 Flywheel` (`Flywheel.md` — 읽기만; `status:: 사용` 요소를 새 Daily Pad 오늘 할 일 맨 위에) |
 | 섹션 이름 | `오늘 할 일`, `메모`, `로그`, `끼적임`, `자료`, `결정 대기` |
 | 자동 저장 지연 | 800 ms |
 | 테스트 데이터 표시 | 켬 (`#test` 항목에 작은 표시) |
@@ -157,6 +159,7 @@ npm run dev     # 고칠 때마다 다시 빌드
 - `src/mylife/`: My Life 화면. `model.ts`(경로·ISO 주·섹션 파싱·사용자 한마디 쓰기·깨달음·감상 모음, 순수)·`view.ts`·`register.ts`. 픽스처는 볼트의 김하루 샘플(`test/fixtures/my-life/`).
 - `src/diary/`: Diary 화면. `model.ts`(엔트리 파싱·미리보기·타임라인 묶기·파일 이름·제목↔frontmatter·질문 고르기·그날의 기록·연속 일수·from 링크, 순수)·`ops.ts`(등록부 「엔트리」·「월별」·삭제 기록, 순수)·`actions.ts`(볼트 쓰기)·`view.ts`·`register.ts`. 픽스처는 김하루의 가상 엔트리(`test/fixtures/diary/`).
 - `src/toolbox/`: Toolbox 화면. `model.ts`(스킬 파싱·다음 id·배지·등록부 행 대조, 순수)·`ops.ts`(등록부 표·실행 요청·상태·폐기·수정 변환, 순수)·`actions.ts`·`modals.ts`·`view.ts`·`register.ts`. 픽스처는 볼트의 `11 Toolbox/` 복사본(`test/fixtures/toolbox/`).
+- `src/flywheel/model.ts`: Flywheel 모델(순수, 화면 없음). `Flywheel.md` 파싱, Daily Pad 줄 만들기(`new_day.py`의 `flywheel_lines()` 이식), `(flywheel::)`·`(missed::)` 읽기, 주간 `n/7` 집계. 픽스처는 볼트의 `12 Flywheel/Flywheel.md` 복사본(`test/fixtures/flywheel/`)과 그것으로 만든 `new_day.py` 출력.
 - `test/fixtures/`: 볼트의 테스트 데이터(`#test`) 복사본과 Python 참고 구현의 출력. 파서가 Python과 똑같이 읽는지 비교합니다.
 
 릴리스: `manifest.json`·`package.json`·`versions.json`의 버전을 올리고, 같은 이름의 태그(예: `0.1.1`, 앞에 `v` 없음)를 push하면 GitHub Actions가 `main.js`, `manifest.json`, `styles.css`를 릴리스에 올립니다.

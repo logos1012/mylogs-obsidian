@@ -26,6 +26,8 @@ import {
 	toIsoDate,
 } from "./parser.ts";
 import { MAIN_SECTION_KEYS, type MainSectionKey } from "./settings.ts";
+import { flywheelIdOf, flywheelLines, flywheelPath, isFlywheelLine, missedCount, parseFlywheel, weeklyDone } from "./flywheel/model.ts";
+import { weekMonday } from "./mylife/model.ts";
 import {
 	appendToSection,
 	dailyPadSkeleton,
@@ -84,6 +86,27 @@ function normalizeContent(s: string): string {
 interface ItemRenderOptions {
 	showTest: boolean;
 	onToggle?: (sl: SourceLine, el: HTMLElement) => void;
+	/** This ISO week's completions per Flywheel element (for the `n/7` badge). */
+	flywheelWeek?: Map<string, number>;
+}
+
+/**
+ * Decorate a rendered `(flywheel:: F-N)` task line (12 Flywheel AGENTS 「4-2」「4-3」, 계획 「10」):
+ * `is-flywheel` class, a small `n/7` badge for this ISO week's completions, and a red dot when
+ * Tear-off has marked `(missed:: N)`. Returns the element id, or null for an ordinary line.
+ */
+function decorateFlywheelLine(li: HTMLElement, host: HTMLElement, line: string, week: Map<string, number> | undefined): string | null {
+	const id = flywheelIdOf(line);
+	if (!id) return null;
+	li.addClass("is-flywheel");
+	const n = week?.get(id) ?? 0;
+	const badge = host.createSpan({ cls: "ml-fw-week", text: `${n}/7`, attr: { title: `${id} 이번 주 수행 ${n}/7` } });
+	const missed = missedCount(line);
+	if (missed !== null) {
+		badge.addClass("is-missed");
+		host.createSpan({ cls: "ml-fw-missed", attr: { title: `${missed}일 연속 못 했어요 (missed:: ${missed})`, "aria-label": `${missed}일 연속 못 함` } });
+	}
+	return id;
 }
 
 function renderItemList(parent: HTMLElement, lines: SourceLine[], opts: ItemRenderOptions): void {
@@ -150,14 +173,18 @@ function renderItem(li: HTMLElement, sl: SourceLine, it: ParsedItem, opts: ItemR
 	if (it.goal) meta.push(metaEl.createSpan({ cls: "ml-goal", text: it.goal, attr: { title: `목표 ${it.goal}` } }));
 	// TODO(MyLogs Plugin 계획.md 「화면 사이의 연결」): goal chip → open the Pinboard goal.
 	for (const tag of it.tags) meta.push(metaEl.createSpan({ cls: "ml-tag", text: `#${tag}` }));
+	const flywheel = kind === "task" && isFlywheelLine(sl.line);
 	for (const [k, v] of it.fields) {
 		if (k === "goal") continue;
+		if (flywheel && (k === "flywheel" || k === "missed")) continue; // shown as the badge / red dot below
 		const label = FIELD_LABEL[k] ?? k;
 		const text = k === "moved" ? `${label} ${v}` : `${label}: ${v}`;
 		meta.push(metaEl.createSpan({ cls: `ml-field ml-field-${k}`, text }));
 	}
 	if (it.test && opts.showTest) meta.push(metaEl.createSpan({ cls: "ml-test", text: "test", attr: { title: "#test 테스트 데이터" } }));
 	if (meta.length) body.appendChild(metaEl);
+	// A Flywheel line is checked or left; it never gets the 못 한 일 menu (`isFlywheelLine`).
+	if (flywheel) decorateFlywheelLine(li, body, sl.line, opts.flywheelWeek);
 	if (it.problems.length) body.createDiv({ cls: "ml-problems", text: it.problems.join(" · ") });
 }
 
@@ -292,6 +319,8 @@ class SectionPanel {
 		});
 		boxes.forEach((box, n) => {
 			const tl = taskLines.length === boxes.length ? taskLines[n] : undefined;
+			const li = box.closest("li");
+			if (tl && li) decorateFlywheelLine(li, li, tl.line, this.view.flywheelWeek);
 			box.addEventListener("click", (e) => {
 				e.preventDefault();
 				e.stopPropagation();
@@ -532,6 +561,8 @@ export class DailyPadView extends ItemView {
 	private panels: SectionPanel[] = [];
 	private padExists = false;
 	private loadSeq = 0;
+	/** This ISO week's Flywheel completions per element id (`n/7` badges). */
+	flywheelWeek: Map<string, number> = new Map();
 
 	constructor(leaf: WorkspaceLeaf, plugin: MyLogsPlugin) {
 		super(leaf);
@@ -585,6 +616,25 @@ export class DailyPadView extends ItemView {
 	async readPad(): Promise<string | null> {
 		const f = this.padFile();
 		return f ? this.app.vault.read(f) : null;
+	}
+
+	/** Text of any vault file by path, or null when it does not exist. */
+	private async readVaultFile(path: string): Promise<string | null> {
+		const f = this.app.vault.getAbstractFileByPath(normalizePath(path));
+		return f instanceof TFile ? this.app.vault.cachedRead(f) : null;
+	}
+
+	/**
+	 * Completions per Flywheel element in this date's ISO week (Mon–Sun Daily Pad files, cached
+	 * reads). Skipped — left empty — when the pad has no `(flywheel::)` line.
+	 */
+	private async readFlywheelWeek(padText: string | null): Promise<Map<string, number>> {
+		if (padText === null || !padText.includes("flywheel")) return new Map();
+		const monday = weekMonday(this.date);
+		const texts = await Promise.all(
+			Array.from({ length: 7 }, (_, i) => addDays(monday, i)).map((d) => (d === this.date ? Promise.resolve(padText) : this.readVaultFile(this.padPath(d)))),
+		);
+		return weeklyDone(texts);
 	}
 
 	// ── lifecycle ──
@@ -650,7 +700,9 @@ export class DailyPadView extends ItemView {
 		const seq = ++this.loadSeq;
 		const padText = await this.readPad();
 		const deskText = await this.readDesk();
+		const week = await this.readFlywheelWeek(padText);
 		if (seq !== this.loadSeq) return;
+		this.flywheelWeek = week;
 		this.renderHeader();
 		this.padExists = padText !== null;
 		this.renderEmptyState();
@@ -684,6 +736,7 @@ export class DailyPadView extends ItemView {
 			return;
 		}
 		if (text === null) return;
+		this.flywheelWeek = await this.readFlywheelWeek(text);
 		this.renderPending(text);
 		this.panels.forEach((p) => p.sync(text));
 	}
@@ -763,11 +816,13 @@ export class DailyPadView extends ItemView {
 				}
 			}
 			const s = this.plugin.settings;
+			// 12 Flywheel AGENTS 「4-2」: `status:: 사용` elements open 오늘 할 일. No Flywheel.md → plain skeleton.
 			const content = dailyPadSkeleton({
 				isoDate: this.date,
 				weekday: moment(this.date, "YYYY-MM-DD").format("ddd"),
 				deskCalendarFolder: s.deskCalendarFolder,
 				sections: MAIN_SECTION_KEYS.map((k) => s.sections[k]),
+				flywheelLines: flywheelLines(parseFlywheel(await this.readVaultFile(flywheelPath(s.flywheelPath)))),
 			});
 			await this.app.vault.create(path, content);
 			// The create event triggers a rebuild; reload directly in case it fired early.
@@ -903,6 +958,7 @@ export class DailyPadView extends ItemView {
 		titles.createEl("h3", { cls: "ml-panel-title", text: name });
 		titles.createSpan({ cls: "ml-panel-hint", text: "지난날 못 한 일 · 갈 곳을 골라 주세요" });
 		// TODO(MyLogs Plugin 계획.md §4 「못 한 일 버튼」): 다른 날 / 미래로 / 서랍에 / 쪼개기 / 놓아주기.
+		// When it lands, skip `(flywheel:: F-N)` lines (`isFlywheelLine`, `li.is-flywheel`): they are checked or left (12 Flywheel AGENTS 「4-2」 3).
 		const body = el.createDiv({ cls: "ml-panel-body" });
 		if (!lines.length) {
 			this.gentle(body, "결정을 기다리는 일이 없어요.");
@@ -910,6 +966,7 @@ export class DailyPadView extends ItemView {
 		}
 		renderItemList(body, lines, {
 			showTest: this.plugin.settings.showTestMarkers,
+			flywheelWeek: this.flywheelWeek,
 			onToggle: (sl, li) => {
 				li.addClass("is-pending");
 				void this.processToggle(
