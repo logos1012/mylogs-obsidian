@@ -41,6 +41,8 @@ function fmLineIndex(lines: string[], key: string): number {
 /** Split `value   # comment` (quotes respected). */
 function splitComment(raw: string): { value: string; comment: string } {
 	const r = raw.replace(/^\s+/, "");
+	// `key:   # comment`: an empty value (the comment keeps its spacing).
+	if (r[0] === "#") return { value: "", comment: raw };
 	if (r[0] === '"' || r[0] === "'") {
 		const close = r.indexOf(r[0], 1);
 		if (close > 0) return { value: r.slice(0, close + 1), comment: r.slice(close + 1).replace(/^\s*$/, "") };

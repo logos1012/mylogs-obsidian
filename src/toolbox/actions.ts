@@ -9,8 +9,8 @@ import { type App, normalizePath, Notice, TFile } from "obsidian";
 import { toIsoDate } from "../parser.ts";
 import { parseFrontmatterText, valueToString } from "../pinboard/model.ts";
 import { cleanFolder, type MyLogsSettings } from "../settings.ts";
-import { type Entry, type LiveStatus, nameLink, nextSkillId, parseSkill, reconcile, registryAffected, registryPathOf, requestStamp, type RunRequest, type Skill, type SkillEdit, skillEditChanges, type SkillInput, skillName, skillPath, type SkillRow, templatePathOf } from "./model.ts";
-import { appendRunRequest, applySkillEdit, changeText, fillSkillTemplate, leftoverPlaceholders, logToolboxChange, moveRowToDiscarded, parseToolboxRegistry, type RegistryResult, setSkillStatus, skillRowOf, upsertSkillRow } from "./ops.ts";
+import { editDelta, type Entry, inputKind, nameLink, nextSkillId, parseSkill, reconcile, registryAffected, registryPathOf, requestStamp, type RunRequest, type Skill, type SkillEdit, skillEditChanges, type SkillInput, skillName, skillPath, type SkillRow, stubAffected, type Taken, templatePathOf } from "./model.ts";
+import { appendRunRequest, applySkillEdit, changeText, fillSkillTemplate, hasKindTable, leftoverPlaceholders, logToolboxChange, moveRowToDiscarded, moveRowToKind, parseToolboxRegistry, type RegistryResult, setSkillStatus, skillRowOf, upsertSkillRow } from "./ops.ts";
 import { DEFAULT_SKILL_TEMPLATE } from "./templates.ts";
 
 export interface ToolboxHost {
@@ -63,24 +63,27 @@ export async function loadToolbox(host: ToolboxHost): Promise<ToolboxData> {
 	return { skills, rows: parsed.skills, requests: parsed.requests, entries: reconcile(skills, parsed.skills), hasRegistry: !!reg };
 }
 
-/** Ids and names on disk or in the registry (「4-1」 1: duplicates are refused). */
-export function takenIdsAndNames(d: Pick<ToolboxData, "skills" | "rows">, discarded: { id: string }[] = []): { ids: string[]; names: string[] } {
+/** Ids, names and slugs on disk or in the registry (「4-1」 1: duplicates are refused). */
+export function takenIdsAndNames(d: Pick<ToolboxData, "skills" | "rows">, discarded: { id: string }[] = []): Taken & { slugs: string[] } {
 	const ids = new Set<string>();
 	const names = new Set<string>();
+	const slugs = new Set<string>();
 	for (const s of d.skills) {
 		if (s.id) ids.add(s.id);
+		if (s.slug) slugs.add(s.slug);
 		names.add(s.name);
 	}
 	for (const r of d.rows) {
 		if (r.id) ids.add(r.id);
+		if (r.slug) slugs.add(r.slug);
 		const n = r.nameCell.replace(/^\[\[[^\]|]*\\\|/, "").replace(/\]\]$/, "");
 		if (n) names.add(n);
 	}
 	for (const r of discarded) if (r.id) ids.add(r.id);
-	return { ids: [...ids], names: [...names] };
+	return { ids: [...ids], names: [...names], slugs: [...slugs] };
 }
 
-/** The next `T-NN` from skill files, the 「스킬」 table and the 「폐기」 table. */
+/** The next `T-NN` from skill files, the kind tables and the 「폐기」 table (one series for all kinds). */
 export async function nextId(host: ToolboxHost, d: Pick<ToolboxData, "skills" | "rows">): Promise<string> {
 	const reg = fileAt(host.app, registryPath(host));
 	const discarded = reg ? parseToolboxRegistry(await host.app.vault.cachedRead(reg)).discarded : [];
@@ -122,10 +125,16 @@ function report(failed: string[], ok: string): void {
 	else new Notice(ok);
 }
 
-// ───────────────────────── 「4-5」 status / 폐기 ─────────────────────────
+// ───────────────────────── 「4-6」 status / 폐기 ─────────────────────────
 
-/** 멈춤 / 시험 / 사용: skill `status` + `updated`, the registry 상태 cell, one 「변경 기록」 line. */
-export async function setStatus(host: ToolboxHost, s: Skill, status: LiveStatus): Promise<void> {
+const STATUS_SAID: Record<string, Record<string, string>> = {
+	작업: { 사용: "사용으로 바꿨어요. Hermes가 cron을 맞추면 돌아요.", 시험: "시험으로 바꿨어요. cron에는 걸리지 않고 「지금 실행」으로만 돌아요.", 멈춤: "멈췄어요." },
+	도구: { 사용: "사용으로 바꿨어요. Hermes가 스텁을 맞추면 대화에서 불러 쓸 수 있어요.", 멈춤: "멈췄어요. Hermes가 스텁을 지워요." },
+	운영: { 사용: "사용으로 바꿨어요." },
+};
+
+/** 멈춤 / 시험 / 사용 (per kind): skill `status` + `updated`, the registry 상태 cell, one 「변경 기록」 line. */
+export async function setStatus(host: ToolboxHost, s: Skill, status: string): Promise<void> {
 	if (status === s.status) return;
 	const f = fileAt(host.app, s.path);
 	if (!f) {
@@ -142,7 +151,7 @@ export async function setStatus(host: ToolboxHost, s: Skill, status: LiveStatus)
 	}
 	const problem = await editRegistry(host, (t) => upsertSkillRow(t, { id: s.id, status }, skillRowOf({ ...s, status }, toolboxRoot(host))), changeText.status(status, s.name));
 	if (problem) failed.push(`등록부 (${problem})`);
-	const said = { 사용: "사용으로 바꿨어요. Hermes가 cron을 맞추면 돌아요.", 시험: "시험으로 바꿨어요. cron에는 걸리지 않고 「지금 실행」으로만 돌아요.", 멈춤: "멈췄어요." }[status];
+	const said = STATUS_SAID[s.kind]?.[status] ?? `${status}으로 바꿨어요.`;
 	report(failed, `「${s.name}」을(를) ${said}`);
 }
 
@@ -209,6 +218,11 @@ export async function createSkill(host: ToolboxHost, input: SkillInput, id: stri
 		new Notice(`MyLogs: 등록부(${registryPath(host)})가 없어 스킬을 만들지 않았어요.`);
 		return null;
 	}
+	const reg = fileAt(app, registryPath(host))!;
+	if (!hasKindTable(await app.vault.read(reg), inputKind(input))) {
+		new Notice(`MyLogs: 등록부에 「${inputKind(input)}」 표가 없어 스킬을 만들지 않았어요. 등록부를 AGENTS v2.0 형식(운영 / 도구 / 작업 표)으로 바꿔 주세요.`);
+		return null;
+	}
 	const path = normalizePath(skillPath(root, input.name.trim()));
 	if (app.vault.getAbstractFileByPath(path)) {
 		new Notice(`이미 있는 파일이에요. 만들지 않았어요.\n${path}`);
@@ -229,8 +243,16 @@ export async function createSkill(host: ToolboxHost, input: SkillInput, id: stri
 	const skill = parseSkill(data, body, created.path, root);
 	const row = skill ? skillRowOf(skill, root) : null;
 	const problem = row ? await editRegistry(host, (t) => upsertSkillRow(t, { id }, row), changeText.create(id, input.name.trim(), input)) : "파일을 다시 읽지 못했어요";
+	const kind = inputKind(input);
 	if (problem) new Notice(`MyLogs: 스킬은 만들었지만 등록부에 올리지 못했어요 (${problem}). 화면의 「등록」으로 다시 시도할 수 있어요.`);
-	else new Notice(`「${input.name.trim()}」 스킬을 만들었어요 (${id}, 멈춤). 내용을 채운 뒤 사용으로 바꿔 주세요.`);
+	else
+		new Notice(
+			kind === "작업"
+				? `「${input.name.trim()}」 작업 스킬을 만들었어요 (${id}, 멈춤). 내용을 채운 뒤 시험 → 사용으로 바꿔 주세요.`
+				: kind === "도구"
+					? `「${input.name.trim()}」 도구 스킬을 만들었어요 (${id}, 멈춤). 절차를 채운 뒤 사용으로 바꿔 주세요.`
+					: `「${input.name.trim()}」 운영 스킬을 만들었어요 (${id}, 사용 — 바로 적용돼요).`,
+		);
 	return created.path;
 }
 
@@ -272,20 +294,30 @@ export async function editSkill(host: ToolboxHost, s: Skill, e: SkillEdit): Prom
 			failed.push("파일 이름");
 		}
 	}
-	const next: Skill = { ...s, name: failed.includes("파일 이름") ? s.name : newName, trigger: e.trigger, schedule: e.trigger === "cron" ? e.schedule.trim() : "", output: e.output.trim(), notify: e.notify.trim() };
+	const d = editDelta(s, e);
+	const next: Skill = { ...s, ...d, name: failed.includes("파일 이름") ? s.name : newName };
 	if (registryAffected(s, e)) {
 		const row = skillRowOf(next, root);
-		const problem = await editRegistry(
-			host,
-			(t) => upsertSkillRow(t, { id: s.id, nameCell: row.nameCell, trigger: row.trigger, schedule: row.schedule, output: row.output }, row),
-			changeText.edit(s.id, next.name, changes),
-		);
+		const edit =
+			d.kind !== s.kind
+				? (t: string) => moveRowToKind(t, row)
+				: (t: string) => upsertSkillRow(t, { id: s.id, nameCell: row.nameCell, slug: row.slug, scope: row.scope, phrase: row.phrase, trigger: row.trigger, schedule: row.schedule, output: row.output, owner: row.owner, status: row.status }, row);
+		const problem = await editRegistry(host, edit, changeText.edit(s.id, next.name, changes));
 		if (problem) failed.push(`등록부 (${problem})`);
 	}
-	report(failed, `「${next.name}」 수정: ${changes.join(", ")}`);
+	const stub = stubAffected(s, e) ? " · Hermes 스텁을 다시 맞춰야 합니다 (AGENTS 4-7)" : "";
+	report(failed, `「${next.name}」 수정: ${changes.join(", ")}${stub}`);
 }
 
 // ───────────────────────── registry ↔ file ─────────────────────────
+
+/** The row sits in another kind's table than the file says: move it to the file's (file = canonical). */
+export async function fixRowTable(host: ToolboxHost, s: Skill, from: string): Promise<void> {
+	const row = skillRowOf(s, toolboxRoot(host));
+	const problem = await editRegistry(host, (t) => moveRowToKind(t, row), changeText.move(s.id, s.name, from, s.kind));
+	if (problem) new Notice(`MyLogs: 등록부 행을 옮기지 못했어요 (${problem}).`);
+	else new Notice(`「${s.name}」 행을 「${s.kind}」 표로 옮겼어요.`);
+}
 
 /** A skill file without a registry row: add the row from the file (file = canonical). */
 export async function registerSkill(host: ToolboxHost, s: Skill): Promise<void> {

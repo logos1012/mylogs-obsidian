@@ -6287,6 +6287,52 @@
 	margin: 0 auto 16px;
 	color: var(--tb-muted);
 }
+/* ── kind sections (운영 / 도구 / 작업) ── */
+.mylogs-toolbox .tb-section {
+	margin-top: 32px;
+}
+.mylogs-toolbox .tb-section-head {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 10px;
+	padding-bottom: 6px;
+	border-bottom: 1px solid var(--tb-line-strong);
+}
+.mylogs-toolbox .tb-section-head h2 {
+	margin: 0;
+	font-size: 17px;
+	font-weight: 650;
+	color: var(--tb-ink);
+}
+.mylogs-toolbox .tb-section-count {
+	font-size: 12px;
+	color: var(--tb-muted);
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-toolbox .tb-section-lead {
+	font-size: 12px;
+	color: var(--tb-muted);
+}
+.mylogs-toolbox .tb-section .tb-table-wrap {
+	margin-top: 8px;
+}
+.mylogs-toolbox .tb-section-empty {
+	padding: 12px 0;
+	font-size: 12px;
+	color: var(--tb-faint);
+}
+.mylogs-toolbox .tb-table .c-slug,
+.mylogs-toolbox .tb-table .c-owner {
+	white-space: nowrap;
+}
+.mylogs-toolbox .tb-table .c-scope,
+.mylogs-toolbox .tb-table .c-phrase {
+	color: var(--tb-ink-2);
+}
+.mylogs-toolbox .tb-table .c-reviewed.is-overdue {
+	color: var(--tb-warn);
+}
 .mylogs-toolbox .tb-foot {
 	margin-top: 28px;
 	font-size: 11px;

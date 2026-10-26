@@ -134,7 +134,8 @@ export function parseFrontmatterText(text: string): { data: Record<string, unkno
 	const scalar = (raw: string): unknown => {
 		let v = raw.trim();
 		if (v.length >= 2 && v[0] === v[v.length - 1] && (v[0] === '"' || v[0] === "'")) return v.slice(1, -1);
-		// A trailing `  # comment` on an unquoted scalar (as YAML and Obsidian read it).
+		// `key:   # comment` is an empty value; a trailing `  # comment` on an unquoted scalar is dropped (as YAML and Obsidian read it).
+		if (v.startsWith("#")) return null;
 		const c = /\s+#/.exec(v);
 		if (c) v = v.slice(0, c.index).trim();
 		if (v === "" || v === "~" || v === "null") return null;

@@ -2,14 +2,17 @@
 type: skill
 id: T-01
 name: AI 뉴스 브리핑
+kind: 작업
+slug: ai-news-briefing
+description: 매일 새벽 X·링크드인·인스타그램에서 지난 24시간의 AI 소식·기술 트렌드·사용 사례를 조사해 보고서를 Shelf raw에 쓰고 Daily Pad에 링크한다. "AI 뉴스 브리핑 돌려 줘"
 owner: hermes
 trigger: cron
 schedule: "0 4 * * *"
 output: 07 Shelf/LLM Wiki/raw/articles/ai-news/{YYYY-MM-DD}_AI 뉴스 브리핑.md
 notify: 04 Daily Pad 오늘 파일 `## 자료`에 링크 한 줄
-status: 멈춤
-last_run: 
-last_result: 
+status: 시험
+last_run: 2026-10-26T00:25
+last_result: "실패: 제외 건수 미집계 및 위키 인덱스 확인 불가 (부분 수집, 뉴스 0건)"
 last_reviewed: 2026-10-26
 created: 2026-10-26
 updated: 2026-10-26
@@ -30,7 +33,7 @@ updated: 2026-10-26
 
 ## 절차
 
-1. 스킬 문서를 새로 읽는다. `status`가 `사용`이 아니면 멈추고 보고한다.
+1. 스킬 문서를 새로 읽는다. cron 실행은 `status: 사용`일 때만, 등록부 「실행 요청」은 `status: 사용` 또는 `시험`일 때만 실행한다. 그 밖에는 멈추고 보고한다.
 2. 어제 보고서를 읽어 이미 다룬 항목 목록을 만든다. **어제 보고서가 없으면**(첫 실행, 결손) 그냥 진행한다. 오늘 보고서가 이미 있으면(재실행) 덮어쓴다.
 3. 세 플랫폼을 순서대로 본다: X(30분) → 링크드인(15분) → 인스타그램(15분). 각 플랫폼에서 지난 24시간 게시물 중 키워드에 맞는 것을 「입력」의 우선순위대로 모은다. 광고, 과장 홍보, 출처 없는 주장은 뺀다.
 3-1. **로그인이 풀렸거나 접근이 막히면** 그 플랫폼은 건너뛴다. 다시 시도하지 않고, 자격 정보를 입력하려 하지 않는다. 보고서 frontmatter `platforms_skipped`에 적고 「뺀 것」에 "미확인: 플랫폼 — 이유"를 쓴다. 나머지 플랫폼으로 계속한다. 셋 다 막히면 보고서를 쓰지 않고 `last_result: 실패: 접근 불가 (x, linkedin, instagram)`로 끝낸다.
@@ -102,6 +105,8 @@ time_spent: 72분
 - [ ] frontmatter `last_run`·`last_result`와 등록부를 갱신했다
 
 ## 변경 기록
+
+- 2026-10-26: 사용자 승인으로 시험 전환. 절차 1의 실행 조건을 AGENTS 4-4에 맞춤.
 
 - 2026-10-26: 만듦. 멈춤 상태.
 - 2026-10-26: Hermes 검토 반영 — 시간 예산을 탐색 60 + 작성 20 + 검증 10으로, 로그인·차단 시 플랫폼 건너뛰기, 선정 기준을 공식 발표·시연·사용 사례 우선(반응 수는 보조), 첫 실행·재실행 규칙, 부분 수집 표시(`platforms_skipped`, `collected_until`), 오늘의 셋은 최대 셋. 다음: `시험`으로 바꿔 한 번 수동 실행.
