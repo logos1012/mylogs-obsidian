@@ -1,10 +1,13 @@
 /**
- * My Life view (`mylogs-my-life`): one screen, a date picker and five tabs
- * (오늘 / 이번 주 / 이번 달 / 올해 / Diary) over the `08 My Life/` record files.
+ * My Life view (`mylogs-my-life`): one screen, a date picker and four tabs
+ * (오늘 / 이번 주 / 이번 달 / 올해) over the `08 My Life/` record files.
  *
  * Read-only by design (Hermes writes the files: `08 My Life/AGENTS.md` 「1」「6」). The one
  * exception is `## 사용자 한마디` (Weekly and up), which the user writes here; the save touches only
  * that section (model `setUserNote`). Missing files are shown, never created.
+ *
+ * The former Diary tab (깨달음·감상 + 로그 of a month) now lives in the Diary view's material panel
+ * as 「My Life에서」 (`08 My Life/AGENTS.md` 「4-6」); the header keeps a "Diary 열기" button.
  */
 
 import {
@@ -18,7 +21,6 @@ import {
 	setIcon,
 	type TAbstractFile,
 	TFile,
-	TFolder,
 	type ViewStateResult,
 	type WorkspaceLeaf,
 } from "obsidian";
@@ -26,23 +28,14 @@ import type MyLogsPlugin from "../main.ts";
 import { addDays, fromIsoDate } from "../parser.ts";
 import { todayIsoLocal } from "../desk/model.ts";
 import {
-	aggregateDiary,
-	dailyMonthFolder,
-	dateOfDailyName,
-	type DiaryEntry,
-	type DiaryMonth,
-	type DiarySource,
 	hasUserNote,
-	isMonthKey,
 	MY_LIFE_TABS,
 	type MyLifeFile,
 	type MyLifeTab,
 	type MyLifeUnit,
-	monthlyPath,
 	normalizeNote,
 	parseMyLifeFile,
 	setUserNote,
-	shiftMonthKey,
 	UNIT_LABEL,
 	unitPath,
 	unitTitle,
@@ -58,10 +51,6 @@ const UNIT_HINT: Record<MyLifeUnit, string> = {
 	monthly: "말일 자정이 지나면 Hermes가 초안을 쓰고, Desk Reset·Drawer 리뷰 뒤에 채운다",
 	yearly: "12월 31일 자정이 지나면 Hermes가 초안을 쓴다",
 };
-
-function isUnit(tab: MyLifeTab): tab is MyLifeUnit {
-	return tab !== "diary";
-}
 
 function isTab(s: unknown): s is MyLifeTab {
 	return typeof s === "string" && (MY_LIFE_TABS as readonly string[]).includes(s);
@@ -260,8 +249,6 @@ export class MyLifeView extends ItemView {
 	readonly plugin: MyLogsPlugin;
 	date: string = todayIsoLocal();
 	tab: MyLifeTab = "daily";
-	/** Diary month (`YYYY-MM`); follows the date until the tab's own ◀ ▶ moves it. */
-	diaryMonth: string = this.date.slice(0, 7);
 
 	private rootEl!: HTMLElement;
 	private headerEl!: HTMLElement;
@@ -290,23 +277,18 @@ export class MyLifeView extends ItemView {
 	}
 
 	getState(): Record<string, unknown> {
-		return { ...super.getState(), date: this.date, tab: this.tab, diaryMonth: this.diaryMonth };
+		return { ...super.getState(), date: this.date, tab: this.tab };
 	}
 
 	async setState(state: unknown, result: ViewStateResult): Promise<void> {
-		const s = (state as { date?: string; tab?: string; diaryMonth?: string } | null) ?? {};
+		const s = (state as { date?: string; tab?: string } | null) ?? {};
 		let changed = false;
 		if (s.date && fromIsoDate(s.date) && s.date !== this.date) {
 			this.date = s.date;
-			this.diaryMonth = s.date.slice(0, 7);
 			changed = true;
 		}
 		if (isTab(s.tab) && s.tab !== this.tab) {
 			this.tab = s.tab;
-			changed = true;
-		}
-		if (s.diaryMonth && isMonthKey(s.diaryMonth) && s.diaryMonth !== this.diaryMonth) {
-			this.diaryMonth = s.diaryMonth;
 			changed = true;
 		}
 		if (changed && this.rootEl) await this.reload();
@@ -335,9 +317,7 @@ export class MyLifeView extends ItemView {
 
 	/** Does a vault event at `path` concern what is on screen? */
 	private watches(path: string): boolean {
-		if (isUnit(this.tab)) return path === this.pathOf(this.tab);
-		const folder = normalizePath(dailyMonthFolder(this.folder(), this.diaryMonth));
-		return path.startsWith(folder + "/") || path === normalizePath(monthlyPath(this.folder(), `${this.diaryMonth}-01`));
+		return path === this.pathOf(this.tab);
 	}
 
 	// ── lifecycle ──
@@ -384,7 +364,6 @@ export class MyLifeView extends ItemView {
 		if (!fromIsoDate(date) || date === this.date) return;
 		await this.note?.flush();
 		this.date = date;
-		this.diaryMonth = date.slice(0, 7);
 		await this.reload();
 		(this.leaf as unknown as { updateHeader?: () => void }).updateHeader?.();
 		this.app.workspace.requestSaveLayout();
@@ -398,14 +377,13 @@ export class MyLifeView extends ItemView {
 		this.app.workspace.requestSaveLayout();
 	}
 
-	/** The 오늘 tab for `date` (from the Diary or another view). */
+	/** The 오늘 tab for `date` (from the Diary view or another view). */
 	async openDaily(date: string): Promise<void> {
 		if (!fromIsoDate(date)) return;
 		if (date === this.date && this.tab === "daily") return;
 		await this.note?.flush();
 		this.tab = "daily";
 		this.date = date;
-		this.diaryMonth = date.slice(0, 7);
 		await this.reload();
 		(this.leaf as unknown as { updateHeader?: () => void }).updateHeader?.();
 		this.app.workspace.requestSaveLayout();
@@ -415,19 +393,12 @@ export class MyLifeView extends ItemView {
 		const seq = ++this.loadSeq;
 		this.renderHeader();
 		this.renderTabs();
-		if (isUnit(this.tab)) {
-			const path = this.pathOf(this.tab);
-			const text = await this.readAt(path);
-			if (seq !== this.loadSeq) return;
-			this.resetBody();
-			if (text === null) this.renderMissing(this.tab, path);
-			else this.renderUnit(this.tab, path, text);
-		} else {
-			const diary = await this.readDiary();
-			if (seq !== this.loadSeq) return;
-			this.resetBody();
-			this.renderDiary(diary);
-		}
+		const path = this.pathOf(this.tab);
+		const text = await this.readAt(path);
+		if (seq !== this.loadSeq) return;
+		this.resetBody();
+		if (text === null) this.renderMissing(this.tab, path);
+		else this.renderUnit(this.tab, path, text);
 	}
 
 	private resetBody(): void {
@@ -470,15 +441,18 @@ export class MyLifeView extends ItemView {
 		setIcon(padIcon, "notebook-pen");
 		pad.createSpan({ text: "Daily Pad 열기" });
 		pad.addEventListener("click", () => void this.plugin.openDailyPadAt(this.date));
-		if (isUnit(this.tab)) {
-			const open = nav.createEl("button", { cls: "mlf-btn mlf-btn-icon mlf-open-file", attr: { type: "button", "aria-label": "마크다운 파일 열기" } });
-			setIcon(open, "file-text");
-			open.addEventListener("click", (e) => {
-				const f = isUnit(this.tab) ? this.fileAt(this.pathOf(this.tab)) : null;
-				if (f) void this.app.workspace.getLeaf(Keymap.isModEvent(e)).openFile(f);
-				else new Notice("아직 이 단위의 My Life 파일이 없어요.");
-			});
-		}
+		const diary = nav.createEl("button", { cls: "mlf-btn mlf-diary-btn", attr: { type: "button", "aria-label": "Diary 화면 열기 (내가 쓰는 글)" } });
+		const diaryIcon = diary.createSpan({ cls: "mlf-btn-ico" });
+		setIcon(diaryIcon, "feather");
+		diary.createSpan({ text: "Diary 열기" });
+		diary.addEventListener("click", () => void this.plugin.activateDiary());
+		const open = nav.createEl("button", { cls: "mlf-btn mlf-btn-icon mlf-open-file", attr: { type: "button", "aria-label": "마크다운 파일 열기" } });
+		setIcon(open, "file-text");
+		open.addEventListener("click", (e) => {
+			const f = this.fileAt(this.pathOf(this.tab));
+			if (f) void this.app.workspace.getLeaf(Keymap.isModEvent(e)).openFile(f);
+			else new Notice("아직 이 단위의 My Life 파일이 없어요.");
+		});
 	}
 
 	private renderTabs(): void {
@@ -490,8 +464,7 @@ export class MyLifeView extends ItemView {
 				attr: { type: "button", role: "tab", "aria-selected": tab === this.tab ? "true" : "false" },
 			});
 			b.createSpan({ cls: "mlf-tab-label", text: UNIT_LABEL[tab] });
-			if (isUnit(tab)) b.createSpan({ cls: "mlf-tab-sub", text: unitTitle(tab, this.date) });
-			else b.createSpan({ cls: "mlf-tab-sub", text: this.diaryMonth });
+			b.createSpan({ cls: "mlf-tab-sub", text: unitTitle(tab, this.date) });
 			b.addEventListener("click", () => void this.showTab(tab));
 		}
 	}
@@ -603,94 +576,5 @@ export class MyLifeView extends ItemView {
 			const href = a.getAttr("data-href") ?? a.getAttr("href") ?? "";
 			void this.app.workspace.openLinkText(href, sourcePath, Keymap.isModEvent(e));
 		});
-	}
-
-	// ── Diary ──
-
-	private async readDiary(): Promise<DiaryMonth> {
-		const folder = this.app.vault.getAbstractFileByPath(normalizePath(dailyMonthFolder(this.folder(), this.diaryMonth)));
-		const dailies: DiarySource[] = [];
-		if (folder instanceof TFolder) {
-			for (const child of folder.children) {
-				if (!(child instanceof TFile) || child.extension !== "md") continue;
-				const date = dateOfDailyName(child.basename);
-				if (!date) continue;
-				dailies.push({ path: child.path, date, text: await this.app.vault.read(child) });
-			}
-		}
-		const mPath = normalizePath(monthlyPath(this.folder(), `${this.diaryMonth}-01`));
-		const mText = await this.readAt(mPath);
-		const monthly = mText === null ? null : { path: mPath, date: this.diaryMonth, text: mText };
-		return aggregateDiary(this.diaryMonth, dailies, monthly);
-	}
-
-	private async showDiaryMonth(month: string): Promise<void> {
-		if (!isMonthKey(month) || month === this.diaryMonth) return;
-		this.diaryMonth = month;
-		await this.reload();
-		this.app.workspace.requestSaveLayout();
-	}
-
-	private renderDiary(diary: DiaryMonth): void {
-		this.dropNote();
-		const m = moment(`${diary.month}-01`, "YYYY-MM-DD");
-		const head = this.bodyEl.createDiv({ cls: "mlf-diary-head" });
-		const nav = head.createDiv({ cls: "mlf-diary-nav" });
-		const prev = nav.createEl("button", { cls: "mlf-btn mlf-btn-icon", text: "◀", attr: { type: "button", "aria-label": "이전 달" } });
-		prev.addEventListener("click", () => void this.showDiaryMonth(shiftMonthKey(diary.month, -1)));
-		nav.createEl("h2", { cls: "mlf-diary-month", text: m.format("YYYY년 M월") });
-		const next = nav.createEl("button", { cls: "mlf-btn mlf-btn-icon", text: "▶", attr: { type: "button", "aria-label": "다음 달" } });
-		next.addEventListener("click", () => void this.showDiaryMonth(shiftMonthKey(diary.month, 1)));
-		if (diary.month !== this.date.slice(0, 7)) {
-			const back = nav.createEl("button", { cls: "mlf-btn", text: `${this.date.slice(0, 7)}로`, attr: { type: "button", "aria-label": "고른 날짜의 달로" } });
-			back.addEventListener("click", () => void this.showDiaryMonth(this.date.slice(0, 7)));
-		}
-		const sum = head.createDiv({ cls: "mlf-diary-sum" });
-		sum.setText(
-			diary.entries.length
-				? `Daily ${diary.days.length}일 · 기록 ${diary.entries.length}개${diary.hasMonthly ? " · Monthly 있음" : ""}`
-				: "Daily의 깨달음·감상과 로그, Monthly의 깨달음·감상을 날짜순으로 모은다",
-		);
-
-		if (!diary.entries.length) {
-			const empty = this.bodyEl.createDiv({ cls: "mlf-empty" });
-			empty.createDiv({ cls: "mlf-empty-title", text: "이 달의 기록이 아직 없다" });
-			empty.createEl("code", { cls: "mlf-empty-path", text: dailyMonthFolder(this.folder(), diary.month) });
-			empty.createDiv({ cls: "mlf-empty-hint", text: "Daily가 쓰이면 여기에 깨달음·감상과 로그가 모인다." });
-			return;
-		}
-
-		const list = this.bodyEl.createDiv({ cls: "mlf-diary" });
-		let group: HTMLElement | null = null;
-		let groupKey = "";
-		for (const e of diary.entries) {
-			const key = `${e.unit}:${e.date}`;
-			if (key !== groupKey) {
-				groupKey = key;
-				group = list.createDiv({ cls: `mlf-diary-day${e.unit === "monthly" ? " is-monthly" : ""}` });
-				this.renderDiaryDate(group, e);
-			}
-			const item = group!.createDiv({ cls: "mlf-diary-entry" });
-			item.createDiv({ cls: "mlf-diary-section", text: e.section });
-			const md = item.createDiv({ cls: "mlf-md markdown-rendered" });
-			void this.renderMarkdown(md, e.content, e.path);
-		}
-	}
-
-	private renderDiaryDate(group: HTMLElement, e: DiaryEntry): void {
-		const head = group.createDiv({ cls: "mlf-diary-date" });
-		const label =
-			e.unit === "monthly" ? `Monthly ${e.date}` : `${moment(e.date, "YYYY-MM-DD").format("M월 D일 (ddd)")}`;
-		const link = head.createEl("a", { cls: "mlf-diary-link", text: label, attr: { href: "#", "aria-label": `${label} 파일 열기` } });
-		link.addEventListener("click", (ev) => {
-			ev.preventDefault();
-			const f = this.fileAt(e.path);
-			if (f) void this.app.workspace.getLeaf(Keymap.isModEvent(ev)).openFile(f);
-		});
-		if (e.unit === "daily") {
-			const here = head.createEl("button", { cls: "mlf-link-btn is-quiet", text: "오늘 탭에서", attr: { type: "button", "aria-label": "이 날짜의 오늘 탭 열기" } });
-			here.addEventListener("click", () => void this.openDaily(e.date));
-		}
-		head.createSpan({ cls: "mlf-diary-path", text: e.path });
 	}
 }

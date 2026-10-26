@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { findDaySection } from "../src/parser.ts";
+import { flywheelLines, parseFlywheel } from "../src/flywheel/model.ts";
 import {
 	appendToSection,
 	dailyPadSkeleton,
@@ -182,4 +183,15 @@ test("skeleton matches new_day.py render() exactly", () => {
 		sections: ["오늘 할 일", "메모", "로그", "끼적임", "자료"],
 	});
 	assert.equal(nov, readFileSync(join(here, "fixtures/new_day-2026-11-01.md"), "utf8"));
+	// With `12 Flywheel/Flywheel.md` present, new_day.py opens 오늘 할 일 with the 사용 elements.
+	const flywheel = flywheelLines(parseFlywheel(readFileSync(join(here, "fixtures/flywheel/Flywheel.md"), "utf8")));
+	assert.equal(flywheel.length, 3);
+	const withFlywheel = dailyPadSkeleton({
+		isoDate: "2026-10-24",
+		weekday: "토",
+		deskCalendarFolder: "03 Desk Calendar",
+		sections: ["오늘 할 일", "메모", "로그", "끼적임", "자료"],
+		flywheelLines: flywheel,
+	});
+	assert.equal(withFlywheel, readFileSync(join(here, "fixtures/new_day-2026-10-24.flywheel.md"), "utf8"));
 });

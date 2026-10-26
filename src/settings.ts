@@ -29,6 +29,12 @@ export interface MyLogsSettings {
 	myLifeCollapsed: Record<string, string[]>;
 	/** Toolbox folder: skills `<folder>/<이름>.md`, registry `<folder>/Toolbox Index.md`, template `<folder>/_Templates/스킬.md`. */
 	toolboxPath: string;
+	/** Diary folder: entries `<folder>/<YYYY>/<YYYY-MM>/<YYYY-MM-DD HHMM>.md`, registry `<folder>/Diary Index.md`, `_Templates/엔트리.md`, `99 작업실/`. */
+	diaryPath: string;
+	/** Diary view: the material pane is folded away (remembered). */
+	diaryMaterialCollapsed: boolean;
+	/** Flywheel folder: `<folder>/Flywheel.md` (read only; its `status:: 사용` elements open each new Daily Pad). */
+	flywheelPath: string;
 	sections: SectionNames;
 	/** Show `#test` markers on test data. */
 	showTestMarkers: boolean;
@@ -46,6 +52,9 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	myLifePath: "08 My Life",
 	myLifeCollapsed: {},
 	toolboxPath: "11 Toolbox",
+	diaryPath: "09 Diary",
+	diaryMaterialCollapsed: false,
+	flywheelPath: "12 Flywheel",
 	sections: {
 		pending: "결정 대기",
 		today: "오늘 할 일",
@@ -143,6 +152,30 @@ export class MyLogsSettingTab extends PluginSettingTab {
 					.setValue(s.toolboxPath)
 					.onChange(async (v) => {
 						s.toolboxPath = cleanFolder(v) || DEFAULT_SETTINGS.toolboxPath;
+						await this.plugin.saveSettings();
+					}),
+			);
+		new Setting(containerEl)
+			.setName("Diary 폴더")
+			.setDesc("엔트리 위치: <폴더>/<YYYY>/<YYYY-MM>/<YYYY-MM-DD HHMM>.md · 등록부: <폴더>/Diary Index.md · 템플릿: <폴더>/_Templates/엔트리.md · 질문·첨부: <폴더>/99 작업실/")
+			.addText((t) =>
+				t
+					.setPlaceholder(DEFAULT_SETTINGS.diaryPath)
+					.setValue(s.diaryPath)
+					.onChange(async (v) => {
+						s.diaryPath = cleanFolder(v) || DEFAULT_SETTINGS.diaryPath;
+						await this.plugin.saveSettings();
+					}),
+			);
+		new Setting(containerEl)
+			.setName("Flywheel 폴더")
+			.setDesc("바퀴 한 장: <폴더>/Flywheel.md · 읽기만 함. status:: 사용 요소를 새 Daily Pad의 오늘 할 일 맨 위에 넣습니다")
+			.addText((t) =>
+				t
+					.setPlaceholder(DEFAULT_SETTINGS.flywheelPath)
+					.setValue(s.flywheelPath)
+					.onChange(async (v) => {
+						s.flywheelPath = cleanFolder(v) || DEFAULT_SETTINGS.flywheelPath;
 						await this.plugin.saveSettings();
 					}),
 			);
