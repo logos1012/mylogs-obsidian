@@ -10,16 +10,53 @@
 
 import { cleanInline, daysBetween, findSectionText, isIsoDate, parseSections, valueToString } from "../pinboard/model.ts";
 
-/** 「3」: 사용 | 시험 | 멈춤 | 폐기. 시험 = not on cron, runs only via 「실행 요청」. */
+/** 「1」: three kinds. 작업 = a job (cron / 실행 요청), 도구 = called by words, 운영 = a working contract. */
+export const SKILL_KINDS = ["작업", "도구", "운영"] as const;
+export type SkillKind = (typeof SKILL_KINDS)[number];
+/** The view's / registry's order, top to bottom. */
+export const KIND_ORDER: readonly SkillKind[] = ["운영", "도구", "작업"];
+
+export function isKind(v: string): v is SkillKind {
+	return (SKILL_KINDS as readonly string[]).includes(v);
+}
+/** `kind` as written; missing (or unknown) → 작업 (files from before v2.0 are all 작업). */
+export function parseKind(v: unknown): SkillKind {
+	const s = valueToString(v).trim();
+	return isKind(s) ? s : "작업";
+}
+
+/** 「3」 (작업): 사용 | 시험 | 멈춤 | 폐기. 시험 = not on cron, runs only via 「실행 요청」. */
 export const SKILL_STATUSES = ["멈춤", "시험", "사용", "폐기"] as const;
 export type SkillStatus = (typeof SKILL_STATUSES)[number];
-/** 「4-1」 2-1: the order a skill moves through (the row's 3-way control). */
+/** 「4-1」 2-1: the order a 작업 moves through (the row's 3-way control). */
 export const LIVE_STATUSES = ["멈춤", "시험", "사용"] as const;
 export type LiveStatus = (typeof LIVE_STATUSES)[number];
 
-/** 「4-4」 1: a 「실행 요청」 runs only for 사용·시험. */
-export function canRequestRun(status: string): boolean {
-	return status === "사용" || status === "시험";
+/** 「3」: the status set of each kind. */
+export const STATUSES_BY_KIND: Record<SkillKind, readonly string[]> = {
+	작업: SKILL_STATUSES,
+	도구: ["멈춤", "사용", "폐기"],
+	운영: ["사용", "폐기"],
+};
+/** The row's status control: 작업 3-way, 도구 2-way, 운영 none (always applied; a badge only). */
+export function liveStatuses(kind: SkillKind): readonly string[] {
+	return kind === "작업" ? LIVE_STATUSES : kind === "도구" ? ["멈춤", "사용"] : [];
+}
+export function validStatus(kind: SkillKind, status: string): boolean {
+	return STATUSES_BY_KIND[kind].includes(status);
+}
+/** 「4-1」 2: the status a new skill starts with. */
+export function initialStatus(kind: SkillKind): string {
+	return kind === "운영" ? "사용" : "멈춤";
+}
+/** The status a skill gets when it moves to `kind` (kept when still valid). */
+export function statusForKind(kind: SkillKind, status: string): string {
+	return validStatus(kind, status) ? status : initialStatus(kind);
+}
+
+/** 「4-4」 1: a 「실행 요청」 runs only for 사용·시험 (and only 작업 runs at all). */
+export function canRequestRun(status: string, kind: SkillKind = "작업"): boolean {
+	return kind === "작업" && (status === "사용" || status === "시험");
 }
 /** 「6」: 시험·사용 need the user's confirmation (멈춤 doesn't). */
 export function needsConfirm(to: string): to is "시험" | "사용" {
@@ -32,9 +69,13 @@ export const OWNERS = ["hermes", "claude-code", "codex"] as const;
 export const REGISTRY_FILE = "Toolbox Index.md";
 export const TEMPLATE_REL = "_Templates/스킬.md";
 export const PURPOSE_SECTION = "목적";
+/** 도구: 「트리거」 holds the 부르는 말 (its first line = the registry cell). */
+export const PHRASE_SECTION = "트리거";
+/** 운영: 「범위」 (its first line = the registry cell). */
+export const SCOPE_SECTION = "범위";
 export const CHANGELOG_SECTION = "변경 기록";
 
-/** 「4-6」: `last_run` this old (or missing) asks "아직도 쓰나요?". */
+/** 「4-9」: `last_run` (작업) / `last_reviewed` (all) this old asks "아직도 쓰나요?". */
 export const STALE_DAYS = 90;
 /** 「2」: more skills than this → tell the user. */
 export const MAX_SKILLS = 20;
@@ -46,6 +87,10 @@ export interface Skill {
 	/** File basename (= 이름, 「3」: `name` 파일 이름과 같게). */
 	name: string;
 	id: string;
+	kind: SkillKind;
+	/** Hermes stub folder name (「4-7」). */
+	slug: string;
+	description: string;
 	owner: string;
 	trigger: string;
 	schedule: string;
@@ -60,6 +105,10 @@ export interface Skill {
 	updated: string;
 	/** First line of 「목적」 (하는 일). */
 	purpose: string;
+	/** 도구: first line of 「트리거」 (부르는 말). */
+	phrase: string;
+	/** 운영: first line of 「범위」. */
+	scope: string;
 }
 
 // ───────────────────────── paths ─────────────────────────
@@ -124,6 +173,9 @@ export function parseSkill(fm: Record<string, unknown> | null | undefined, body:
 		path,
 		name,
 		id: s("id"),
+		kind: parseKind(fm.kind),
+		slug: s("slug"),
+		description: s("description"),
 		owner: s("owner"),
 		trigger: s("trigger"),
 		schedule: s("schedule"),
@@ -136,17 +188,26 @@ export function parseSkill(fm: Record<string, unknown> | null | undefined, body:
 		created: isoOrEmpty(fm.created),
 		updated: isoOrEmpty(fm.updated),
 		purpose: firstLine(findSectionText(secs, PURPOSE_SECTION)),
+		phrase: firstLine(findSectionText(secs, PHRASE_SECTION)),
+		scope: firstLine(findSectionText(secs, SCOPE_SECTION)),
 	};
 }
 
 // ───────────────────────── badges ─────────────────────────
 
-/** `last_run` missing or ≥ 90 days ago (폐기 skills never ask). */
-export function isStaleSkill(s: Pick<Skill, "status" | "lastRun">, today: string, days = STALE_DAYS): boolean {
-	if (s.status === "폐기") return false;
+/** 작업 only: `last_run` missing or ≥ 90 days ago (폐기 skills never ask; 도구·운영 have no runs). */
+export function isStaleSkill(s: Pick<Skill, "status" | "lastRun"> & { kind?: SkillKind }, today: string, days = STALE_DAYS): boolean {
+	if (s.status === "폐기" || (s.kind ?? "작업") !== "작업") return false;
 	const d = s.lastRun.slice(0, 10);
 	if (!isIsoDate(d)) return true;
 	return daysBetween(d, today) >= days;
+}
+
+/** All kinds: `last_reviewed` ≥ 90 days ago (「4-9」 1). A missing date asks too; 폐기 never. */
+export function isReviewStale(s: Pick<Skill, "status" | "lastReviewed">, today: string, days = STALE_DAYS): boolean {
+	if (s.status === "폐기") return false;
+	if (!isIsoDate(s.lastReviewed)) return true;
+	return daysBetween(s.lastReviewed, today) >= days;
 }
 
 export function daysSinceRun(s: Pick<Skill, "lastRun">, today: string): number | null {
@@ -181,11 +242,21 @@ export function nextSkillId(ids: string[]): string {
 
 // ───────────────────────── registry rows & reconciliation ─────────────────────────
 
-/** One row of the 「스킬」 table (cells as text; `schedule` / `output` without backticks). */
+/**
+ * One row of a kind table — 「운영」, 「도구」, 「작업」 (or the legacy 「스킬」 = 작업). Cells as
+ * text (`schedule` / `output` without backticks); a column the table doesn't have is "".
+ */
 export interface SkillRow {
+	/** The table the row is in. */
+	kind: SkillKind;
 	id: string;
 	/** The 이름 cell as written (a wikilink). */
 	nameCell: string;
+	slug: string;
+	/** 운영 범위. */
+	scope: string;
+	/** 도구 부르는 말. */
+	phrase: string;
 	purpose: string;
 	trigger: string;
 	schedule: string;
@@ -218,7 +289,13 @@ export function rowName(cell: string): string {
 	return cleanInline(cell.replace(/\\\|/g, "|"));
 }
 
-export type Entry = { kind: "both"; skill: Skill; row: SkillRow } | { kind: "file-only"; skill: Skill; row: null } | { kind: "row-only"; skill: null; row: SkillRow };
+/** `misplaced`: the row sits in another kind's table than the file's `kind` (「4-2」 1). */
+export type Entry = { kind: "both"; skill: Skill; row: SkillRow; misplaced: boolean } | { kind: "file-only"; skill: Skill; row: null } | { kind: "row-only"; skill: null; row: SkillRow };
+
+/** The kind an entry is shown under: the file's (canonical), else the row's table. */
+export function entryKind(e: Entry): SkillKind {
+	return e.skill ? e.skill.kind : e.row.kind;
+}
 
 function idKey(id: string): number {
 	const m = /^T-(\d+)$/.exec(id);
@@ -226,8 +303,9 @@ function idKey(id: string): number {
 }
 
 /**
- * Files and 「스킬」 rows side by side, by id (a file without an id matches a row by name).
- * File-only → "등록부에 없음"; row-only → struck through. Sorted by id, then name.
+ * Files and registry rows (all kind tables) side by side, by id (a file without an id matches a
+ * row by name). File-only → "등록부에 없음"; row-only → struck through; a row in another kind's
+ * table than the file → `misplaced`. Sorted by id, then name.
  */
 export function reconcile(skills: Skill[], rows: SkillRow[]): Entry[] {
 	const out: Entry[] = [];
@@ -235,7 +313,7 @@ export function reconcile(skills: Skill[], rows: SkillRow[]): Entry[] {
 	for (const skill of skills) {
 		const row = rows.find((r) => !used.has(r) && ((skill.id && r.id === skill.id) || (!skill.id && rowName(r.nameCell) === skill.name))) ?? null;
 		if (row) used.add(row);
-		out.push(row ? { kind: "both", skill, row } : { kind: "file-only", skill, row: null });
+		out.push(row ? { kind: "both", skill, row, misplaced: row.kind !== skill.kind } : { kind: "file-only", skill, row: null });
 	}
 	for (const row of rows) if (!used.has(row)) out.push({ kind: "row-only", skill: null, row });
 	const key = (e: Entry) => e.skill?.id || e.row?.id || "";
@@ -265,10 +343,24 @@ export function requestStamp(d: Date): string {
 
 // ───────────────────────── new / edited skill input ─────────────────────────
 
+/**
+ * The new-skill form. Which fields matter depends on `kind` (「4-1」 받을 정보):
+ * 작업 = 이름·slug·description·하는 일·트리거·schedule·출력·알림; 도구 = 이름·slug·description·
+ * 부르는 말·담당; 운영 = 이름·slug·description·범위. A missing `kind` is 작업.
+ */
 export interface SkillInput {
+	kind?: SkillKind;
 	name: string;
-	/** 하는 일 한 줄 (→ 「목적」 first line, registry 하는 일). */
+	slug?: string;
+	description?: string;
+	/** 작업: 하는 일 한 줄 (→ 「목적」 first line, registry 하는 일). */
 	purpose: string;
+	/** 도구: 부르는 말 (→ 「트리거」, the description, the registry cell). */
+	phrase?: string;
+	/** 운영: 범위 (→ 「범위」, the registry cell). */
+	scope?: string;
+	/** 담당 (`owner`). Empty → the template's. */
+	owner?: string;
 	trigger: Trigger | string;
 	/** Only meaningful when `trigger` is `cron`. */
 	schedule: string;
@@ -276,8 +368,32 @@ export interface SkillInput {
 	notify: string;
 }
 
-/** Fields the 수정 dialog changes (하는 일 is the file body: edited in the file). */
+/** Fields the 수정 dialog changes (하는 일 is the file body: edited in the file). Absent = unchanged. */
 export type SkillEdit = Omit<SkillInput, "purpose">;
+
+export function inputKind(i: { kind?: SkillKind }): SkillKind {
+	return i.kind ?? "작업";
+}
+
+/** 「3」: `slug` = 영문 소문자·숫자·하이픈. */
+export const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+export function slugProblem(slug: string, taken: string[] = []): string | null {
+	const s = slug.trim();
+	if (!s) return "slug를 적어 주세요 (Hermes 스텁 폴더 이름). 예: ai-news-briefing";
+	if (!SLUG_RE.test(s)) return "slug는 영문 소문자·숫자·하이픈만 써요 (하이픈으로 시작·끝나거나 두 번 이어지면 안 돼요). 예: ai-news-briefing";
+	if (taken.includes(s)) return `이미 있는 slug예요: ${s}`;
+	return null;
+}
+
+/** 도구: the description carries the 부르는 말 (「3」: 트리거 문장 포함) — appended, quoted, when missing. */
+export function descriptionWithPhrase(description: string, phrase: string): string {
+	const d = description.replace(/\s*\r?\n\s*/g, " ").trim();
+	const p = phrase.replace(/\s*\r?\n\s*/g, " ").trim();
+	if (!p || d.includes(p.replace(/^["“]|["”]$/g, ""))) return d;
+	const q = /["“”]/.test(p) ? p : `"${p}"`;
+	return d ? `${d} ${q}` : q;
+}
 
 export function nameProblem(name: string): string | null {
 	const n = name.trim();
@@ -297,37 +413,110 @@ export function scheduleProblem(trigger: string, schedule: string): string | nul
 	return null;
 }
 
-/** All problems with a new skill (empty = ok). `taken` = names and ids on disk or in the registry. */
-export function validateSkillInput(i: SkillInput, id: string, taken: { ids: string[]; names: string[] }): string[] {
+export interface Taken {
+	ids: string[];
+	names: string[];
+	slugs?: string[];
+}
+
+/** The kind-specific fields of a form (shared by 새 스킬 and 수정). */
+export function kindFieldProblems(i: Omit<SkillInput, "purpose"> & { purpose?: string }, o: { requirePurpose: boolean; slugs: string[]; requireSlug: boolean }): string[] {
+	const out: string[] = [];
+	const kind = inputKind(i);
+	if (o.requireSlug || (i.slug ?? "").trim()) {
+		const sp = slugProblem(i.slug ?? "", o.slugs);
+		if (sp) out.push(sp);
+	}
+	if (!(i.description ?? "").trim()) out.push("description을 한두 문장 적어 주세요 (언제 이 스킬을 쓰는지 · Hermes 스텁에 그대로 들어가요).");
+	if (kind === "작업") {
+		if (o.requirePurpose && !(i.purpose ?? "").trim()) out.push("하는 일을 한 줄 적어 주세요.");
+		if (!(TRIGGERS as readonly string[]).includes(i.trigger)) out.push("트리거를 골라 주세요 (cron / 수동 / 이벤트).");
+		const sp = scheduleProblem(i.trigger, i.schedule);
+		if (sp) out.push(sp);
+		if (!i.output.trim()) out.push("출력 위치를 적어 주세요.");
+	} else if (kind === "도구") {
+		if (!(i.phrase ?? "").trim()) out.push("부르는 말을 적어 주세요. 예: \"데일리로그 기록해 줘\"");
+	} else if (!(i.scope ?? "").trim()) out.push("범위를 적어 주세요. 예: MyLogs 볼트 전체");
+	return out;
+}
+
+/** All problems with a new skill (empty = ok). `taken` = names, ids and slugs on disk or in the registry. */
+export function validateSkillInput(i: SkillInput, id: string, taken: Taken): string[] {
 	const out: string[] = [];
 	const np = nameProblem(i.name);
 	if (np) out.push(np);
 	else if (taken.names.includes(i.name.trim())) out.push(`이미 있는 스킬 이름이에요: ${i.name.trim()}`);
-	if (!i.purpose.trim()) out.push("하는 일을 한 줄 적어 주세요.");
-	if (!(TRIGGERS as readonly string[]).includes(i.trigger)) out.push("트리거를 골라 주세요 (cron / 수동 / 이벤트).");
-	const sp = scheduleProblem(i.trigger, i.schedule);
-	if (sp) out.push(sp);
-	if (!i.output.trim()) out.push("출력 위치를 적어 주세요.");
+	// A form without `kind` (before v2.0) has no slug / description: only 작업 fields are checked.
+	if (i.kind) out.push(...kindFieldProblems(i, { requirePurpose: true, slugs: taken.slugs ?? [], requireSlug: true }));
+	else out.push(...kindFieldProblems({ ...i, description: i.description ?? "-" }, { requirePurpose: true, slugs: taken.slugs ?? [], requireSlug: false }));
 	if (!SKILL_ID_RE.test(id)) out.push(`id 형식이 아니에요: ${id}`);
 	else if (taken.ids.includes(id)) out.push(`이미 있는 id예요: ${id}`);
 	return out;
 }
 
+/** A 수정 normalised against the skill: absent fields = unchanged; 작업-only fields only for 작업. */
+export interface EditDelta {
+	kind: SkillKind;
+	name: string;
+	slug: string;
+	description: string;
+	owner: string;
+	phrase: string;
+	scope: string;
+	trigger: string;
+	schedule: string;
+	output: string;
+	notify: string;
+	/** The status after the move (`statusForKind`). */
+	status: string;
+}
+
+export function editDelta(s: Skill, e: SkillEdit): EditDelta {
+	const kind = e.kind ?? s.kind;
+	const job = kind === "작업";
+	const trigger = job ? e.trigger : s.trigger;
+	return {
+		kind,
+		name: e.name.trim(),
+		slug: (e.slug ?? s.slug).trim(),
+		description: (e.description ?? s.description).replace(/\s*\r?\n\s*/g, " ").trim(),
+		owner: (e.owner ?? s.owner).trim(),
+		phrase: kind === "도구" ? (e.phrase ?? s.phrase).trim() : s.phrase,
+		scope: kind === "운영" ? (e.scope ?? s.scope).trim() : s.scope,
+		trigger,
+		schedule: job ? (trigger === "cron" ? e.schedule.trim() : "") : s.schedule,
+		output: job ? e.output.trim() : s.output,
+		notify: job ? e.notify.trim() : s.notify,
+		status: statusForKind(kind, s.status),
+	};
+}
+
 /** What a 수정 changes, for the logs (empty = nothing). Cron-less triggers drop the schedule. */
 export function skillEditChanges(s: Skill, e: SkillEdit): string[] {
 	const out: string[] = [];
-	const name = e.name.trim();
-	const schedule = e.trigger === "cron" ? e.schedule.trim() : "";
-	if (name !== s.name) out.push(`이름 「${s.name}」 → 「${name}」`);
-	if (e.trigger !== s.trigger) out.push(`트리거 ${s.trigger || "—"} → ${e.trigger}`);
-	if (schedule !== s.schedule) out.push(`schedule ${s.schedule || "—"} → ${schedule || "—"}`);
-	if (e.output.trim() !== s.output) out.push(`출력 ${s.output || "—"} → ${e.output.trim() || "—"}`);
-	if (e.notify.trim() !== s.notify) out.push("알림");
+	const d = editDelta(s, e);
+	if (d.kind !== s.kind) out.push(`종류 ${s.kind} → ${d.kind}${d.status !== s.status ? ` (${s.status} → ${d.status})` : ""}`);
+	if (d.name !== s.name) out.push(`이름 「${s.name}」 → 「${d.name}」`);
+	if (d.slug !== s.slug) out.push(`slug ${s.slug || "—"} → ${d.slug || "—"}`);
+	if (d.description !== s.description) out.push("description");
+	if (d.owner !== s.owner) out.push(`담당 ${s.owner || "—"} → ${d.owner || "—"}`);
+	if (d.phrase !== s.phrase) out.push(`부르는 말 ${s.phrase || "—"} → ${d.phrase || "—"}`);
+	if (d.scope !== s.scope) out.push(`범위 ${s.scope || "—"} → ${d.scope || "—"}`);
+	if (d.trigger !== s.trigger) out.push(`트리거 ${s.trigger || "—"} → ${d.trigger}`);
+	if (d.schedule !== s.schedule) out.push(`schedule ${s.schedule || "—"} → ${d.schedule || "—"}`);
+	if (d.output !== s.output) out.push(`출력 ${s.output || "—"} → ${d.output || "—"}`);
+	if (d.notify !== s.notify) out.push("알림");
 	return out;
 }
 
-/** 「4-2」 1: the registry row changes only when a registry column (이름·트리거·schedule·출력) did. */
+/** 「4-7」: slug or description changed → the Hermes stub must be re-synced. */
+export function stubAffected(s: Skill, e: SkillEdit): boolean {
+	const d = editDelta(s, e);
+	return d.slug !== s.slug || d.description !== s.description || d.kind !== s.kind || d.status !== s.status;
+}
+
+/** 「4-2」 1: the registry row changes only when a registry column (종류·이름·slug·트리거·schedule·출력·담당·부르는 말·범위) did. */
 export function registryAffected(s: Skill, e: SkillEdit): boolean {
-	const schedule = e.trigger === "cron" ? e.schedule.trim() : "";
-	return e.name.trim() !== s.name || e.trigger !== s.trigger || schedule !== s.schedule || e.output.trim() !== s.output;
+	const d = editDelta(s, e);
+	return d.kind !== s.kind || d.name !== s.name || d.slug !== s.slug || d.trigger !== s.trigger || d.schedule !== s.schedule || d.output !== s.output || d.owner !== s.owner || d.phrase !== s.phrase || d.scope !== s.scope;
 }
