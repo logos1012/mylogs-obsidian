@@ -10,11 +10,12 @@
  * is Hermes' job (the plugin only queues a 실행 요청 line).
  */
 
-import { debounce, ItemView, Keymap, Menu, normalizePath, Notice, setIcon, type TAbstractFile, TFile, type WorkspaceLeaf } from "obsidian";
+import { debounce, ItemView, Keymap, Menu, normalizePath, Notice, Platform, setIcon, type TAbstractFile, TFile, type WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { toIsoDate } from "../parser.ts";
 import { createSkill, discardSkill, editSkill, fixRowTable, loadToolbox, nextId, registerSkill, registryPath, requestRun, setStatus, takenIdsAndNames, toolboxRoot, type ToolboxData } from "./actions.ts";
 import { askDiscard, askSkillForm, confirmAsk, confirmEnable, toEdit } from "./modals.ts";
+import { renderToolboxSectionMobile, type ToolboxMobileHost } from "./mobile.ts";
 import { canRequestRun, daysSinceRun, type Entry, entryKind, failure, inputKind, isReviewStale, isStaleSkill, KIND_ORDER, liveStatuses, MAX_SKILLS, needsConfirm, pendingRequests, recentDoneRequests, type RunRequest, rowName, type Skill, type SkillKind, type SkillRow, STALE_DAYS, statusForKind, tooMany, truncate, validStatus } from "./model.ts";
 
 export const VIEW_TYPE_TOOLBOX = "mylogs-toolbox";
@@ -269,6 +270,7 @@ export class ToolboxView extends ItemView {
 	}
 
 	private renderSection(root: HTMLElement, kind: SkillKind, d: ToolboxData, today: string): void {
+		if (Platform.isMobile) return renderToolboxSectionMobile(this.mobileHost(d), root, kind, d, today);
 		const entries = d.entries.filter((e) => entryKind(e) === kind);
 		const sec = root.createDiv({ cls: `tb-section kind-${kind}` });
 		const head = sec.createDiv({ cls: "tb-section-head" });
@@ -289,6 +291,24 @@ export class ToolboxView extends ItemView {
 			if (e.kind === "row-only") this.renderGhostRow(body, cols, e.row);
 			else this.renderRow(body, cols, e, d.requests, today);
 		}
+	}
+
+	/** What the mobile layout (`./mobile.ts`) may use: the desktop rows and the status buttons' call. */
+	private mobileHost(d: ToolboxData): ToolboxMobileHost<Col> {
+		return {
+			app: this.app,
+			contentEl: this.contentEl,
+			cols: (kind) => KIND_COLS[kind],
+			colLabel: (c) => COL_LABEL[c],
+			lead: (kind) => KIND_LEAD[kind],
+			statusHint: (kind, v) => STATUS_HINT[kind][v] ?? "",
+			renderRow: (body, cols, e, today) => this.renderRow(body, cols, e, d.requests, today),
+			renderGhostRow: (body, cols, e) => {
+				if (e.kind === "row-only") this.renderGhostRow(body, cols, e.row);
+			},
+			setStatus: (s, to) => this.setStatus(s, to),
+			register: (cb) => this.register(cb),
+		};
 	}
 
 	private renderRow(body: HTMLElement, cols: Col[], e: Extract<Entry, { kind: "both" | "file-only" }>, requests: RunRequest[], today: string): void {

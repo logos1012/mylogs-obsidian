@@ -14,6 +14,8 @@
  * This module touches the DOM only inside the class; `planCaretScroll` is pure and tested.
  */
 
+import { visibleWindow } from "./mobile-core.ts";
+
 export interface AutoGrowOptions {
 	/** Minimum height in px (the textarea's CSS `min-height`). */
 	minHeight: number;
@@ -94,6 +96,16 @@ export function findScroller(el: HTMLElement): HTMLElement | null {
 		node = node.parentElement;
 	}
 	return null;
+}
+
+/**
+ * On mobile (`body.is-mobile`), the pane's rect clipped to `window.visualViewport` — the keyboard
+ * hides the rest. null on desktop, so the desktop caret follow is unchanged.
+ */
+function mobileWindow(rect: DOMRect): { top: number; height: number } | null {
+	const vv = window.visualViewport;
+	if (!vv || !document.body.classList.contains("is-mobile")) return null;
+	return visibleWindow(rect.top, rect.bottom, vv.offsetTop, vv.height);
 }
 
 export class AutoGrow {
@@ -193,10 +205,12 @@ export class AutoGrow {
 		if (caret === null) return;
 		const paneRect = pane.getBoundingClientRect();
 		const enterAtEnd = key === "Enter" && ta.selectionStart === len && ta.selectionEnd === len;
+		// Mobile: only the part of the pane above the on-screen keyboard counts (desktop: the whole pane).
+		const win = mobileWindow(paneRect) ?? { top: paneRect.top, height: paneRect.height };
 		const target = planCaretScroll({
 			scrollTop: pane.scrollTop,
-			paneHeight: paneRect.height,
-			caretTop: caret.top - paneRect.top,
+			paneHeight: win.height,
+			caretTop: caret.top - win.top,
 			lineHeight: caret.lineHeight,
 			enterAtEnd,
 		});

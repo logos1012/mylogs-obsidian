@@ -7375,3 +7375,777 @@
 	}
 }
 /* ===== /Diary view ===== */
+
+/* ===== mobile ===== */
+/* MyLogs Plugin 계획 「11. 모바일」. Every rule here is scoped under body.is-mobile (Obsidian adds it on
+   phones and tablets); desktop rules above are untouched. Shared kit first, then one block per view. */
+
+/* ── kit: long press, picker, tabs, ⋯, FAB ── */
+body.is-mobile .mylogs-touch [draggable="true"] {
+	-webkit-user-drag: none;
+}
+body.is-mobile .mylogs-touch .dc-it,
+body.is-mobile .mylogs-touch .dr-card,
+body.is-mobile .mylogs-touch .dr-cand,
+body.is-mobile .mylogs-touch .wc-item,
+body.is-mobile .mylogs-touch .pf-card,
+body.is-mobile .mylogs-touch .dy-row,
+body.is-mobile .mylogs-touch .tb-row,
+body.is-mobile .mylogs-touch .pb-kr,
+body.is-mobile .mylogs-touch .pb-goal-head,
+body.is-mobile .mylogs-touch .pb-log li {
+	-webkit-touch-callout: none;
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-tap-highlight-color: transparent;
+}
+body.is-mobile .mylogs-pick-modal .mylogs-pick-title {
+	padding: 14px 16px 6px;
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--text-normal);
+}
+body.is-mobile .mylogs-pick-modal.is-sheet .prompt-input-container {
+	display: none;
+}
+body.is-mobile .mylogs-pick-modal .suggestion-item.mylogs-pick-item {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-height: 48px;
+	padding: 8px 16px;
+}
+body.is-mobile .mylogs-pick-modal .mylogs-pick-icon {
+	display: inline-flex;
+	color: var(--text-muted);
+}
+body.is-mobile .mylogs-pick-modal .mylogs-pick-label {
+	font-size: 16px;
+}
+body.is-mobile .mylogs-pick-modal .mylogs-pick-sub {
+	font-size: 12.5px;
+	color: var(--text-muted);
+}
+body.is-mobile .mylogs-m-tabs {
+	position: sticky;
+	top: 0;
+	z-index: 5;
+	display: flex;
+	gap: 4px;
+	margin: 0 0 12px;
+	padding: 4px;
+	overflow-x: auto;
+	scrollbar-width: none;
+	border-radius: 12px;
+	background: var(--background-secondary);
+	-webkit-overflow-scrolling: touch;
+}
+body.is-mobile .mylogs-m-tabs::-webkit-scrollbar {
+	display: none;
+}
+body.is-mobile button.mylogs-m-tab {
+	flex: 1 0 auto;
+	min-height: 44px;
+	padding: 0 14px;
+	border: 0;
+	border-radius: 9px;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+	font-size: 14.5px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+body.is-mobile button.mylogs-m-tab.is-active {
+	background: var(--background-primary);
+	color: var(--text-normal);
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+body.is-mobile .mylogs-m-tab-n {
+	margin-left: 6px;
+	font-size: 12px;
+	font-weight: 500;
+	opacity: 0.7;
+}
+body.is-mobile button.mylogs-m-more {
+	flex: none;
+	min-width: 44px;
+	min-height: 44px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+	font-size: 20px;
+	line-height: 1;
+	opacity: 1;
+}
+/* Absolute inside a non-scrolling view container (position: relative set per view). */
+body.is-mobile button.mylogs-m-fab {
+	position: absolute;
+	right: 16px;
+	bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+	z-index: 20;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 52px;
+	padding: 0 20px;
+	border: 0;
+	border-radius: 26px;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-size: 15px;
+	font-weight: 600;
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+}
+body.is-mobile .mylogs-m-fab-icon {
+	display: inline-flex;
+}
+body.is-mobile input.mylogs-m-file {
+	position: fixed;
+	left: -9999px;
+	width: 1px;
+	height: 1px;
+	opacity: 0;
+}
+/* Inputs ≥ 16 px: iOS zooms the page into anything smaller. */
+body.is-mobile [class^="mylogs-"] input[type="text"],
+body.is-mobile [class^="mylogs-"] input[type="date"],
+body.is-mobile [class^="mylogs-"] input:not([type]),
+body.is-mobile [class^="mylogs-"] select,
+body.is-mobile .mylogs-modal input,
+body.is-mobile .mylogs-modal select,
+body.is-mobile .mylogs-modal textarea {
+	font-size: 16px;
+}
+
+/* ── Daily Pad ── */
+body.is-mobile .mylogs-daily-pad .ml-top {
+	align-items: flex-start;
+	gap: 12px;
+}
+body.is-mobile .mylogs-daily-pad h1.ml-date {
+	font-size: 26px;
+}
+body.is-mobile .mylogs-daily-pad .ml-nav {
+	flex-wrap: wrap;
+	gap: 8px;
+	width: 100%;
+}
+body.is-mobile .mylogs-daily-pad .ml-nav button.ml-btn {
+	min-width: 44px;
+	min-height: 44px;
+	justify-content: center;
+}
+body.is-mobile .mylogs-daily-pad input.ml-date-input {
+	flex: 1 1 140px;
+	height: 44px;
+	padding: 0 12px;
+	font-size: 16px;
+}
+body.is-mobile .mylogs-daily-pad .ml-panel-hint {
+	display: none;
+}
+body.is-mobile .mylogs-daily-pad button.ml-edit-btn {
+	min-height: 44px;
+	min-width: 56px;
+	opacity: 1;
+}
+body.is-mobile .mylogs-daily-pad .ml-check {
+	position: relative;
+}
+/* 44 px hit area around the small checkbox, without moving the layout. */
+body.is-mobile .mylogs-daily-pad button.ml-check::after {
+	content: "";
+	position: absolute;
+	inset: -12px;
+}
+body.is-mobile .mylogs-daily-pad input.ml-quick-add-input {
+	min-height: 44px;
+	font-size: 16px;
+}
+body.is-mobile .mylogs-daily-pad textarea.ml-editor {
+	font-size: 16px;
+}
+body.is-mobile .mylogs-daily-pad .ml-btn-primary {
+	min-height: 48px;
+}
+/* On-screen keyboard: the editing section can still scroll above it (src/ui/mobile.ts trackKeyboard). */
+body.is-mobile .mylogs-daily-pad:has(.ml-section.is-editing) {
+	padding-bottom: calc(45vh + var(--mylogs-kb, 0px));
+}
+
+/* ── Diary: tabs 타임라인 / 쓰기 / 재료 (src/diary/mobile.ts) ── */
+body.is-mobile .mylogs-diary-container {
+	position: relative;
+}
+body.is-mobile .mylogs-diary.dy-m,
+body.is-mobile .mylogs-diary.dy-m.is-material-collapsed {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+	overflow: hidden;
+}
+body.is-mobile .mylogs-diary .dy-m-bar {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 8px 12px 0;
+	background: var(--dy-bg);
+}
+body.is-mobile .mylogs-diary .dy-m-bar .mylogs-m-tabs {
+	flex: 1;
+	margin: 0;
+}
+body.is-mobile .mylogs-diary .dy-m-tools {
+	display: flex;
+}
+body.is-mobile .mylogs-diary button.dy-m-tool {
+	min-width: 44px;
+	min-height: 44px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+	color: var(--dy-muted);
+}
+body.is-mobile .mylogs-diary.dy-m .dy-timeline,
+body.is-mobile .mylogs-diary.dy-m .dy-center,
+body.is-mobile .mylogs-diary.dy-m .dy-material {
+	display: none;
+	flex: 1 1 auto;
+	max-height: none;
+	min-height: 0;
+	border: 0;
+	overflow-y: auto;
+	-webkit-overflow-scrolling: touch;
+}
+body.is-mobile .mylogs-diary.dy-m.dy-m-tab-timeline .dy-timeline,
+body.is-mobile .mylogs-diary.dy-m.dy-m-tab-write .dy-center,
+body.is-mobile .mylogs-diary.dy-m.dy-m-tab-material .dy-material {
+	display: flex;
+}
+body.is-mobile .mylogs-diary.dy-m.dy-m-tab-material .dy-material {
+	display: block;
+	padding-bottom: 96px;
+}
+body.is-mobile .mylogs-diary.dy-m .dy-timeline {
+	padding-bottom: 88px;
+}
+/* The timeline's own calendar toggle and the sheet's panel toggle have no job here (modal / tabs). */
+body.is-mobile .mylogs-diary.dy-m .dy-tl-tools .dy-btn-icon,
+body.is-mobile .mylogs-diary.dy-m .dy-material-toggle,
+body.is-mobile .mylogs-diary.dy-m .dy-cal {
+	display: none;
+}
+body.is-mobile .mylogs-diary.dy-m .dy-sheet {
+	padding: 16px 16px calc(45vh + var(--mylogs-kb, 0px));
+}
+body.is-mobile .mylogs-diary.dy-m .dy-row {
+	min-height: 56px;
+}
+body.is-mobile .mylogs-diary button.dy-btn,
+body.is-mobile .mylogs-diary button.dy-chip,
+body.is-mobile .mylogs-diary select.dy-chip-select,
+body.is-mobile .mylogs-diary button.dy-from-btn,
+body.is-mobile .mylogs-diary button.dy-meta-btn,
+body.is-mobile .mylogs-diary button.dy-link-btn {
+	min-height: 44px;
+}
+body.is-mobile .mylogs-diary button.dy-btn-icon,
+body.is-mobile .mylogs-diary button.dy-btn-tiny {
+	min-width: 44px;
+}
+body.is-mobile .mylogs-diary select.dy-chip-select {
+	font-size: 16px;
+}
+body.is-mobile .mylogs-diary textarea.dy-editor,
+body.is-mobile .mylogs-diary .dy-md {
+	font-size: max(16px, var(--dy-body-size));
+}
+body.is-mobile .mylogs-diary-container .mylogs-diary.dy-m-tab-write ~ .dy-m-fab {
+	display: none;
+}
+body.is-mobile .dy-m-calmodal .dy-m-cal-nav {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 8px;
+}
+body.is-mobile .dy-m-calmodal .dy-m-cal-nav button {
+	min-width: 44px;
+	min-height: 44px;
+}
+body.is-mobile .dy-m-calmodal .dy-m-cal-month {
+	font-size: 16px;
+	font-weight: 600;
+}
+body.is-mobile .dy-m-calmodal .dy-m-cal-grid {
+	display: grid;
+	grid-template-columns: repeat(7, 1fr);
+	gap: 4px;
+}
+body.is-mobile .dy-m-calmodal .dy-m-cal-wd {
+	padding: 4px 0;
+	color: var(--text-muted);
+	font-size: 12px;
+	text-align: center;
+}
+body.is-mobile .dy-m-calmodal button.dy-m-cal-cell {
+	position: relative;
+	min-height: 44px;
+	padding: 0;
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-faint);
+	font-size: 15px;
+}
+body.is-mobile .dy-m-calmodal button.dy-m-cal-cell.is-filled {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-weight: 600;
+}
+body.is-mobile .dy-m-calmodal button.dy-m-cal-cell.is-today {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -2px;
+}
+body.is-mobile .dy-m-calmodal .dy-m-cal-n {
+	position: absolute;
+	top: 2px;
+	right: 4px;
+	font-size: 10px;
+}
+
+/* ── Desk Calendar: one day per screen + tabs (src/desk/mobile.ts) ── */
+body.is-mobile .mylogs-desk-calendar.dc-m .dc-top {
+	align-items: flex-start;
+	gap: 10px;
+	padding-bottom: 14px;
+}
+body.is-mobile .mylogs-desk-calendar.dc-m h1 {
+	font-size: 28px;
+}
+body.is-mobile .mylogs-desk-calendar.dc-m .dc-right {
+	width: 100%;
+	text-align: left;
+}
+body.is-mobile .mylogs-desk-calendar.dc-m .dc-nav {
+	justify-content: flex-start;
+	flex-wrap: wrap;
+}
+body.is-mobile .mylogs-desk-calendar.dc-m .mylogs-m-tabs {
+	margin-top: 14px;
+}
+body.is-mobile .mylogs-desk-calendar .dc-btn {
+	min-width: 44px;
+	height: 44px;
+	justify-content: center;
+	font-size: 14px;
+}
+body.is-mobile .mylogs-desk-calendar .dc-m-nav {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 4px 0 12px;
+}
+body.is-mobile .mylogs-desk-calendar .dc-m-nav-label {
+	flex: 1;
+	font-size: 17px;
+	font-weight: 600;
+	text-align: center;
+	color: var(--dc-ink);
+}
+body.is-mobile .mylogs-desk-calendar .dc-m-nav-label.is-today {
+	color: var(--dc-accent);
+}
+body.is-mobile .mylogs-desk-calendar .dc-m-cell > .dc-cell {
+	min-height: 0;
+	padding: 12px 14px 14px;
+	border: 1px solid var(--dc-line);
+	border-radius: 12px;
+}
+body.is-mobile .mylogs-desk-calendar .dc-m-cell .dc-dhead .dc-dnum {
+	font-size: 20px;
+}
+body.is-mobile .mylogs-desk-calendar .dc-items {
+	gap: 2px;
+}
+body.is-mobile .mylogs-desk-calendar .dc-it {
+	align-items: center;
+	min-height: 44px;
+	padding: 4px 0;
+	font-size: 15px;
+}
+body.is-mobile .mylogs-desk-calendar .dc-it.dc-m-tappable {
+	cursor: pointer;
+}
+body.is-mobile .mylogs-desk-calendar .dc-body {
+	flex: 1;
+	min-width: 0;
+}
+/* 44 px hit area around the checkbox symbol. */
+body.is-mobile .mylogs-desk-calendar .dc-sym.is-clickable {
+	flex-basis: 28px;
+	width: 28px;
+	height: 28px;
+}
+body.is-mobile .mylogs-desk-calendar .dc-sym.is-clickable::before {
+	transform: translate(8px, 5px) scale(1.4);
+}
+body.is-mobile .mylogs-desk-calendar .dc-more {
+	align-self: center;
+	min-width: 44px;
+	height: 44px;
+	font-size: 18px;
+	line-height: 44px;
+	opacity: 1;
+}
+body.is-mobile .mylogs-desk-calendar .dc-band {
+	margin-top: 0;
+}
+body.is-mobile .mylogs-desk-calendar .dc-m-foot {
+	margin-top: 16px;
+	color: var(--dc-muted);
+	font-size: 12.5px;
+}
+
+/* ── Drawer: column tabs, 후보 on top, dock → card sheet (src/drawer/mobile.ts) ── */
+body.is-mobile .mylogs-drawer.dr-m .dr-top {
+	align-items: flex-start;
+	gap: 12px;
+	padding-bottom: 14px;
+}
+body.is-mobile .mylogs-drawer.dr-m .dr-right {
+	width: 100%;
+	text-align: left;
+}
+body.is-mobile .mylogs-drawer .dr-btn {
+	min-height: 44px;
+	padding: 0 16px;
+	font-size: 14.5px;
+}
+body.is-mobile .mylogs-drawer.dr-m .dr-cands {
+	margin-bottom: 14px;
+}
+body.is-mobile .mylogs-drawer.dr-m .dr-cand {
+	grid-template-columns: 1fr;
+	cursor: pointer;
+}
+body.is-mobile .mylogs-drawer.dr-m .dr-cand-btns {
+	display: flex;
+	gap: 8px;
+}
+body.is-mobile .mylogs-drawer.dr-m .dr-board.dr-m-board {
+	display: block;
+	margin-top: 0;
+}
+body.is-mobile .mylogs-drawer.dr-m .dr-col {
+	min-height: 0;
+	border: 0;
+	padding: 0;
+	background: transparent;
+}
+body.is-mobile .mylogs-drawer.dr-m .dr-col-head {
+	display: none;
+}
+body.is-mobile .mylogs-drawer.dr-m .dr-card-head {
+	align-items: center;
+}
+body.is-mobile .mylogs-drawer.dr-m .dr-text {
+	padding: 10px 0;
+	font-size: 15.5px;
+}
+body.is-mobile .mylogs-drawer .dr-more {
+	min-width: 44px;
+	min-height: 44px;
+	font-size: 18px;
+	opacity: 1;
+}
+body.is-mobile .mylogs-drawer button.dr-m-send {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 44px;
+	padding: 0 10px;
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+	color: var(--dr-accent);
+	font-size: 13.5px;
+	font-weight: 600;
+}
+body.is-mobile .mylogs-drawer .dr-m-send-icon {
+	display: inline-flex;
+}
+body.is-mobile .mylogs-drawer .dr-m-send-icon svg {
+	width: 16px;
+	height: 16px;
+}
+body.is-mobile .mylogs-drawer .dr-when.is-goal {
+	min-height: 32px;
+}
+
+/* ── Project Folders: status tabs, cards full width (src/projects/mobile.ts) ── */
+body.is-mobile .mylogs-projects.pf-m .pf-top {
+	align-items: flex-start;
+	gap: 12px;
+	padding-bottom: 14px;
+	margin-bottom: 14px;
+}
+body.is-mobile .mylogs-projects.pf-m .pf-right,
+body.is-mobile .mylogs-projects.pf-m .pf-controls {
+	width: 100%;
+	flex-wrap: wrap;
+}
+body.is-mobile .mylogs-projects .pf-btn {
+	min-height: 44px;
+	padding: 0 14px;
+	font-size: 14px;
+}
+body.is-mobile .mylogs-projects.pf-m .pf-m-col {
+	min-height: 0;
+	padding: 0;
+	border: 0;
+	background: transparent;
+}
+body.is-mobile .mylogs-projects.pf-m .pf-col-list {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+body.is-mobile .mylogs-projects.pf-m .pf-grid {
+	grid-template-columns: minmax(0, 1fr);
+}
+body.is-mobile .mylogs-projects.pf-m .pf-name {
+	min-height: 32px;
+	font-size: 17px;
+}
+body.is-mobile .mylogs-projects .pf-m-actions {
+	display: flex;
+	justify-content: flex-end;
+	align-items: center;
+	gap: 6px;
+	margin-top: 8px;
+	padding-top: 6px;
+	border-top: 1px solid var(--pf-line);
+}
+body.is-mobile .mylogs-projects button.pf-m-status {
+	min-height: 44px;
+	padding: 0 14px;
+	border: 1px solid var(--pf-line-strong);
+	border-radius: 999px;
+	background: transparent;
+	box-shadow: none;
+	color: var(--pf-ink-2);
+	font-size: 14px;
+}
+body.is-mobile .mylogs-projects button.pf-more {
+	min-height: 44px;
+}
+body.is-mobile .mylogs-projects .pf-tl {
+	-webkit-overflow-scrolling: touch;
+	overscroll-behavior-x: contain;
+}
+body.is-mobile .mylogs-projects .pf-tl-nav button {
+	min-width: 44px;
+}
+
+/* ── Wall Calendar: months as a vertical list of cards ── */
+body.is-mobile .mylogs-wall-calendar .wc-sheet {
+	padding: 28px 4px 20px;
+}
+body.is-mobile .mylogs-wall-calendar .wc-months {
+	grid-template-columns: minmax(0, 1fr);
+	gap: 14px;
+}
+body.is-mobile .mylogs-wall-calendar .wc-month {
+	min-height: 0;
+}
+body.is-mobile .mylogs-wall-calendar .wc-yearrow h1 {
+	font-size: 52px;
+}
+body.is-mobile .mylogs-wall-calendar .wc-navbtn {
+	width: 44px;
+	height: 44px;
+}
+body.is-mobile .mylogs-wall-calendar select.wc-yearsel {
+	min-height: 44px;
+}
+body.is-mobile .mylogs-wall-calendar .wc-add {
+	width: 44px;
+	height: 44px;
+	font-size: 20px;
+}
+body.is-mobile .mylogs-wall-calendar .wc-item {
+	min-height: 44px;
+	padding: 10px 2px;
+	align-items: center;
+}
+body.is-mobile .mylogs-wall-calendar button.wc-sym {
+	position: relative;
+}
+body.is-mobile .mylogs-wall-calendar button.wc-sym::after {
+	content: "";
+	position: absolute;
+	inset: -14px;
+}
+body.is-mobile .mylogs-wall-calendar .wc-addform input,
+body.is-mobile .mylogs-wall-calendar .wc-addform button {
+	min-height: 44px;
+}
+body.is-mobile .mylogs-wall-calendar .wc-legend .wc-hint {
+	flex-basis: 100%;
+}
+
+/* ── My Life: scrollable tab bar, full-width cards ── */
+body.is-mobile .mylogs-my-life .mlf-nav button.mlf-btn {
+	min-width: 44px;
+	height: 44px;
+	justify-content: center;
+}
+body.is-mobile .mylogs-my-life input.mlf-date-input {
+	flex: 1 1 140px;
+	height: 44px;
+	font-size: 16px;
+}
+body.is-mobile .mylogs-my-life .mlf-tabs {
+	flex-wrap: nowrap;
+	scrollbar-width: none;
+	-webkit-overflow-scrolling: touch;
+	scroll-snap-type: x proximity;
+}
+body.is-mobile .mylogs-my-life .mlf-tabs::-webkit-scrollbar {
+	display: none;
+}
+body.is-mobile .mylogs-my-life button.mlf-tab {
+	min-height: 52px;
+	scroll-snap-align: start;
+}
+body.is-mobile .mylogs-my-life .mlf-cards,
+body.is-mobile .mylogs-my-life .mlf-card {
+	width: 100%;
+}
+body.is-mobile .mylogs-my-life button.mlf-card-toggle {
+	min-height: 48px;
+}
+body.is-mobile .mylogs-my-life textarea.mlf-note {
+	font-size: 16px;
+}
+body.is-mobile .mylogs-my-life {
+	padding-bottom: calc(48px + var(--mylogs-kb, 0px));
+}
+
+/* ── Pinboard: full-width cards, tappable inputs ── */
+body.is-mobile .mylogs-pinboard .pb-grid {
+	grid-template-columns: minmax(0, 1fr);
+}
+body.is-mobile .mylogs-pinboard .pb-more {
+	min-width: 44px;
+	min-height: 44px;
+	opacity: 1;
+	font-size: 18px;
+}
+body.is-mobile .mylogs-pinboard input.pb-input,
+body.is-mobile .mylogs-pinboard input.pb-log-input {
+	min-height: 44px;
+	font-size: 16px;
+}
+body.is-mobile .mylogs-pinboard button.pb-log-add {
+	min-height: 44px;
+}
+body.is-mobile .mylogs-pinboard .pb-log li {
+	padding-top: 6px;
+	padding-bottom: 6px;
+}
+body.is-mobile .mylogs-pinboard .pb-status {
+	min-height: 32px;
+}
+
+/* ── Toolbox: one card per skill, status as a picker (src/toolbox/mobile.ts) ── */
+body.is-mobile .mylogs-toolbox .tb-top {
+	flex-wrap: wrap;
+	gap: 12px;
+}
+body.is-mobile .mylogs-toolbox .tb-btn {
+	min-height: 44px;
+	padding: 0 14px;
+	font-size: 14px;
+}
+body.is-mobile .mylogs-toolbox .tb-btn.tb-btn-icon {
+	min-width: 44px;
+	justify-content: center;
+}
+body.is-mobile .mylogs-toolbox .tb-m-card {
+	margin-top: 12px;
+	padding: 4px 14px;
+	border: 1px solid var(--tb-line);
+	border-radius: 12px;
+	background: var(--tb-paper);
+}
+body.is-mobile .mylogs-toolbox table.tb-m-table,
+body.is-mobile .mylogs-toolbox table.tb-m-table tbody,
+body.is-mobile .mylogs-toolbox table.tb-m-table tr,
+body.is-mobile .mylogs-toolbox table.tb-m-table td {
+	display: block;
+	width: 100%;
+	min-width: 0;
+	max-width: none;
+	white-space: normal;
+}
+body.is-mobile .mylogs-toolbox table.tb-m-table {
+	font-size: 14px;
+}
+body.is-mobile .mylogs-toolbox table.tb-m-table td {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 10px;
+	padding: 8px 0;
+	text-align: left;
+}
+body.is-mobile .mylogs-toolbox table.tb-m-table tr:hover td {
+	background: transparent;
+}
+body.is-mobile .mylogs-toolbox table.tb-m-table td:last-child {
+	border-bottom: 0;
+}
+body.is-mobile .mylogs-toolbox table.tb-m-table td[data-label]::before {
+	content: attr(data-label);
+	flex: 0 0 100%;
+	color: var(--tb-muted);
+	font-size: 11.5px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+}
+body.is-mobile .mylogs-toolbox table.tb-m-table td.c-name {
+	display: block;
+	font-size: 16px;
+}
+body.is-mobile .mylogs-toolbox table.tb-m-table td.c-name::before {
+	display: none;
+}
+body.is-mobile .mylogs-toolbox table.tb-m-table td.c-actions {
+	justify-content: flex-end;
+}
+body.is-mobile .mylogs-toolbox button.tb-m-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	height: 44px;
+	padding: 0 16px;
+	border-radius: 999px;
+	font-size: 14px;
+	margin-left: 0;
+}
+body.is-mobile .mylogs-toolbox .tb-m-caret {
+	opacity: 0.6;
+}
+body.is-mobile .mylogs-toolbox .tb-link-btn {
+	min-height: 36px;
+}

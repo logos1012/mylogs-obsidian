@@ -6,6 +6,7 @@ import {
 	moment,
 	normalizePath,
 	Notice,
+	Platform,
 	setIcon,
 	TAbstractFile,
 	TFile,
@@ -14,6 +15,7 @@ import {
 	WorkspaceLeaf,
 } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
+import { enableTouchMenus } from "../ui/mobile.ts";
 import { toIsoDate } from "../parser.ts";
 import { cleanFolder } from "../settings.ts";
 import { askForm, confirmDelete } from "../ui/modals.ts";
@@ -185,6 +187,7 @@ export class PinboardView extends ItemView {
 		this.contentEl.empty();
 		this.contentEl.addClass("mylogs-pinboard-container");
 		this.rootEl = this.contentEl.createDiv({ cls: "mylogs-pinboard" });
+		if (Platform.isMobile) this.register(enableTouchMenus(this.contentEl));
 		this.registerEvent(
 			this.app.metadataCache.on("changed", (f) => {
 				if (this.inFolder(f.path)) this.scheduleRefresh();

@@ -1,4 +1,4 @@
-import { debounce, ItemView, Keymap, Menu, normalizePath, Notice, TAbstractFile, TFile, TFolder, type ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { debounce, ItemView, Keymap, Menu, normalizePath, Notice, Platform, TAbstractFile, TFile, TFolder, type ViewStateResult, WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { pad2, toIsoDate } from "../parser.ts";
 import { setFrontmatterScalar } from "../writer.ts";
@@ -23,6 +23,7 @@ import {
 } from "./edit.ts";
 import { MonthPickerModal, TextPromptModal } from "./modals.ts";
 import { askForm, confirmDelete } from "../ui/modals.ts";
+import { enableTouchMenus } from "../ui/mobile.ts";
 import { contentText, getField } from "../line-edit.ts";
 import { itemSortKey, parseWallYear, splitWallBody, WALL_DATE_RE, type WallItem, type WallLine, wallYearSkeleton } from "./parse.ts";
 
@@ -132,6 +133,7 @@ export class WallCalendarView extends ItemView {
 		this.contentEl.empty();
 		this.contentEl.addClass("mylogs-wall-calendar-container");
 		this.rootEl = this.contentEl.createDiv({ cls: "mylogs-wall-calendar" });
+		if (Platform.isMobile) this.register(enableTouchMenus(this.contentEl));
 		const onFile = (f: TAbstractFile, old?: string) => {
 			const p = this.yearPath();
 			if (f.path === p || old === p) this.scheduleReload();
