@@ -2,7 +2,7 @@
 
 버전 번호는 `manifest.json`의 `version`과 같고, 같은 이름의 git 태그와 GitHub Release가 있다(앞에 v를 붙이지 않는다).
 
-## 다음 버전 (아직 릴리스 안 함)
+## 0.9.0 — 2026-10-27
 
 - **모바일** (계획 「11. 모바일」) — 같은 플러그인·같은 로직, 화면에서만 `Platform.isMobile`로 갈라진다. 데스크톱 경로는 그대로(각 화면의 그리기 함수 맨 앞 한 줄 분기, 또는 `onOpen`의 한 줄). 모바일 CSS는 `styles.css` 끝 「/* ===== mobile ===== */」 블록, 모두 `body.is-mobile` 아래
   - 공용 키트 `src/ui/mobile.ts`: `pickTarget`(SuggestModal 액션 시트), 길게 누르기(450ms, 10px 넘게 움직이면 취소; 데스크톱 오른쪽 클릭 메뉴를 그대로 연다), `tabBar`, ⋯ 버튼, 떠 있는 버튼, 파일 고르기, 키보드 높이(`visualViewport`). `src/ui/autogrow.ts`의 커서 따라가기는 모바일에서 키보드에 가린 부분을 뺀 영역 기준
