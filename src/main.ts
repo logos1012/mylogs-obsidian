@@ -8,17 +8,20 @@ import { refreshProjectFolders, registerProjectFolders } from "./projects/regist
 import { refreshDrawers, registerDrawer } from "./drawer/register.ts";
 import { activateMyLife, refreshMyLife, registerMyLife } from "./mylife/register.ts";
 import { refreshToolbox, registerToolbox } from "./toolbox/register.ts";
+import { activateDiary, refreshDiaries, registerDiary } from "./diary/register.ts";
 
 /*
- * MyLogs — Daily Pad, Pinboard, Wall Calendar, Desk Calendar, Project Folders, Drawer, My Life, Toolbox views.
+ * MyLogs — Daily Pad, Pinboard, Wall Calendar, Desk Calendar, Project Folders, Drawer, My Life, Toolbox, Diary views.
  *
  * Desk Calendar view (`mylogs-desk-calendar`, drag & drop allocation): src/desk/.
  * Project Folders view (`mylogs-project-folders`, kanban / list / 완료 타임라인): src/projects/.
  * Drawer view (`mylogs-drawer`, 후보 띠 / 세 열 / 꺼내기·놓아주기 dock): src/drawer/.
- * My Life view (`mylogs-my-life`, 날짜 + 오늘/이번 주/이번 달/올해/Diary 탭, read-only but 사용자 한마디): src/mylife/.
+ * My Life view (`mylogs-my-life`, 날짜 + 오늘/이번 주/이번 달/올해 탭, read-only but 사용자 한마디): src/mylife/.
  * Toolbox view (`mylogs-toolbox`, 스킬 등록부 표 / 상태 토글 / 폐기 / 실행 요청 / 새 스킬 / 수정): src/toolbox/.
+ * Diary view (`mylogs-diary`, Day One식 타임라인 / 에디터 / 재료 패널, 오늘 쓰기, 캘린더, 등록부): src/diary/.
  *
  * Still out of scope (see the vault's `MyLogs Plugin 계획.md`):
+ * TODO(계획 §9 「뒤로 뺀 것」): Diary Day One JSON import, map, media grid, weather auto-fill.
  * TODO(Toolbox AGENTS 「4-3」「4-4」): running skills and registering cron (Hermes does that); the plugin only queues 「실행 요청」 lines.
  * TODO(Toolbox AGENTS 「4-5」): move 폐기 files to `10 Archive Box/Closed/` once that format is decided (now the file stays in place).
  * TODO(My Life AGENTS 「4」): writing or regenerating My Life files (Hermes does that); index editing; Weekly/Monthly charts.
@@ -53,6 +56,7 @@ export default class MyLogsPlugin extends Plugin {
 			refreshDrawers(this);
 			refreshMyLife(this);
 			refreshToolbox(this);
+			refreshDiaries(this);
 		},
 		600,
 		true,
@@ -91,6 +95,7 @@ export default class MyLogsPlugin extends Plugin {
 		registerDrawer(this);
 		registerMyLife(this);
 		registerToolbox(this);
+		registerDiary(this);
 
 		this.addSettingTab(new MyLogsSettingTab(this.app, this));
 	}
@@ -109,6 +114,11 @@ export default class MyLogsPlugin extends Plugin {
 	/** My Life on a given date (its 오늘 tab). */
 	async activateMyLife(date?: string): Promise<void> {
 		await activateMyLife(this, date);
+	}
+
+	/** The Diary view (My Life header button, Daily Pad). */
+	async activateDiary(): Promise<void> {
+		await activateDiary(this);
 	}
 
 	async activatePinboard(): Promise<void> {
