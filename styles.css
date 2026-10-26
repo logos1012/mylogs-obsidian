@@ -9470,15 +9470,16 @@ body.is-mobile .mylogs-pinboard .pbm-legend-health {
 .mylogs-projects .pf-milestones progress { display: block; width: 100%; height: 5px; margin-top: 8px; appearance: none; border: 0; border-radius: 3px; overflow: hidden; background: var(--pf-line); }
 .mylogs-projects .pf-milestones progress::-webkit-progress-bar { background: var(--pf-line); }
 .mylogs-projects .pf-milestones progress::-webkit-progress-value { background: var(--pf-accent); }
-.mylogs-projects .pf-ms-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.mylogs-projects .pf-ms-body { display: flex; flex-direction: column; gap: 0; min-width: 0; }
 .mylogs-projects .pf-ms-hint { color: var(--pf-muted); font-size: 12px; }
-.mylogs-projects .pf-ms-row { padding: 6px 0; border-bottom: 1px solid var(--pf-line); min-width: 0; }
-.mylogs-projects .pf-ms-check { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 10px 0; cursor: pointer; overflow-wrap: anywhere; }
+.mylogs-projects .pf-ms-row { display: flex; align-items: flex-start; gap: 4px; padding: 0; border-bottom: 1px solid var(--pf-line); min-width: 0; }
+.mylogs-projects .pf-ms-check { display: flex; flex: 1; min-width: 0; align-items: flex-start; gap: 8px; min-height: 36px; margin: 0; padding: 8px 0; line-height: 1.4; cursor: pointer; overflow-wrap: anywhere; }
 .mylogs-projects .pf-ms-check input { flex: 0 0 auto; margin: 2px 0 0; width: 18px; height: 18px; accent-color: var(--pf-accent); }
 .mylogs-projects .pf-ms-row.is-done .pf-ms-check span { color: var(--pf-accent); }
 .mylogs-projects .pf-ms-controls { display: flex; justify-content: flex-end; gap: 4px; }
 .mylogs-projects .pf-milestones button { min-height: 44px; padding: 7px 12px; white-space: normal; height: auto; }
 .mylogs-projects .pf-ms-controls button { background: transparent; color: var(--pf-ink-2); box-shadow: none; border: 0; }
+.mylogs-projects .pf-ms-row button.pf-ms-more { flex: 0 0 36px; width: 36px; min-height: 36px; height: 36px; padding: 0; border: 0; background: transparent; box-shadow: none; color: var(--pf-ink-2); font-size: 22px; }
 .mylogs-projects .pf-ms-editor { margin: 0; padding: 8px 0; min-width: 0; }
 .mylogs-projects .pf-ms-editor label { display: flex; flex-direction: column; gap: 8px; }
 .mylogs-projects .pf-ms-editor textarea { width: 100%; max-width: 100%; min-height: 80px; resize: vertical; font-size: 16px; color: var(--pf-ink); background: var(--pf-paper); border: 1px solid var(--pf-line-strong); border-radius: 5px; padding: 10px; scroll-margin-block: 90px; }
@@ -9491,6 +9492,49 @@ body.is-mobile .mylogs-pinboard .pbm-legend-health {
 .mylogs-projects .pf-card.is-stale > .pf-milestones { opacity: 1; }
 
 /* Pinboard: edit the displayed field, not a second modal. */
+/* Project workspace: the same paper, charcoal and teal as the board. */
+.mylogs-projects .pf-name > button { border: 0; background: transparent; box-shadow: none; color: inherit; font: inherit; text-align: left; padding: 0; height: auto; white-space: normal; overflow-wrap: anywhere; }
+.mylogs-projects .pf-name > button:hover { color: var(--pf-accent); }
+.mylogs-projects .pf-workspace { max-width: 1120px; margin: 0 auto; }
+.mylogs-projects.is-busy .pf-workspace { pointer-events: none; opacity: .75; }
+.mylogs-projects .pf-workspace-nav { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
+.mylogs-projects .pf-workspace .pf-btn { min-height: 36px; height: auto; white-space: normal; overflow-wrap: anywhere; }
+.mylogs-projects .pf-workspace-head { margin-bottom: 24px; }
+.mylogs-projects .pf-workspace-head h1 { margin: 6px 0 10px; overflow-wrap: anywhere; }
+.mylogs-projects .pf-workspace-head p { color: var(--pf-ink-2); margin: 0 0 14px; }
+.mylogs-projects .pf-workspace-meta, .mylogs-projects .pf-workspace-muted { color: var(--pf-ink-2); font-size: 12px; overflow-wrap: anywhere; }
+.mylogs-projects .pf-workspace-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.mylogs-projects .pf-workspace-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(230px, 1fr); gap: 36px; }
+.mylogs-projects :is(.pf-workspace-main, .pf-workspace-side) { min-width: 0; }
+.mylogs-projects .pf-workspace-action { background: var(--pf-accent-soft); border-left: 3px solid var(--pf-accent); padding: 14px 16px; margin-bottom: 20px; }
+.mylogs-projects .pf-workspace-action .pf-action-v { font-size: 18px; overflow-wrap: anywhere; }
+.mylogs-projects .pf-workspace-section { border-top: 1px solid var(--pf-line); margin-top: 16px; }
+.mylogs-projects :is(.pf-workspace-section, .pf-workspace-files) > summary { cursor: pointer; min-height: 44px; padding: 12px 0; font-weight: 600; }
+.mylogs-projects .pf-workspace-markdown { overflow-wrap: anywhere; color: var(--pf-ink-2); }
+.mylogs-projects .pf-workspace-markdown pre { overflow-x: auto; }
+.mylogs-projects .pf-workspace-markdown img { max-width: 100%; }
+.mylogs-projects .pf-workspace-markdown input[type=checkbox] { pointer-events: none; }
+.mylogs-projects .pf-workspace-group { padding-bottom: 18px; margin-bottom: 18px; border-bottom: 1px solid var(--pf-line); }
+.mylogs-projects .pf-workspace-group h2 { font-size: 14px; margin: 0 0 12px; }
+.mylogs-projects .pf-workspace-goal { margin-bottom: 14px; }
+.mylogs-projects .pf-workspace-goal .pf-workspace-actions { margin-top: 4px; }
+.mylogs-projects .pf-workspace .pf-workspace-link { display: block; text-align: left; border: 0; background: transparent; box-shadow: none; color: var(--pf-accent); padding: 7px 0; width: 100%; }
+.mylogs-projects .pf-workspace .pf-workspace-link:hover { text-decoration: underline; }
+.mylogs-projects .pf-workspace-files { border-top: 1px solid var(--pf-line); }
+.mylogs-projects :is(.pf-workspace, .pf-name) button:focus-visible { outline: 2px solid var(--pf-accent); outline-offset: 2px; }
+button.ml-route-chip { height: auto; min-height: 28px; cursor: pointer; box-shadow: none; }
+body.is-mobile button.ml-route-chip { min-height: 44px; }
+@media (max-width: 760px) {
+ .mylogs-projects { padding: 24px 16px 40px; }
+ .mylogs-projects .pf-workspace-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+ .mylogs-projects .pf-workspace-nav { margin-bottom: 16px; }
+ .mylogs-projects .pf-workspace .pf-btn { min-height: 44px; }
+ .mylogs-projects .pf-ms-check { min-height: 44px; padding: 12px 0; }
+ .mylogs-projects .pf-ms-row button.pf-ms-more { flex-basis: 44px; width: 44px; height: 44px; min-height: 44px; }
+}
+body.is-mobile .mylogs-projects .pf-ms-check { min-height: 44px; padding: 12px 0; }
+body.is-mobile .mylogs-projects .pf-ms-row button.pf-ms-more { flex-basis: 44px; width: 44px; height: 44px; min-height: 44px; }
+
 .mylogs-pinboard-container .pb-inline-hint { color: var(--pb-muted); font-size: 12px; margin: -4px 0 14px; }
 .mylogs-pinboard-container .pb-inline-field { min-width: 0; max-width: 100%; }
 .mylogs-pinboard-container .pb-inline-field > button.pb-inline-value { display: block; width: 100%; min-height: 44px; height: auto; padding: 6px 4px; border: 1px solid transparent; border-radius: 4px; background: transparent; box-shadow: none; color: inherit; font: inherit; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; }

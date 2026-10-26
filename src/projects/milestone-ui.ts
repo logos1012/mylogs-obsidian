@@ -1,3 +1,4 @@
+import { Menu } from "obsidian";
 import type { Project } from "./model.ts";
 import { milestoneSummary, type MilestoneChange } from "./milestones.ts";
 
@@ -28,7 +29,7 @@ export function renderMilestones(parent: HTMLElement, p: Project, state: Milesto
 		}
 		const body = details.createDiv({ cls: "pf-ms-body" });
 		if (p.milestoneError) { body.createDiv({ cls: "pf-ms-error", text: p.milestoneError }); return; }
-		body.createDiv({ cls: "pf-ms-hint", text: summary.total ? "작업량이 아닌, 중요한 도달 지점의 달성 수예요." : "완료까지 확인할 중요한 도달 상태를 적어 주세요." });
+		if (!summary.total) body.createDiv({ cls: "pf-ms-hint", text: "완료까지 확인할 중요한 도달 상태를 적어 주세요." });
 		const locked = !!(state.busy || state.editor || state.removing);
 		const button = (where: HTMLElement, text: string, action: () => void, disabled = false): HTMLButtonElement => {
 			const b = where.createEl("button", { text, attr: { type: "button" } }); b.disabled = disabled;
@@ -48,9 +49,14 @@ export function renderMilestones(parent: HTMLElement, p: Project, state: Milesto
 			label.createSpan({ text: item.text });
 			check.addEventListener("change", () => void commit({ kind: "check", line: item.line, done: check.checked }, source));
 			if (!p.archived) {
-				const controls = row.createDiv({ cls: "pf-ms-controls" });
-				button(controls, "수정", () => { state.editor = { line: item.line, text: item.text, source }; state.error = ""; paint(true); }, locked).setAttr("aria-label", `${item.text} 수정`);
-				button(controls, "삭제", () => { state.removing = { ...item, source }; state.error = ""; paint(); }, locked).setAttr("aria-label", `${item.text} 삭제`);
+				const more = button(row, "⋯", () => {}, locked);
+				more.addClass("pf-ms-more"); more.setAttr("aria-label", `${item.text} 메뉴`); more.setAttr("aria-haspopup", "menu");
+				more.addEventListener("click", e => {
+					const menu = new Menu();
+					menu.addItem(i => i.setTitle("수정").setIcon("pencil").onClick(() => { state.editor = { line: item.line, text: item.text, source }; state.error = ""; paint(true); }));
+					menu.addItem(i => i.setTitle("삭제").setIcon("trash-2").setWarning(true).onClick(() => { state.removing = { ...item, source }; state.error = ""; paint(); host.querySelector<HTMLButtonElement>(".pf-ms-remove button")?.focus(); }));
+					menu.showAtMouseEvent(e);
+				});
 			}
 		}
 		if (summary.total && summary.done === summary.total && !p.archived) body.createDiv({ cls: "pf-ms-ready", text: "모든 마일스톤을 달성했어요. 성공 기준을 확인한 뒤 프로젝트를 완료해 주세요." });

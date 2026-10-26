@@ -1,9 +1,15 @@
-import { debounce, ItemView, Keymap, Menu, normalizePath, Platform, setIcon, type TAbstractFile, TFile, TFolder, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
+import { Component, debounce, ItemView, Keymap, Menu, normalizePath, Notice, Platform, setIcon, type TAbstractFile, TFile, TFolder, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { toIsoDate } from "../parser.ts";
 import { valueToString, parseFrontmatterText } from "../pinboard/model.ts";
 import { renderMilestones, type MilestoneUIState } from "./milestone-ui.ts";
 import { saveMilestone } from "./milestone-actions.ts";
+import { renderWorkspace } from "./workspace-ui.ts";
+import { projectGoalLinks } from "./workspace.ts";
+import { connectProject, readGoals } from "../pinboard/create-actions.ts";
+import { flywheelPath, parseFlywheel, type FlywheelElement } from "../flywheel/model.ts";
+import type { Goal } from "../pinboard/model.ts";
+import { pickTarget } from "../ui/mobile.ts";
 import { cleanFolder } from "../settings.ts";
 import { activeRoot, aliasesOf, archiveRoot, changeStatus, completeProject, createProject, deleteProject, editProject, takenIdsAndNames } from "./actions.ts";
 import { askForm, confirmDelete } from "../ui/modals.ts";
@@ -55,6 +61,9 @@ function dotDate(iso: string): string {
 
 interface Loaded {
 	projects: Project[];
+	texts: Map<string, string>;
+	goals: Goal[];
+	elements: FlywheelElement[];
 	/** Pinboard areas (for list order and the new-project suggestions). */
 	pinAreas: string[];
 }
@@ -75,6 +84,8 @@ export class ProjectFoldersView extends ItemView {
 	private dragging: Project | null = null;
 	private pending = false;
 	private milestoneStates = new Map<string, MilestoneUIState>();
+	private selectedId: string | null = null;
+	private workspaceComponent: Component | null = null;
 
 	private scheduleRefresh = debounce(() => void this.refresh(), 300, true);
 
@@ -96,11 +107,14 @@ export class ProjectFoldersView extends ItemView {
 	}
 
 	getState(): Record<string, unknown> {
-		return { ...super.getState(), mode: this.mode, filter: this.filter, year: this.year };
+		return { ...super.getState(), mode: this.mode, filter: this.filter, year: this.year, projectId: this.selectedId };
 	}
 
 	async setState(state: unknown, result: ViewStateResult): Promise<void> {
-		const s = (state ?? {}) as { mode?: unknown; filter?: unknown; year?: unknown };
+		if (!this.canNavigate()) return;
+		const s = (state ?? {}) as { mode?: unknown; filter?: unknown; year?: unknown; projectId?: unknown };
+		if (typeof s.projectId === "string") this.selectedId = s.projectId;
+		else if (s.projectId === null) this.selectedId = null;
 		if (s.mode === "kanban" || s.mode === "list" || s.mode === "timeline") this.mode = s.mode;
 		if (this.mode !== "timeline") this.boardMode = this.mode;
 		if (typeof s.filter === "string" && (FILTERS as string[]).includes(s.filter)) this.filter = s.filter as ScopeFilter;
@@ -115,6 +129,8 @@ export class ProjectFoldersView extends ItemView {
 	}
 
 	private setMode(mode: ProjectsMode): void {
+		if (!this.canNavigate()) return;
+		this.selectedId = null;
 		this.mode = mode;
 		if (mode !== "timeline") this.boardMode = mode;
 		this.render();
@@ -125,7 +141,7 @@ export class ProjectFoldersView extends ItemView {
 	// ── paths ──
 
 	private watched(path: string): boolean {
-		const roots = [activeRoot(this.plugin), archiveRoot(this.plugin), cleanFolder(this.plugin.settings.pinboardFolder)];
+		const roots = [activeRoot(this.plugin), archiveRoot(this.plugin), cleanFolder(this.plugin.settings.pinboardFolder), cleanFolder(this.plugin.settings.flywheelPath)];
 		return roots.some((r) => path === r || path.startsWith(`${r}/`));
 	}
 
@@ -152,6 +168,7 @@ export class ProjectFoldersView extends ItemView {
 		this.registerEvent(this.app.vault.on("delete", (f) => onFile(f)));
 		this.registerEvent(this.app.vault.on("rename", (f, old) => onFile(f, old)));
 		this.registerEvent(this.app.vault.on("create", (f) => onFile(f)));
+		this.registerEvent(this.app.vault.on("modify", (f) => onFile(f)));
 		await this.refresh();
 	}
 
@@ -178,13 +195,14 @@ export class ProjectFoldersView extends ItemView {
 		const act = activeRoot(this.plugin);
 		const arc = archiveRoot(this.plugin);
 		const projects: Project[] = [];
+		const texts = new Map<string, string>();
 		for (const f of this.app.vault.getMarkdownFiles()) {
 			const loc = hubLocation(f.path, act, arc);
 			if (!loc) continue;
 			const text = await this.app.vault.read(f);
 			const fm = parseFrontmatterText(text);
 			const p = parseProject(fm.data, fm.body, loc, f.path);
-			if (p) projects.push(p);
+			if (p) { projects.push(p); texts.set(p.id, text); }
 		}
 		const pin = cleanFolder(this.plugin.settings.pinboardFolder);
 		const pinAreas: string[] = [];
@@ -193,7 +211,10 @@ export class ProjectFoldersView extends ItemView {
 			const a = valueToString(this.app.metadataCache.getFileCache(f)?.frontmatter?.area);
 			if (a && !pinAreas.includes(a)) pinAreas.push(a);
 		}
-		return { projects, pinAreas };
+		const goals = (await readGoals(this.plugin)).map(x => x.goal);
+		const wheel = this.app.vault.getAbstractFileByPath(flywheelPath(this.plugin.settings.flywheelPath));
+		const elements = parseFlywheel(wheel instanceof TFile ? await this.app.vault.read(wheel) : null);
+		return { projects, pinAreas, texts, goals, elements };
 	}
 
 	private async run(fn: () => Promise<unknown>): Promise<void> {
@@ -202,6 +223,8 @@ export class ProjectFoldersView extends ItemView {
 		this.rootEl.addClass("is-busy");
 		try {
 			await fn();
+		} catch (e) {
+			new Notice(e instanceof Error ? e.message : String(e));
 		} finally {
 			this.busy = false;
 			this.rootEl.removeClass("is-busy");
@@ -212,6 +235,7 @@ export class ProjectFoldersView extends ItemView {
 	// ── actions ──
 
 	async newProject(): Promise<void> {
+		if (!this.canNavigate()) return;
 		const projects = this.data?.projects ?? [];
 		const areas = [...new Set([...(this.data?.pinAreas ?? []), ...projects.map((p) => p.area).filter(Boolean)])];
 		const input = await askNewProject(this.app, {
@@ -223,11 +247,12 @@ export class ProjectFoldersView extends ItemView {
 		await this.run(async () => {
 			const hub = await createProject(this.plugin, input);
 			const f = hub ? this.app.vault.getAbstractFileByPath(normalizePath(hub)) : null;
-			if (f instanceof TFile) await this.app.workspace.getLeaf("tab").openFile(f);
+			if (f instanceof TFile) { const fm = parseFrontmatterText(await this.app.vault.read(f)); this.selectedId = valueToString(fm.data.id); }
 		});
 	}
 
 	private async moveTo(p: Project, to: ProjectStatus, review = false): Promise<void> {
+		if (!this.canNavigate()) return;
 		if (p.archived || (columnOf(p) === to && !review)) return;
 		if (to === "완료") return this.complete(p, false);
 		await this.run(() => changeStatus(this.plugin, p, to, { review }));
@@ -252,6 +277,7 @@ export class ProjectFoldersView extends ItemView {
 	}
 
 	private async editInfo(p: Project): Promise<void> {
+		if (!this.canNavigate()) return;
 		if (p.archived) return;
 		const projects = this.data?.projects ?? [];
 		const taken = await takenIdsAndNames(this.plugin, projects.filter((x) => x.id !== p.id));
@@ -287,6 +313,7 @@ export class ProjectFoldersView extends ItemView {
 	}
 
 	private async remove(p: Project): Promise<void> {
+		if (!this.canNavigate()) return;
 		if (p.archived) return;
 		const folder = this.app.vault.getAbstractFileByPath(normalizePath(p.folder));
 		let count = 0;
@@ -310,13 +337,78 @@ export class ProjectFoldersView extends ItemView {
 	}
 
 	private openHub(p: Project, e?: MouseEvent): void {
+		if (!this.canNavigate()) return;
 		const f = this.app.vault.getAbstractFileByPath(p.path);
 		if (f instanceof TFile) void this.app.workspace.getLeaf(e ? Keymap.isModEvent(e) : false).openFile(f);
 	}
 
 	// ── rendering ──
 
+	canNavigate(): boolean {
+		if (this.busy || [...this.milestoneStates.values()].some(s => s.busy || s.editor || s.removing)) {
+			new Notice("편집 중인 마일스톤을 먼저 저장하거나 취소해 주세요.");
+			this.rootEl?.querySelector<HTMLTextAreaElement>(".pf-ms-editor textarea")?.focus();
+			return false;
+		}
+		return true;
+	}
+
+	/** Resolve by stable id first; paths may change when a project is renamed or archived. */
+	async openProject(idOrPath: string): Promise<boolean> {
+		if (!this.canNavigate()) return false;
+		await this.refresh();
+		const matches = this.data?.projects.filter(p => p.id === idOrPath || p.path === idOrPath) ?? [];
+		if (matches.length !== 1 || !matches[0].id) { new Notice("프로젝트를 하나로 찾지 못했어요. 등록부와 허브 id를 확인해 주세요."); return false; }
+		this.selectedId = matches[0].id;
+		this.milestoneStates.set(matches[0].path, { open: true });
+		this.render(); this.contentEl.scrollTop = 0;
+		this.rootEl.querySelector<HTMLElement>(".pf-workspace h1")?.focus();
+		this.app.workspace.requestSaveLayout();
+		return true;
+	}
+
+	private async connectGoal(p: Project, g?: Goal, link = true): Promise<void> {
+		if (!this.canNavigate() || p.archived) return;
+		if (!g) {
+			const connected = projectGoalLinks(p, this.data!.goals);
+			const options = this.data!.goals.filter(g => g.type === "sub-goal" && !connected.some(l => l.id === g.id && !l.oneSided));
+			if (!options.length) { new Notice("연결할 하위 목표가 없어요. Pinboard에서 먼저 만들어 주세요."); return; }
+			const picked = await pickTarget(this.app, "연결할 하위 목표", options.map(goal => ({ label: goal.title, sub: goal.id, goal })));
+			if (!picked) return; g = picked.goal;
+		} else if (!link) {
+			const answer = await askForm(this.app, { title: "목표 연결 해제", desc: `「${g.title}」와 연결만 해제합니다. 목표·프로젝트·자료는 지우지 않아요.`, fields: [], cta: "연결 해제" });
+			if (!answer) return;
+		}
+		const goal = g;
+		await this.run(() => connectProject(this.plugin, goal, p.path, link, todayIso()));
+	}
+
+	private renderProject(root: HTMLElement, p: Project, d: Loaded): void {
+		root.empty();
+		this.workspaceComponent = this.addChild(new Component());
+		const navigate = (fn: () => void) => { if (this.canNavigate()) fn(); };
+		renderWorkspace(root, p, {
+			app: this.app, component: this.workspaceComponent, goals: d.goals, elements: d.elements, paths: this.app.vault.getFiles().map(f => f.path), text: d.texts.get(p.id) ?? "",
+			back: () => navigate(() => { this.selectedId = null; this.render(); this.app.workspace.requestSaveLayout(); }),
+			raw: () => this.openHub(p), edit: () => void this.editInfo(p), remove: () => void this.remove(p),
+			status: () => navigate(() => { void (async () => { const picked = await pickTarget(this.app, "프로젝트 상태", PROJECT_STATUSES.map(status => ({ label: status === "완료" ? "완료하고 보관…" : status, status }))); if (picked) await this.moveTo(p, picked.status); })(); }),
+			goal: id => navigate(() => { void this.plugin.openPinboardGoal(id); }),
+			link: () => void this.connectGoal(p), unlink: g => void this.connectGoal(p, g, false), repair: g => void this.connectGoal(p, g),
+			file: path => navigate(() => { const f = this.app.vault.getAbstractFileByPath(path); if (f instanceof TFile) void this.app.workspace.getLeaf("tab").openFile(f); else new Notice(`파일을 찾지 못했어요: ${path}`); }),
+			wheel: e => navigate(() => { void this.app.workspace.openLinkText(`${flywheelPath(this.plugin.settings.flywheelPath)}#${e.id} ${e.name}`, p.path, "tab"); }),
+			milestones: el => { let ms = this.milestoneStates.get(p.path); if (!ms) { ms = { open: true }; this.milestoneStates.set(p.path, ms); } renderMilestones(el, p, ms, (change, expected) => saveMilestone(this.plugin, p, expected, change, todayIso()), () => this.refresh()); },
+		});
+	}
+
 	private render(): void {
+		if (!this.rootEl) return;
+		if (this.rootEl.querySelector(".pf-ms-editor, .pf-ms-remove") || [...this.milestoneStates.values()].some(s => s.busy)) return;
+		if (this.workspaceComponent) { this.removeChild(this.workspaceComponent); this.workspaceComponent = null; }
+		if (this.selectedId && this.data) {
+			const matches = this.data.projects.filter(p => p.id === this.selectedId);
+			if (matches.length === 1) return this.renderProject(this.rootEl, matches[0], this.data);
+			this.selectedId = null; new Notice("프로젝트가 삭제되었거나 현재 경로에서 찾을 수 없어요.");
+		}
 		if (Platform.isMobile) return renderProjectsMobile(this.mobileHost());
 		const root = this.rootEl;
 		if (!root) return;
@@ -353,6 +445,7 @@ export class ProjectFoldersView extends ItemView {
 			// The same call as the kanban column drop (dropZone).
 			move: (t, p) => runProjectTarget(t, p, { moveTo: (x, st) => this.moveTo(x, st) }),
 			register: (cb) => this.register(cb),
+			canNavigate: () => this.canNavigate(),
 		};
 	}
 
@@ -387,6 +480,7 @@ export class ProjectFoldersView extends ItemView {
 				seg2,
 				f,
 				() => {
+					if (!this.canNavigate()) return;
 					this.filter = f;
 					this.render();
 					this.app.workspace.requestSaveLayout();
@@ -489,8 +583,8 @@ export class ProjectFoldersView extends ItemView {
 		if (showStatus) meta.createSpan({ cls: `pf-status st-${columnOf(p)}`, text: columnOf(p) });
 		if (p.kind) meta.createSpan({ cls: "pf-kind", text: p.kind });
 
-		const name = card.createEl("h3", { cls: "pf-name", text: p.title, attr: { title: "허브 열기" } });
-		name.addEventListener("click", (e) => this.openHub(p, e));
+		const name = card.createEl("h3", { cls: "pf-name" }).createEl("button", { text: p.title, attr: { type: "button", title: "프로젝트 관리" } });
+		name.addEventListener("click", () => void this.openProject(p.id));
 
 		if (p.archived) {
 			if (p.result) card.createDiv({ cls: "pf-result", text: p.result });
@@ -503,7 +597,7 @@ export class ProjectFoldersView extends ItemView {
 
 		if (p.goals.length) {
 			const chips = card.createDiv({ cls: "pf-chips" });
-			for (const g of p.goals) chips.createSpan({ cls: "pf-chip", text: g });
+			for (const g of p.goals) { const chip = chips.createEl("button", { cls: "pf-chip", text: this.data?.goals.find(x => x.id === g)?.title ?? g, attr: { type: "button" } }); chip.addEventListener("click", () => { if (this.canNavigate()) void this.plugin.openPinboardGoal(g); }); }
 		}
 
 		let ms = this.milestoneStates.get(p.path);
@@ -551,9 +645,10 @@ export class ProjectFoldersView extends ItemView {
 
 	private cardMenu(e: MouseEvent, p: Project): void {
 		const menu = new Menu();
+		menu.addItem(i => i.setTitle("프로젝트 관리").setIcon("folder-kanban").onClick(() => void this.openProject(p.id)));
 		menu.addItem((i) =>
 			i
-				.setTitle("허브 열기")
+				.setTitle("원문 열기")
 				.setIcon("file-text")
 				.onClick(() => this.openHub(p)),
 		);
@@ -629,10 +724,11 @@ export class ProjectFoldersView extends ItemView {
 		for (const b of bars) {
 			const p = b.project;
 			const row = body.createDiv({ cls: "pf-tl-row" });
-			const bar = row.createDiv({ cls: `pf-tl-bar${b.clippedStart ? " is-clip-start" : ""}${b.clippedEnd ? " is-clip-end" : ""}`, attr: { title: "허브 열기" } });
+			const bar = row.createDiv({ cls: `pf-tl-bar${b.clippedStart ? " is-clip-start" : ""}${b.clippedEnd ? " is-clip-end" : ""}`, attr: { title: "프로젝트 관리", role: "button", tabindex: "0" } });
 			bar.style.left = `${(b.from / 12) * 100}%`;
 			bar.style.width = `${((b.to - b.from) / 12) * 100}%`;
-			bar.addEventListener("click", (e) => this.openHub(p, e));
+			bar.addEventListener("click", () => void this.openProject(p.id));
+			bar.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void this.openProject(p.id); } });
 			const cover = this.coverUrl(p);
 			if (cover) bar.createEl("img", { cls: "pf-tl-cover", attr: { src: cover, alt: "", loading: "lazy" } });
 			const txt = bar.createDiv({ cls: "pf-tl-txt" });

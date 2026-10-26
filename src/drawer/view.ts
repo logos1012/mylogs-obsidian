@@ -636,7 +636,7 @@ export class DrawerView extends ItemView {
 			const ok = await markTakenOutTo(this.plugin, it, `[[${hub.replace(/\.md$/, "")}]]`);
 			if (!ok) new Notice("프로젝트는 만들었지만 Drawer 줄을 [>]로 바꾸지 못했어요. Drawer.md를 확인해 주세요.");
 			const f = fileAt(this.app, hub);
-			if (f) await this.app.workspace.getLeaf("tab").openFile(f);
+			if (f) await this.plugin.openProjectAt(f.path);
 		});
 	}
 

@@ -50,8 +50,6 @@ import {
 } from "./ops.ts";
 
 export const VIEW_TYPE_DESK_CALENDAR = "mylogs-desk-calendar";
-const PINBOARD_VIEW = "mylogs-pinboard";
-const PINBOARD_COMMAND = "mylogs:open-pinboard";
 const CHANGED_NOTICE = "파일이 바뀌었어요. 다시 그렸어요";
 
 const FIELD_LABEL: Record<string, string> = { project: "프로젝트", from: "출처", why: "이유", moved: "미룸" };
@@ -560,7 +558,12 @@ export class DeskCalendarView extends ItemView {
 		if (it.item.time) body.createSpan({ cls: "dc-tm", text: it.item.time });
 		body.createSpan({ cls: "dc-txt", text: it.item.text });
 		if (it.item.movedTo) meta.createSpan({ cls: "dc-fld dc-mto", text: `→ ${it.item.movedTo}` });
-		for (const [k, v] of it.item.fields) if (k !== "goal") meta.createSpan({ cls: "dc-fld", text: `${FIELD_LABEL[k] ?? k} ${v}` });
+		for (const [k, v] of it.item.fields) if (k !== "goal") {
+			if (k === "project") {
+				const b = meta.createEl("button", { cls: "dc-fld ml-route-chip", text: `프로젝트 ${v}`, attr: { type: "button" } });
+				b.addEventListener("click", e => { e.stopPropagation(); void this.plugin.openProjectAt(v); });
+			} else meta.createSpan({ cls: "dc-fld", text: `${FIELD_LABEL[k] ?? k} ${v}` });
+		}
 		this.finishMeta(body, meta, it, it.problems.length ? it.problems.join(" · ") : null);
 		const st = it.item.status === "cancelled" && it.item.kind === "task" ? "놓아줌" : STATUS_LABEL[it.item.status];
 		li.setAttr("title", `${st} · ${KIND_LABEL[it.item.kind ?? "note"]}`);
@@ -860,17 +863,7 @@ export class DeskCalendarView extends ItemView {
 	// ── links ──
 
 	private openGoal(id: string): void {
-		const cmds = (this.app as unknown as { commands?: { commands?: Record<string, unknown>; executeCommandById?: (id: string) => boolean } }).commands;
-		if (cmds?.commands?.[PINBOARD_COMMAND] && cmds.executeCommandById) {
-			cmds.executeCommandById(PINBOARD_COMMAND);
-			return;
-		}
-		const leaf = this.app.workspace.getLeavesOfType(PINBOARD_VIEW)[0];
-		if (leaf) {
-			void this.app.workspace.revealLeaf(leaf);
-			return;
-		}
-		new Notice(`목표 ${id}`);
+		void this.plugin.openPinboardGoal(id);
 	}
 
 	private async openAt(fileKey: string, line: number, e?: MouseEvent): Promise<void> {

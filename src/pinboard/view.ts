@@ -716,6 +716,9 @@ export class PinboardView extends ItemView {
 
 	private openPath(path: string, newLeaf: PaneType | boolean = false): void {
 		if (!this.canNavigate()) return;
+		if (hubLocation(path, activeRoot(this.plugin), archiveRoot(this.plugin))) {
+			void this.plugin.openProjectAt(path); return;
+		}
 		const f = this.app.vault.getAbstractFileByPath(normalizePath(path));
 		if (f instanceof TFile) void this.app.workspace.getLeaf(newLeaf).openFile(f);
 		else new Notice(`MyLogs: ${path}을 찾지 못했어요.`);
@@ -739,6 +742,15 @@ export class PinboardView extends ItemView {
 	}
 
 	// ── 상세 패널 ──
+
+	async openGoalAt(id: string): Promise<boolean> {
+		if (!this.canNavigate()) return false;
+		const year = /^G-(\d{4})-/.exec(id)?.[1];
+		if (year) this.year = Number(year);
+		await this.refresh();
+		if (!this.goalById(id)) return false;
+		this.openGoal(id); return true;
+	}
 
 	openGoal(id: string): void {
 		if (!this.canNavigate()) return;

@@ -31,6 +31,7 @@ export interface ProjectsMobileHost {
 	footText(): string;
 	move(t: ProjectTarget, p: Project): Promise<unknown>;
 	register(cb: () => void): void;
+	canNavigate(): boolean;
 }
 
 interface State {
@@ -71,6 +72,7 @@ export function renderProjectsMobile(h: ProjectsMobileHost): void {
 			cols.map((c) => ({ id: c.status, label: c.status, count: c.total })),
 			s.tab,
 			(t) => {
+				if (!h.canNavigate()) return;
 				st.tab = t;
 				renderProjectsMobile(h);
 			},
@@ -99,6 +101,7 @@ function wireCard(h: ProjectsMobileHost, card: HTMLElement, p: Project): void {
 		const b = row.createEl("button", { cls: "pf-m-status", text: "상태 바꾸기", attr: { type: "button" } });
 		b.addEventListener("click", async (e) => {
 			e.stopPropagation();
+			if (!h.canNavigate()) return;
 			const t = await pickTarget(h.app, `「${p.title}」 상태`, targets);
 			if (t) await h.move(t, p);
 		});
