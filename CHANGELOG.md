@@ -2,7 +2,7 @@
 
 버전 번호는 `manifest.json`의 `version`과 같고, 같은 이름의 git 태그와 GitHub Release가 있다(앞에 v를 붙이지 않는다).
 
-## 다음 버전 (아직 릴리스 안 함)
+## 0.8.4 — 2026-10-26
 
 - **Toolbox: `updated_at` 갱신** (`11 Toolbox/AGENTS.md` 「4-10」) — 플러그인이 스킬 파일에 무엇이든 쓸 때(상태 바꾸기, 폐기, 수정·종류 바꾸기, 새 스킬) frontmatter에 `updated_at` 키가 있으면 `updated`와 함께 지금 시각으로 올린다: `"YYYY-MM-DDTHH:MM:SS+09:00"`(Asia/Seoul, 초 단위, 따옴표). 키가 없으면 더하지 않는다(지금은 `body_mode: temporary-dual`인 T-02 `MyLogs 운영`만 해당). 실제로 바뀐 것이 없으면 건드리지 않는다. 순수 헬퍼 `kstTimestamp` · `touchUpdatedAt` · `skillWrite`(`src/toolbox/ops.ts`)
 - **Flywheel: `status::` 없는 요소는 넣지 않음** — `new_day.py` `flywheel_lines()`와 같게, `status::` 필드가 없는 요소는 쉼으로 보고 Daily Pad에 넣지 않는다(예전엔 `사용`으로 봄). 새 날을 만들 때 그런 요소가 있으면 Notice로 알린다(파이썬은 stderr 경고). 바이트 일치 픽스처 `new_day-2026-10-24.flywheel-mixed.md`를 실제 `new_day.py` `render()`로 다시 만듦
