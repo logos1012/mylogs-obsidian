@@ -1,10 +1,10 @@
-import { debounce, Plugin, type WorkspaceLeaf } from "obsidian";
+import { debounce, Notice, Plugin, type WorkspaceLeaf } from "obsidian";
 import { mergeSettings, type MyLogsSettings, MyLogsSettingTab } from "./settings.ts";
 import { DailyPadView, VIEW_TYPE_DAILY_PAD } from "./view.ts";
 import { PinboardView, VIEW_TYPE_PINBOARD } from "./pinboard/view.ts";
 import { VIEW_TYPE_WALL_CALENDAR, WallCalendarView } from "./wall/view.ts";
 import { refreshDeskCalendars, registerDeskCalendar } from "./desk/register.ts";
-import { refreshProjectFolders, registerProjectFolders } from "./projects/register.ts";
+import { activateProjectFolders, refreshProjectFolders, registerProjectFolders } from "./projects/register.ts";
 import { refreshDrawers, registerDrawer } from "./drawer/register.ts";
 import { activateMyLife, refreshMyLife, registerMyLife } from "./mylife/register.ts";
 import { refreshToolbox, registerToolbox } from "./toolbox/register.ts";
@@ -124,6 +124,19 @@ export default class MyLogsPlugin extends Plugin {
 
 	async activatePinboard(): Promise<void> {
 		await this.activateView(VIEW_TYPE_PINBOARD);
+	}
+
+	async openProjectAt(idOrPath: string): Promise<void> {
+		const view = await activateProjectFolders(this);
+		await view?.openProject(idOrPath);
+	}
+
+	async openPinboardGoal(id: string): Promise<void> {
+		await this.activatePinboard();
+		const view = this.app.workspace.getLeavesOfType(VIEW_TYPE_PINBOARD)[0]?.view;
+		if (view instanceof PinboardView) {
+			if (!await view.openGoalAt(id)) new Notice("목표를 찾을 수 없거나 편집 중이에요. Pinboard를 확인해 주세요.");
+		}
 	}
 
 	async activateView(type: string): Promise<void> {

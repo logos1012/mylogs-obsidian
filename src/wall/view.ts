@@ -424,8 +424,10 @@ export class WallCalendarView extends ItemView {
 		const chips = body.createSpan({ cls: "wc-chips" });
 		for (const [k, v] of it.fields) {
 			if (!v) continue;
-			if (k === "goal") chips.createSpan({ cls: "wc-chip is-goal", text: `◎ ${v}`, attr: { title: "목표" } });
-			else if (k === "project") chips.createSpan({ cls: "wc-chip is-proj", text: `▤ ${v}`, attr: { title: "프로젝트" } });
+			if (k === "goal" || k === "project") {
+				const b = chips.createEl("button", { cls: `wc-chip ml-route-chip ${k === "goal" ? "is-goal" : "is-proj"}`, text: `${k === "goal" ? "◎" : "▤"} ${v}`, attr: { type: "button", title: k === "goal" ? "목표 관리" : "프로젝트 관리" } });
+				b.addEventListener("click", e => { e.stopPropagation(); void (k === "goal" ? this.plugin.openPinboardGoal(v) : this.plugin.openProjectAt(v)); });
+			}
 			else if (k === "why") chips.createSpan({ cls: "wc-chip is-from", text: `이유 · ${v}` });
 			else if (k === "from") chips.createSpan({ cls: "wc-chip is-from", text: `출처 · ${v}` });
 			else chips.createSpan({ cls: "wc-chip is-from", text: `${k} · ${v}` });
