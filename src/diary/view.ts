@@ -14,7 +14,7 @@
  * shows material and saves what the user typed. Vault writes live in `actions.ts`.
  */
 
-import { Component, ItemView, Keymap, MarkdownRenderer, Menu, moment, normalizePath, Notice, setIcon, type TAbstractFile, TFile, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
+import { Component, ItemView, Keymap, MarkdownRenderer, Menu, moment, normalizePath, Notice, Platform, setIcon, type TAbstractFile, TFile, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { addDays, fromIsoDate } from "../parser.ts";
 import { shiftMonthKey, type DiaryMonth, isMonthKey } from "../mylife/model.ts";
@@ -23,6 +23,7 @@ import { askForm, confirmDelete } from "../ui/modals.ts";
 import { AutoGrow } from "../ui/autogrow.ts";
 import { addFrom, attachmentFiles, createEntry, deleteEntry, type DiaryData, editMeta, loadDiary, loadMaterial, loadMyLifeMonth, type Material, readEntry, registryPath, root, saveAttachment, saveBody, togglePinned, toggleStarred } from "./actions.ts";
 import { isOwnWrite, lastWritten } from "./sync.ts";
+import { type DiaryMobileHost, renderDiaryMobile } from "./mobile.ts";
 import {
 	bodiesEqual,
 	bodyOf,
@@ -365,6 +366,11 @@ class EntryEditor {
 		ta.focus();
 	}
 
+	/** Mobile image button (no paste / drop there): the same path as a pasted image. */
+	insertFiles(files: FileList): Promise<void> {
+		return this.onFiles(files, new Event("mylogs-insert"));
+	}
+
 	destroy(): void {
 		if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
 		this.grow?.dispose();
@@ -541,6 +547,7 @@ export class DiaryView extends ItemView {
 	}
 
 	private render(): void {
+		if (Platform.isMobile) return renderDiaryMobile(this.mobileHost());
 		if (this.renderChild) this.removeChild(this.renderChild);
 		this.renderChild = this.addChild(new Component());
 		this.rootEl.toggleClass("is-material-collapsed", this.plugin.settings.diaryMaterialCollapsed);
@@ -556,6 +563,34 @@ export class DiaryView extends ItemView {
 				console.error(`[MyLogs] Diary ${name} render failed`, err);
 			}
 		}
+	}
+
+	/** What the mobile layout (`./mobile.ts`) may use: the same pane renderers and actions. */
+	private mobileHost(): DiaryMobileHost {
+		return {
+			app: this.app,
+			contentEl: this.contentEl,
+			rootEl: this.rootEl,
+			beginRender: () => {
+				if (this.renderChild) this.removeChild(this.renderChild);
+				this.renderChild = this.addChild(new Component());
+			},
+			renderTimeline: () => this.renderTimeline(),
+			renderEditor: () => this.renderEditor(),
+			renderMaterial: () => this.renderMaterial(),
+			entries: () => this.data?.entries ?? [],
+			hasSelection: () => !!this.selectedEntry(),
+			select: (path) => this.select(path),
+			writeToday: () => this.writeToday(),
+			insertImages: async (files) => {
+				if (!this.editor || this.preview) {
+					new Notice("쓰기 화면에서 엔트리를 연 뒤에 넣어 주세요.");
+					return;
+				}
+				await this.editor.insertFiles(files);
+			},
+			register: (cb) => this.register(cb),
+		};
 	}
 
 	// ── actions ──

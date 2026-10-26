@@ -7480,10 +7480,11 @@ body.is-mobile button.mylogs-m-more {
 	line-height: 1;
 	opacity: 1;
 }
+/* Absolute inside a non-scrolling view container (position: relative set per view). */
 body.is-mobile button.mylogs-m-fab {
-	position: fixed;
+	position: absolute;
 	right: 16px;
-	bottom: calc(16px + env(safe-area-inset-bottom, 0px) + var(--mylogs-kb, 0px));
+	bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 	z-index: 20;
 	display: inline-flex;
 	align-items: center;
@@ -7573,4 +7574,149 @@ body.is-mobile .mylogs-daily-pad .ml-btn-primary {
 /* On-screen keyboard: the editing section can still scroll above it (src/ui/mobile.ts trackKeyboard). */
 body.is-mobile .mylogs-daily-pad:has(.ml-section.is-editing) {
 	padding-bottom: calc(45vh + var(--mylogs-kb, 0px));
+}
+
+/* ── Diary: tabs 타임라인 / 쓰기 / 재료 (src/diary/mobile.ts) ── */
+body.is-mobile .mylogs-diary-container {
+	position: relative;
+}
+body.is-mobile .mylogs-diary.dy-m,
+body.is-mobile .mylogs-diary.dy-m.is-material-collapsed {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+	overflow: hidden;
+}
+body.is-mobile .mylogs-diary .dy-m-bar {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 8px 12px 0;
+	background: var(--dy-bg);
+}
+body.is-mobile .mylogs-diary .dy-m-bar .mylogs-m-tabs {
+	flex: 1;
+	margin: 0;
+}
+body.is-mobile .mylogs-diary .dy-m-tools {
+	display: flex;
+}
+body.is-mobile .mylogs-diary button.dy-m-tool {
+	min-width: 44px;
+	min-height: 44px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+	color: var(--dy-muted);
+}
+body.is-mobile .mylogs-diary.dy-m .dy-timeline,
+body.is-mobile .mylogs-diary.dy-m .dy-center,
+body.is-mobile .mylogs-diary.dy-m .dy-material {
+	display: none;
+	flex: 1 1 auto;
+	max-height: none;
+	min-height: 0;
+	border: 0;
+	overflow-y: auto;
+	-webkit-overflow-scrolling: touch;
+}
+body.is-mobile .mylogs-diary.dy-m.dy-m-tab-timeline .dy-timeline,
+body.is-mobile .mylogs-diary.dy-m.dy-m-tab-write .dy-center,
+body.is-mobile .mylogs-diary.dy-m.dy-m-tab-material .dy-material {
+	display: flex;
+}
+body.is-mobile .mylogs-diary.dy-m.dy-m-tab-material .dy-material {
+	display: block;
+	padding-bottom: 96px;
+}
+body.is-mobile .mylogs-diary.dy-m .dy-timeline {
+	padding-bottom: 88px;
+}
+/* The timeline's own calendar toggle and the sheet's panel toggle have no job here (modal / tabs). */
+body.is-mobile .mylogs-diary.dy-m .dy-tl-tools .dy-btn-icon,
+body.is-mobile .mylogs-diary.dy-m .dy-material-toggle,
+body.is-mobile .mylogs-diary.dy-m .dy-cal {
+	display: none;
+}
+body.is-mobile .mylogs-diary.dy-m .dy-sheet {
+	padding: 16px 16px calc(45vh + var(--mylogs-kb, 0px));
+}
+body.is-mobile .mylogs-diary.dy-m .dy-row {
+	min-height: 56px;
+}
+body.is-mobile .mylogs-diary button.dy-btn,
+body.is-mobile .mylogs-diary button.dy-chip,
+body.is-mobile .mylogs-diary select.dy-chip-select,
+body.is-mobile .mylogs-diary button.dy-from-btn,
+body.is-mobile .mylogs-diary button.dy-meta-btn,
+body.is-mobile .mylogs-diary button.dy-link-btn {
+	min-height: 44px;
+}
+body.is-mobile .mylogs-diary button.dy-btn-icon,
+body.is-mobile .mylogs-diary button.dy-btn-tiny {
+	min-width: 44px;
+}
+body.is-mobile .mylogs-diary select.dy-chip-select {
+	font-size: 16px;
+}
+body.is-mobile .mylogs-diary textarea.dy-editor,
+body.is-mobile .mylogs-diary .dy-md {
+	font-size: max(16px, var(--dy-body-size));
+}
+body.is-mobile .mylogs-diary-container .mylogs-diary.dy-m-tab-write ~ .dy-m-fab {
+	display: none;
+}
+body.is-mobile .dy-m-calmodal .dy-m-cal-nav {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 8px;
+}
+body.is-mobile .dy-m-calmodal .dy-m-cal-nav button {
+	min-width: 44px;
+	min-height: 44px;
+}
+body.is-mobile .dy-m-calmodal .dy-m-cal-month {
+	font-size: 16px;
+	font-weight: 600;
+}
+body.is-mobile .dy-m-calmodal .dy-m-cal-grid {
+	display: grid;
+	grid-template-columns: repeat(7, 1fr);
+	gap: 4px;
+}
+body.is-mobile .dy-m-calmodal .dy-m-cal-wd {
+	padding: 4px 0;
+	color: var(--text-muted);
+	font-size: 12px;
+	text-align: center;
+}
+body.is-mobile .dy-m-calmodal button.dy-m-cal-cell {
+	position: relative;
+	min-height: 44px;
+	padding: 0;
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-faint);
+	font-size: 15px;
+}
+body.is-mobile .dy-m-calmodal button.dy-m-cal-cell.is-filled {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-weight: 600;
+}
+body.is-mobile .dy-m-calmodal button.dy-m-cal-cell.is-today {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -2px;
+}
+body.is-mobile .dy-m-calmodal .dy-m-cal-n {
+	position: absolute;
+	top: 2px;
+	right: 4px;
+	font-size: 10px;
 }
