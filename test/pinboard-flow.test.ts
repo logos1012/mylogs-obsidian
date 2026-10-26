@@ -6,6 +6,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseFrontmatterText } from "../src/pinboard/model.ts";
+import { inlineToken } from "../src/pinboard/inline-edit.ts";
 import { readMilestones, milestoneSummary } from "../src/projects/milestones.ts";
 import { getFmList, parseRegistry } from "../src/projects/ops.ts";
 import { TEMPLATE_FILES } from "../src/projects/create.ts";
@@ -15,7 +16,7 @@ import { TODAY, ROOT, MAIN_TEMPLATE, SUB_TEMPLATE, INDEX, REGISTRY, WHEEL, INPUT
 // Real actions, real parsers, real templates; only the Obsidian storage adapter is simulated.
 const temp=mkdtempSync(join(tmpdir(),"mylogs-pinboard-test-"));after(()=>rmSync(temp,{recursive:true,force:true}));
 const stub=`export class App{};export class PluginSettingTab{};export class Setting{};export class Notice{constructor(message){globalThis.__notices?.push(message)}};export class TFile{constructor(path){this.path=path;this.name=path.split('/').pop();this.basename=this.name.replace(/\\.md$/,'')}};export class TFolder{constructor(path){this.path=path;this.name=path.split('/').pop();this.children=[]}};export const normalizePath=p=>p.replace(/\\\\/g,'/').replace(/\\/+/g,'/').replace(/^\\/|\\/$/g,'');`;
-const result=await build({stdin:{contents:`export * from './src/pinboard/create-actions.ts';export * from './src/projects/actions.ts';export * from './src/projects/milestone-actions.ts';export {DEFAULT_SETTINGS} from './src/settings.ts';export {TFile,TFolder} from 'obsidian';`,resolveDir:resolve(import.meta.dirname,"..")},bundle:true,format:"cjs",platform:"node",write:false,plugins:[{name:"mock-obsidian",setup(b){b.onResolve({filter:/^obsidian$/},()=>({path:"obsidian",namespace:"mock"}));b.onLoad({filter:/.*/,namespace:"mock"},()=>({contents:stub,loader:"js"}));}}]});
+const result=await build({stdin:{contents:`export * from './src/pinboard/create-actions.ts';export * from './src/projects/actions.ts';export * from './src/projects/milestone-actions.ts';export * from './src/pinboard/inline-actions.ts';export {DEFAULT_SETTINGS} from './src/settings.ts';export {TFile,TFolder} from 'obsidian';`,resolveDir:resolve(import.meta.dirname,"..")},bundle:true,format:"cjs",platform:"node",write:false,plugins:[{name:"mock-obsidian",setup(b){b.onResolve({filter:/^obsidian$/},()=>({path:"obsidian",namespace:"mock"}));b.onLoad({filter:/.*/,namespace:"mock"},()=>({contents:stub,loader:"js"}));}}]});
 const bundle=join(temp,"actions.cjs");writeFileSync(bundle,result.outputFiles[0].text);const api=createRequire(import.meta.url)(bundle);
 
 function vault(){
@@ -41,6 +42,29 @@ function vault(){
 	return {host,data,nodes,trash,moves,put};
 }
 async function start(){const v=vault();const main=await api.createGoalFlow(v.host,{input:INPUT},2026,undefined,TODAY);const sub=await api.createGoalFlow(v.host,{input:{...INPUT,title:"뉴스레터 첫 발행",measure:"milestone",target:"창간호 발송"},execution:{mode:"new",project:PROJECT}},2026,main.id,TODAY);return {...v,main,sub};}
+
+test("inline goal numeric save updates note, parent and index together",async()=>{
+	const v=await start();let s=v.sub;
+	for(const [field,value]of [["measure","metric"],["baseline","0"],["target","100"],["current","50"]])s=await api.saveInlineGoal(v.host,s,field,inlineToken(v.data.get(s.path)!,field as any),value,TODAY);
+	assert.equal(s.progress,50);assert.equal(readGoal(v.data.get(v.main.path)!,v.main.path).progress,50);assert.match(v.data.get(`${ROOT}/Pinboard Index.md`)!,/50%/);
+	assert.match(v.data.get(s.path)!,/\(value:: 50\)/);assert.deepEqual(getFmList(v.data.get(s.path)!,"project_ids"),[PROJECT.id]);
+});
+test("inline title rename uses FileManager and preserves goal links",async()=>{
+	const v=await start(),s=await api.saveInlineGoal(v.host,v.sub,"title",v.sub.title,"뉴스레터 창간호 발송",TODAY);
+	assert.equal(v.moves.length,1);assert.ok(!v.data.has(v.sub.path));assert.ok(v.data.has(s.path));assert.match(v.data.get(v.main.path)!,/뉴스레터 창간호 발송/);assert.doesNotMatch(v.data.get(v.main.path)!,/뉴스레터 첫 발행/);assert.match(v.data.get(`${ROOT}/Pinboard Index.md`)!,/뉴스레터 창간호 발송/);
+});
+test("inline save failures roll back notes/index and preserve drafts' source",async()=>{
+	const v=await start(),before=new Map(v.data),real=v.host.app.vault.process;
+	v.host.app.vault.process=async(f:any,fn:any)=>{if(f.path===`${ROOT}/Pinboard Index.md`)throw Error("disk full");return real(f,fn);};
+	await assert.rejects(api.saveInlineGoal(v.host,v.sub,"title",v.sub.title,"다른 이름",TODAY),/저장을 취소/);assert.deepEqual(v.data,before);assert.equal(v.moves.length,0);
+	v.host.app.vault.process=real;v.host.app.fileManager.renameFile=async()=>{throw Error("rename failed")};
+	await assert.rejects(api.saveInlineGoal(v.host,v.sub,"title",v.sub.title,"다른 이름",TODAY),/수정을 취소/);assert.deepEqual(v.data,before);
+});
+test("inline title collision and same-field conflict do not write",async()=>{
+	const v=await start();v.put(v.sub.path.replace(v.sub.title,"중복 제목"),"기존 파일");const before=new Map(v.data);
+	await assert.rejects(api.saveInlineGoal(v.host,v.sub,"title",v.sub.title,"중복 제목",TODAY),/같은 이름/);assert.deepEqual(v.data,before);
+	await assert.rejects(api.saveInlineGoal(v.host,v.sub,"title","옛 제목","새 제목",TODAY),/다른 곳/);assert.deepEqual(v.data,before);
+});
 
 test("milestone storage updates all records but no goal values or project status", async()=>{
 	const v=await start(),path=v.sub.projects[0].slice(2,-2)+".md",{p}=await api.readProject(v.host,path),goal=v.data.get(v.sub.path),main=v.data.get(v.main.path),index=v.data.get(`${ROOT}/Pinboard Index.md`);
