@@ -9,6 +9,7 @@ import {
 	applyMetaEdit,
 	attachmentPath,
 	attachmentsOf,
+	bodiesEqual,
 	bodyOf,
 	calendarDays,
 	displayTitle,
@@ -22,6 +23,7 @@ import {
 	isEntryPath,
 	newEntryText,
 	nextAttachmentNo,
+	normalizeBody,
 	onThisDay,
 	parseEntry,
 	parsePrompts,
@@ -38,6 +40,7 @@ import {
 	withBody,
 	yearsOf,
 } from "../src/diary/model.ts";
+import { forgetWrites, isConflict, isOwnWrite, lastWritten, rememberWrite } from "../src/diary/sync.ts";
 import { deleteLogText, entryRowOf, fileCellOf, monthRowsOf, parseEntryRows, parseMonthRows, recomputeMonths, registerEntry, removeEntryRow, unregisterEntry, upsertEntryRow } from "../src/diary/ops.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -397,4 +400,157 @@ test("diary: delete removes the row, recomputes 월별 and logs 삭제 「제목
 	const gone = unregisterEntry(FILLED_REG, run2025, "2026-01-12");
 	assert.ok(gone.ok);
 	assert.deepEqual(parseMonthRows(gone.text), [{ month: "2026-01", entries: 3, days: 2 }]);
+});
+
+// ───────────────────────── save conflict · own writes (fix/diary-conflict) ─────────────────────────
+
+const ENTRY_PATH = `${ROOT}/2026/2026-01/2026-01-11 2210.md`;
+
+test("diary: bodiesEqual ignores line endings and trailing whitespace, nothing else", () => {
+	assert.ok(bodiesEqual("a", "a\n"));
+	assert.ok(bodiesEqual("a\r\nb", "a\nb\n"));
+	assert.ok(bodiesEqual("# 제목\n\n본문  \n\n", "# 제목\n\n본문"));
+	assert.ok(!bodiesEqual("a", "ab"));
+	assert.ok(!bodiesEqual("a\nb", "a\n\nb"));
+	assert.equal(normalizeBody("a\r\nb\r\n"), "a\nb\n");
+});
+
+test("diary: regression — the second save after a first one is not a conflict (view base vs file body)", () => {
+	forgetWrites();
+	// What the view does: `base` = normalizeBody(parseEntry(file).body); saveBody compares the file body with it.
+	const t0 = newEntryText(TEMPLATE, NOW);
+	let base = normalizeBody(parseEntry(t0, ENTRY_PATH)!.body);
+	// Save 1: the user typed "a" (the textarea has no trailing newline; withBody adds one).
+	assert.equal(isConflict(t0, base, ENTRY_PATH), false);
+	const t1 = withBody(t0, "a", NOW);
+	rememberWrite(ENTRY_PATH, t1);
+	assert.equal(bodyOf(t1), "a\n");
+	base = normalizeBody(parseEntry(t1, ENTRY_PATH)!.body);
+	assert.ok(bodiesEqual("a", base), "the textarea text counts as saved");
+	// Save 2: "ab" against the base the view now holds → must not conflict.
+	assert.equal(isConflict(t1, base, ENTRY_PATH), false);
+	const t2 = withBody(t1, "ab", NOW);
+	rememberWrite(ENTRY_PATH, t2);
+	assert.equal(bodyOf(t2), "ab\n");
+	// Save 3 against a base still holding the first save (the registry write was slow and a refresh
+	// raced it): the file is what we last wrote → still not a conflict.
+	assert.equal(isConflict(t2, base, ENTRY_PATH), false);
+	// A real external edit is one.
+	const ext = withBody(t2, "누군가 바꿈", NOW);
+	assert.equal(isConflict(ext, normalizeBody(parseEntry(t2, ENTRY_PATH)!.body), ENTRY_PATH), true);
+	// force (`expectBody === null`) never conflicts.
+	assert.equal(isConflict(ext, null, ENTRY_PATH), false);
+	forgetWrites();
+});
+
+test("diary: conflict detection compares normalized bodies — trailing newline, CRLF, trailing spaces", () => {
+	forgetWrites();
+	const t = withBody(newEntryText(TEMPLATE, NOW), "# 밤\n\n한 줄", NOW);
+	assert.equal(bodyOf(t), "# 밤\n\n한 줄\n");
+	assert.equal(isConflict(t, "# 밤\n\n한 줄", ENTRY_PATH), false, "no trailing newline in the editor");
+	assert.equal(isConflict(t, "# 밤\n\n한 줄\n\n", ENTRY_PATH), false, "extra trailing newlines");
+	assert.equal(isConflict(t.replace(/\n/g, "\r\n"), "# 밤\n\n한 줄", ENTRY_PATH), false, "CRLF file");
+	assert.equal(isConflict(t, "# 밤\r\n\r\n한 줄\r\n", ENTRY_PATH), false, "CRLF editor");
+	assert.equal(isConflict(t, "# 밤\n\n한 줄  ", ENTRY_PATH), false, "trailing spaces");
+	assert.equal(isConflict(t, "# 밤\n\n한  줄", ENTRY_PATH), true, "an inner change is a conflict");
+	// The frontmatter is not part of the comparison: a starred toggle while typing is no conflict.
+	assert.equal(isConflict(setStarred(t, true), "# 밤\n\n한 줄", ENTRY_PATH), false);
+});
+
+test("diary: our own write (and Google Drive re-touching it) is recognised; a changed file is not", () => {
+	forgetWrites();
+	const reg = "09 Diary/Diary Index.md";
+	assert.equal(lastWritten(ENTRY_PATH), null);
+	assert.equal(isOwnWrite(ENTRY_PATH, "anything"), false, "a path we never wrote is never ours");
+	const t1 = withBody(newEntryText(TEMPLATE, NOW), "a", NOW);
+	rememberWrite(ENTRY_PATH, t1);
+	assert.equal(lastWritten(ENTRY_PATH), t1);
+	assert.equal(isOwnWrite(ENTRY_PATH, t1), true, "the modify event of our own save");
+	assert.equal(isOwnWrite(ENTRY_PATH, t1.replace(/\n/g, "\r\n")), true, "same content, other line endings");
+	assert.equal(isOwnWrite(ENTRY_PATH, t1 + "\n"), true, "same content, trailing newline");
+	assert.equal(isOwnWrite(ENTRY_PATH, withBody(t1, "ab", NOW)), false, "an edit from outside");
+	assert.equal(isOwnWrite(ENTRY_PATH, setStarred(t1, true)), false, "a frontmatter edit from outside");
+	// Paths are keyed independently; a later write replaces the earlier one.
+	rememberWrite(reg, EMPTY_REG);
+	assert.equal(isOwnWrite(reg, EMPTY_REG), true);
+	assert.equal(isOwnWrite(ENTRY_PATH, EMPTY_REG), false);
+	const t2 = withBody(t1, "ab", NOW);
+	rememberWrite(ENTRY_PATH, t2);
+	assert.equal(isOwnWrite(ENTRY_PATH, t1), false, "the previous write is no longer ours");
+	assert.equal(isOwnWrite(ENTRY_PATH, t2), true);
+	forgetWrites();
+	assert.equal(lastWritten(ENTRY_PATH), null);
+});
+
+// ───────────────────────── quoted frontmatter ─────────────────────────
+
+test("diary: the template quotes its {{date}} placeholders; creation fills them inside the quotes", () => {
+	assert.match(TEMPLATE, /^date: "\{\{date:YYYY-MM-DD\}\}"$/m);
+	assert.match(TEMPLATE, /^time: "\{\{date:HH:mm\}\}"$/m);
+	assert.match(TEMPLATE, /^created: "\{\{date:YYYY-MM-DDTHH:mm\}\}"$/m);
+	assert.match(TEMPLATE, /^updated: "\{\{date:YYYY-MM-DDTHH:mm\}\}"$/m);
+	const t = newEntryText(TEMPLATE, NOW);
+	assert.match(t, /^date: "2026-01-11"$/m);
+	assert.match(t, /^time: "22:10"$/m);
+	assert.match(t, /^created: "2026-01-11T22:10"$/m);
+	assert.match(t, /^updated: "2026-01-11T22:10"$/m);
+	assert.ok(!t.includes("{{"));
+	const e = parseEntry(t, ENTRY_PATH)!;
+	assert.equal(e.date, "2026-01-11");
+	assert.equal(e.time, "22:10");
+	assert.equal(e.created, "2026-01-11T22:10");
+	assert.equal(e.updated, "2026-01-11T22:10");
+	// Saving bumps `updated` in place; the quoted `created` stays as written.
+	const saved = withBody(t, "# 늦은 밤\n\n본문", new Date(2026, 0, 11, 22, 31));
+	assert.equal(getFmValue(saved, "updated"), "2026-01-11T22:31");
+	assert.match(saved, /^created: "2026-01-11T22:10"$/m);
+	assert.equal(parseEntry(saved, ENTRY_PATH)!.updated, "2026-01-11T22:31");
+});
+
+test("diary: a quoted-frontmatter entry parses like an unquoted one (double and single quotes)", () => {
+	const quoted = [
+		"---",
+		"type: diary",
+		'date: "2026-01-09"',
+		"time: '22:10'",
+		'title: "첫 유료 고객"',
+		'tags: ["사이드프로젝트", "주간장부"]',
+		'location: "집"',
+		'weather: "맑음 -3°C"',
+		"starred: true",
+		"pinned: false",
+		'prompt: ""',
+		"from:",
+		'  - "[[04 Daily Pad/2026/2026-01-09#끼적임]]"',
+		'created: "2026-01-09T22:10"',
+		'updated: "2026-01-09T22:41"',
+		"---",
+		"# 첫 유료 고객",
+		"",
+		"본문.",
+		"",
+	].join("\n");
+	const e = parseEntry(quoted, `${ROOT}/2026/2026-01/2026-01-09 2210.md`)!;
+	assert.ok(e);
+	assert.equal(e.date, "2026-01-09");
+	assert.equal(e.time, "22:10");
+	assert.equal(e.title, "첫 유료 고객");
+	assert.deepEqual(e.tags, ["사이드프로젝트", "주간장부"]);
+	assert.equal(e.location, "집");
+	assert.equal(e.weather, "맑음 -3°C");
+	assert.equal(e.starred, true);
+	assert.equal(e.prompt, "");
+	assert.deepEqual(e.from, ["[[04 Daily Pad/2026/2026-01-09#끼적임]]"]);
+	assert.equal(e.created, "2026-01-09T22:10");
+	assert.equal(e.updated, "2026-01-09T22:41");
+	assert.equal(e.body, "# 첫 유료 고객\n\n본문.\n");
+	// The line reader strips quotes too.
+	assert.equal(getFmValue(quoted, "date"), "2026-01-09");
+	assert.equal(getFmValue(quoted, "time"), "22:10");
+	assert.equal(getFmValue(quoted, "created"), "2026-01-09T22:10");
+	// Same entry as the unquoted fixture apart from the body.
+	assert.equal(e.date, paid.date);
+	assert.equal(e.time, paid.time);
+	assert.equal(e.title, paid.title);
+	assert.deepEqual(e.tags, paid.tags);
 });
