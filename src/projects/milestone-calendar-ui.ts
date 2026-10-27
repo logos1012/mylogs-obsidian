@@ -41,7 +41,8 @@ export function renderMilestoneMarkers(parent: HTMLElement, markers: MilestoneMa
 		button.createSpan({ cls: "ml-milestone-symbol", text: "◆", attr: { "aria-hidden": "true" } });
 		const content = button.createSpan({ cls: "ml-milestone-content" });
 		content.createSpan({ cls: "ml-milestone-title", text: `${showDate ? m.date.slice(5).replace("-", "/") + " " : ""}${m.title}` });
-		content.createSpan({ cls: "ml-milestone-meta", text: `마일스톤 · ${m.projectTitle}${state !== "planned" ? " · " + status : ""}` });
+		// One line on the calendar; project and state are in the title and the popover.
+		if (state === "done") content.createSpan({ cls: "ml-milestone-state", text: "✓" });
 		if(host && !m.archived && m.source !== undefined) {
    const item: ScheduleItem = {kind:"milestone",projectPath:m.projectPath,projectId:m.projectId,line:m.line,title:m.title,source:m.source,date:m.date};
    // 날짜를 바꾸려면 끌어서 날짜 칸에 놓는다 (휴대폰은 살짝 길게 누른 뒤 끌기).
