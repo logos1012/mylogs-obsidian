@@ -73,6 +73,8 @@ export interface Goal {
 	progress: number | null;
 	projects: string[];
 	projectIds: string[];
+	progressSource?: "projects" | "manual";
+	projectWeights?: string[];
 	from: string;
 	updated: string;
 }
@@ -148,6 +150,8 @@ export function parseGoal(fm: Record<string, unknown> | null | undefined, path: 
 		progress: toNum(fm.progress),
 		projects: valueToList(fm.projects),
 		projectIds: valueToList(fm.project_ids),
+		progressSource: s("progress_source") === "manual" ? "manual" : s("progress_source") === "projects" || valueToList(fm.project_ids).length ? "projects" : "manual",
+		projectWeights: valueToList(fm.project_weights),
 		from: s("from"),
 		updated: s("updated"),
 	};
@@ -284,7 +288,8 @@ export function metricProgress(baseline: unknown, current: unknown, target: unkn
  * `achieved` → 100; metric → formula (null if a number is missing: keep what's there, never
  * invent); milestone → 0 until achieved.
  */
-export function computeSubProgress(g: Pick<Goal, "measure" | "status" | "baseline" | "current" | "target">): number | null {
+export function computeSubProgress(g: Pick<Goal, "measure" | "status" | "baseline" | "current" | "target"> & Partial<Pick<Goal, "progressSource" | "progress">>): number | null {
+	if (g.progressSource === "projects") return g.progress ?? 0;
 	if (g.status === "achieved") return 100;
 	if (g.measure === "milestone") return 0;
 	if (g.measure === "metric") {
@@ -301,10 +306,10 @@ export interface Rollup {
 }
 
 /** What a Sub Goal contributes to its Main: its progress, or 0 while it is 미정. */
-export type RollupSub = Pick<Goal, "status"> & Partial<Pick<Goal, "measure" | "baseline" | "current" | "target" | "weight">>;
+export type RollupSub = Pick<Goal, "status"> & Partial<Pick<Goal, "measure" | "baseline" | "current" | "target" | "weight" | "progressSource" | "progress">>;
 
 function rollupProgressOf(s: RollupSub): number {
-	return computeSubProgress({ measure: s.measure ?? "", status: s.status, baseline: s.baseline ?? "", current: s.current ?? "", target: s.target ?? "" }) ?? 0;
+	return computeSubProgress({ progressSource: s.progressSource, progress: s.progress, measure: s.measure ?? "", status: s.status, baseline: s.baseline ?? "", current: s.current ?? "", target: s.target ?? "" }) ?? 0;
 }
 
 /**
@@ -328,6 +333,7 @@ export function rollupMain(subs: RollupSub[]): Rollup {
 
 /** Progress shown for a Sub Goal: computed from the note (null = 미정; the stored value isn't shown). */
 export function displaySubProgress(g: Goal): number | null {
+	if (g.progressSource === "projects") return g.progress ?? 0;
 	if (g.status === "achieved") return 100;
 	if (g.measure === "milestone") return 0;
 	if (g.measure === "metric") return metricProgress(g.baseline, g.current, g.target);

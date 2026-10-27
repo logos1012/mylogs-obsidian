@@ -1,3 +1,4 @@
+import { registerProjectRollup } from "./pinboard/project-rollup.ts";
 import { debounce, Notice, Plugin, type WorkspaceLeaf } from "obsidian";
 import { mergeSettings, type MyLogsSettings, MyLogsSettingTab } from "./settings.ts";
 import { DailyPadView, VIEW_TYPE_DAILY_PAD } from "./view.ts";
@@ -65,6 +66,7 @@ export default class MyLogsPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+		registerProjectRollup(this);
 
 		this.registerView(VIEW_TYPE_DAILY_PAD, (leaf: WorkspaceLeaf) => new DailyPadView(leaf, this));
 

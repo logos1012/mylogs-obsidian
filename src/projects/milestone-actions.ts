@@ -1,3 +1,4 @@
+import { withProjectRollup } from "../pinboard/project-rollup.ts";
 import { type ProjectsHost, registryPath, loadTemplates } from "./actions.ts";
 import { readProject, vaultIO, exclusive } from "../pinboard/create-actions.ts";
 import { commitBatch } from "../pinboard/batch.ts";
@@ -18,7 +19,7 @@ export async function saveMilestone(host: ProjectsHost, displayed: Project, expe
 		const description = (change.kind === "add" ? change.text.trim() : change.kind === "edit" ? `${old?.text} → ${change.text.trim()}` : old?.text ?? "") + dateChange;
 		const summary = milestoneSummary(readMilestones(edited).items);
 		const title = `마일스톤 ${verb}`, detail = `${title}: ${description}`;
-		await commitBatch(io, await projectRecordWrites(host, p, text, edited, title, detail, summary.label, today));
+		await commitBatch(io, await withProjectRollup(host, await projectRecordWrites(host, p, text, edited, title, detail, summary.label, today), today));
 	});
 }
 
@@ -29,7 +30,7 @@ export async function projectRecordWrites(host: ProjectsHost, p: Project, text: 
 	const ym = today.slice(0, 7), mp = monthlyLogPath(p.folder, p.name, ym), lp = logIndexPath(p.folder, p.name), ap = p.folder + "/AGENTS.md", rp = registryPath(host);
 	const required = async (path: string) => { const t = await io.read(path); if (t === null) throw new Error(`필수 기록 파일이 없어요: ${path}`); return t; };
 	const m = await io.read(mp), l = await required(lp), a = await required(ap), r = await required(rp);
-	const entry = formatLogEntry({ date: today, title, context: `「${p.title}」 ${title}`, done: detail, result, decision: "사용자 확인. 목표 진척·프로젝트 상태는 변경하지 않음", open: "", next: p.action || "미확인", evidence: "사용자 입력 (프로젝트 화면)" });
+	const entry = formatLogEntry({ date: today, title, context: `「${p.title}」 ${title}`, done: detail, result, decision: "사용자 확인. 실제 목표 결과값·프로젝트 상태 보존; 자동 진척은 마일스톤에서 집계", open: "", next: p.action || "미확인", evidence: "사용자 입력 (프로젝트 화면)" });
 	const rr = upsertActiveRow(r, { id: p.id, updated: today });
 	if (!rr.ok) throw new Error(rr.reason);
 	const templates = m === null ? await loadTemplates(host) : null;

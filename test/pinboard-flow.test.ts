@@ -16,7 +16,7 @@ import { TODAY, ROOT, MAIN_TEMPLATE, SUB_TEMPLATE, INDEX, REGISTRY, WHEEL, INPUT
 // Real actions, real parsers, real templates; only the Obsidian storage adapter is simulated.
 const temp=mkdtempSync(join(tmpdir(),"mylogs-pinboard-test-"));after(()=>rmSync(temp,{recursive:true,force:true}));
 const stub=`export class App{};export class PluginSettingTab{};export class Setting{};export class Notice{constructor(message){globalThis.__notices?.push(message)}};export class TFile{constructor(path){this.path=path;this.name=path.split('/').pop();this.basename=this.name.replace(/\\.md$/,'')}};export class TFolder{constructor(path){this.path=path;this.name=path.split('/').pop();this.children=[]}};export const normalizePath=p=>p.replace(/\\\\/g,'/').replace(/\\/+/g,'/').replace(/^\\/|\\/$/g,'');`;
-const result=await build({stdin:{contents:`export * from './src/pinboard/create-actions.ts';export * from './src/projects/actions.ts';export * from './src/projects/milestone-actions.ts';export * from './src/projects/task-actions.ts';export * from './src/desk/actions.ts';export * from './src/pinboard/inline-actions.ts';export {DEFAULT_SETTINGS} from './src/settings.ts';export {TFile,TFolder} from 'obsidian';`,resolveDir:resolve(import.meta.dirname,"..")},bundle:true,format:"cjs",platform:"node",write:false,plugins:[{name:"mock-obsidian",setup(b){b.onResolve({filter:/^obsidian$/},()=>({path:"obsidian",namespace:"mock"}));b.onLoad({filter:/.*/,namespace:"mock"},()=>({contents:stub,loader:"js"}));}}]});
+const result=await build({stdin:{contents:`export * from './src/pinboard/create-actions.ts';export * from './src/projects/actions.ts';export * from './src/projects/milestone-actions.ts';export * from './src/projects/task-actions.ts';export * from './src/desk/actions.ts';export * from './src/pinboard/inline-actions.ts';export * from './src/pinboard/project-rollup.ts';export {DEFAULT_SETTINGS} from './src/settings.ts';export {TFile,TFolder} from 'obsidian';`,resolveDir:resolve(import.meta.dirname,"..")},bundle:true,format:"cjs",platform:"node",write:false,plugins:[{name:"mock-obsidian",setup(b){b.onResolve({filter:/^obsidian$/},()=>({path:"obsidian",namespace:"mock"}));b.onLoad({filter:/.*/,namespace:"mock"},()=>({contents:stub,loader:"js"}));}}]});
 const bundle=join(temp,"actions.cjs");writeFileSync(bundle,result.outputFiles[0].text);const api=createRequire(import.meta.url)(bundle);
 
 function vault(){
@@ -44,7 +44,7 @@ function vault(){
 async function start(){const v=vault();const main=await api.createGoalFlow(v.host,{input:INPUT},2026,undefined,TODAY);const sub=await api.createGoalFlow(v.host,{input:{...INPUT,title:"뉴스레터 첫 발행",measure:"milestone",target:"창간호 발송"},execution:{mode:"new",project:PROJECT}},2026,main.id,TODAY);return {...v,main,sub};}
 
 test("inline goal numeric save updates note, parent and index together",async()=>{
-	const v=await start();let s=v.sub;
+	const v=await start();await api.saveProgressSettings(v.host,v.sub,v.data.get(v.sub.path),"manual",[],TODAY);let s=readGoal(v.data.get(v.sub.path)!,v.sub.path);
 	for(const [field,value]of [["measure","metric"],["baseline","0"],["target","100"],["current","50"]])s=await api.saveInlineGoal(v.host,s,field,inlineToken(v.data.get(s.path)!,field as any),value,TODAY);
 	assert.equal(s.progress,50);assert.equal(readGoal(v.data.get(v.main.path)!,v.main.path).progress,50);assert.match(v.data.get(`${ROOT}/Pinboard Index.md`)!,/50%/);
 	assert.match(v.data.get(s.path)!,/\(value:: 50\)/);assert.deepEqual(getFmList(v.data.get(s.path)!,"project_ids"),[PROJECT.id]);
@@ -66,12 +66,12 @@ test("inline title collision and same-field conflict do not write",async()=>{
 	await assert.rejects(api.saveInlineGoal(v.host,v.sub,"title","옛 제목","새 제목",TODAY),/다른 곳/);assert.deepEqual(v.data,before);
 });
 
-test("milestone storage updates all records but no goal values or project status", async()=>{
-	const v=await start(),path=v.sub.projects[0].slice(2,-2)+".md",{p}=await api.readProject(v.host,path),goal=v.data.get(v.sub.path),main=v.data.get(v.main.path),index=v.data.get(`${ROOT}/Pinboard Index.md`);
+test("milestone storage rolls up progress but preserves real results and project status", async()=>{
+	const v=await start(),path=v.sub.projects[0].slice(2,-2)+".md",{p}=await api.readProject(v.host,path);
 	await api.saveMilestone(v.host,p,"",{kind:"add",text:"창간호 검수 통과"},TODAY);
 	let m=readMilestones(v.data.get(path)!);await api.saveMilestone(v.host,p,m.source,{kind:"check",line:m.items[0].line,done:true},TODAY);
 	m=readMilestones(v.data.get(path)!);assert.equal(milestoneSummary(m.items).label,"1/1 달성");assert.match(v.data.get(path)!,/status: 후보/);
-	assert.equal(v.data.get(v.sub.path),goal);assert.equal(v.data.get(v.main.path),main);assert.equal(v.data.get(`${ROOT}/Pinboard Index.md`),index);
+	assert.equal(readGoal(v.data.get(v.sub.path)!,v.sub.path).progress,100);assert.equal(readGoal(v.data.get(v.main.path)!,v.main.path).progress,100);assert.equal(readGoal(v.data.get(v.sub.path)!,v.sub.path).status,"active");assert.equal(readGoal(v.data.get(v.sub.path)!,v.sub.path).current,"");
 	assert.match(v.data.get(`${p.folder}/99 작업실/로그/${p.name} 로그 2026-01.md`)!,/마일스톤 달성 확인/);
 	assert.match(v.data.get(`${p.folder}/99 작업실/${p.name} 로그.md`)!,/1\/1 달성/);
 	assert.match(v.data.get("05 Project Folders/99 작업실/Project Folders Index.md")!,/마일스톤 달성 확인/);
@@ -205,4 +205,63 @@ test("future month creation failure restores Wall and leaves no partial Desk mon
 
 test("new Desk month never migrates read-only historical Wall records",async()=>{
  const v=await taskSetup();v.put("02 Wall Calendar/2020.md","## 2020-01\n- [ ] 01/03 김하루의 과거 기록\n");const before=new Map(v.data);assert.equal(await api.createDeskMonth(v.host,"2020-01"),false);assert.deepEqual(v.data,before);
+});
+
+test("weighted project rollup: six milestones, undo, shared goals, custom weights and unlink", async () => {
+ const v=await start(),path=v.sub.projects[0].slice(2,-2)+".md",{p}=await api.readProject(v.host,path);
+ for(let i=0;i<6;i++) await api.saveMilestone(v.host,p,readMilestones(v.data.get(path)!).source,{kind:"add",text:`김하루 검수 ${i+1}`},TODAY);
+ let ms=readMilestones(v.data.get(path)!);
+ await api.saveMilestone(v.host,p,ms.source,{kind:"check",line:ms.items[0].line,done:true},TODAY);
+ const sub=()=>readGoal(v.data.get(v.sub.path)!,v.sub.path), main=()=>readGoal(v.data.get(v.main.path)!,v.main.path);
+ assert.equal(sub().progress,17);assert.equal(main().progress,17);assert.equal(sub().status,"active");assert.equal(sub().current,"");
+ const before=new Map(v.data);await api.syncProjectRollup(v.host,TODAY);assert.deepEqual(v.data,before,"idempotent");
+ const second={...PROJECT,id:"P-delivery",name:"창간호 전달",action:"발송 확인"};
+ await api.createProjectForGoal(v.host,sub(),second,TODAY);
+ const path2=`05 Project Folders/개인/${second.name}/${second.name}.md`,{p:p2}=await api.readProject(v.host,path2);
+ await api.saveMilestone(v.host,p2,"",{kind:"add",text:"김하루 발송 완료"},TODAY);
+ ms=readMilestones(v.data.get(path2)!);await api.saveMilestone(v.host,p2,ms.source,{kind:"check",line:ms.items[0].line,done:true},TODAY);
+ assert.equal(sub().progress,58,"raw project ratios averaged before rounding");
+ await api.saveProgressSettings(v.host,sub(),v.data.get(v.sub.path),"projects",[`${PROJECT.id}=3`,`${second.id}=1`],TODAY);
+ assert.equal(sub().progress,38);assert.equal(main().progress,38);
+ ms=readMilestones(v.data.get(path)!);await api.saveMilestone(v.host,p,ms.source,{kind:"check",line:ms.items[0].line,done:false},TODAY);
+ assert.equal(sub().progress,25);
+ await api.connectProject(v.host,sub(),path2,false,TODAY);assert.equal(sub().progress,0);
+ await api.connectProject(v.host,sub(),path,false,TODAY);assert.equal(sub().progressSource,"projects");assert.equal(sub().progress,0);assert.equal(main().progress,0);
+});
+
+test("automatic rollup sync detects external checkbox edits, missing projects and preserves actual outcomes", async()=>{
+ const v=await start(),path=v.sub.projects[0].slice(2,-2)+".md";
+ v.put(path,v.data.get(path)+"\n## 마일스톤\n- [x] 김하루 원고 완성\n- [ ] 김하루 검수\n");
+ await api.syncProjectRollup(v.host,TODAY);
+ assert.equal(readGoal(v.data.get(v.sub.path)!,v.sub.path).progress,50);
+ const old=v.data.get(v.sub.path)!;
+ await api.saveProgressSettings(v.host,v.sub,old,"manual",[`${PROJECT.id}=1`],TODAY);
+ assert.equal(readGoal(v.data.get(v.sub.path)!,v.sub.path).progress,0);
+ await api.syncProjectRollup(v.host,TODAY);assert.equal(readGoal(v.data.get(v.sub.path)!,v.sub.path).progress,0);
+ await api.saveProgressSettings(v.host,v.sub,v.data.get(v.sub.path),"projects",[`${PROJECT.id}=1`],TODAY);
+ v.nodes.delete(path);v.data.delete(path);await api.syncProjectRollup(v.host,TODAY);
+ assert.equal(readGoal(v.data.get(v.sub.path)!,v.sub.path).progress,0);assert.equal(readGoal(v.data.get(v.main.path)!,v.main.path).progress,0);
+});
+
+test("rollup validation, settings conflict and atomic milestone rollback on goal-index failure",async()=>{
+ const v=await start(),path=v.sub.projects[0].slice(2,-2)+".md",{p}=await api.readProject(v.host,path);
+ await api.saveMilestone(v.host,p,"",{kind:"add",text:"김하루 검수"},TODAY);
+ const before=new Map(v.data),ms=readMilestones(v.data.get(path)!);
+ await assert.rejects(api.saveProgressSettings(v.host,v.sub,v.data.get(v.sub.path),"projects",[`${PROJECT.id}=0`],TODAY),/비중/);assert.deepEqual(v.data,before);
+ await assert.rejects(api.saveProgressSettings(v.host,v.sub,"stale","manual",[],TODAY),/다른 곳/);assert.deepEqual(v.data,before);
+ const real=v.host.app.vault.process;v.host.app.vault.process=async(f:any,fn:any)=>{if(f.path===`${ROOT}/Pinboard Index.md`)throw Error("disk full");return real(f,fn)};
+ await assert.rejects(api.saveMilestone(v.host,p,ms.source,{kind:"check",line:ms.items[0].line,done:true},TODAY),/저장을 취소/);assert.deepEqual(v.data,before);
+});
+
+test("background rollup: layout start, external edit and disposal",async()=>{
+ const v=await start(),path=v.sub.projects[0].slice(2,-2)+".md";
+ v.put(path,v.data.get(path)+"\n## 마일스톤\n- [x] 김하루 검수\n");
+ const listeners=new Map<string,Function>(),disposers:Function[]=[];
+ v.host.app.vault.on=(name:string,fn:Function)=>{listeners.set(name,fn);return fn;};
+ v.host.registerEvent=()=>{};v.host.register=(fn:Function)=>disposers.push(fn);v.host.app.workspace={onLayoutReady:(fn:Function)=>fn()};
+ api.registerProjectRollup(v.host);
+ await new Promise(r=>setTimeout(r,850));assert.equal(readGoal(v.data.get(v.sub.path)!,v.sub.path).progress,100);
+ v.put(path,v.data.get(path)!.replace('- [x] 김하루 검수','- [ ] 김하루 검수'));listeners.get('modify')!({path});
+ await new Promise(r=>setTimeout(r,850));assert.equal(readGoal(v.data.get(v.sub.path)!,v.sub.path).progress,0);
+ for(const dispose of disposers)dispose();
 });

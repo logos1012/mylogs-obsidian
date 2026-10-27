@@ -1,3 +1,4 @@
+import { withProjectRollup } from "./project-rollup.ts";
 import { TFile, TFolder, normalizePath, type App } from "obsidian";
 import { cleanFolder } from "../settings.ts";
 import { type ProjectsHost, activeRoot, archiveRoot, registryPath } from "../projects/actions.ts";
@@ -78,7 +79,7 @@ export async function createGoalFlow(host:ProjectsHost,answer:GoalAnswer,year:nu
 	const note=plan.writes.find(w=>w.path===plan.goal.path)!.after;
 	indexWrite.after=upsertGoalRows(indexWrite.after,year,[plan.goal],new Map([[plan.goal.id,relatedText(plan.goal,note,wheel)]]));
 	if(ex?.mode==="flywheel"&&ex.previous){const old=existing.find(x=>x.goal.id===ex.previous);if(old)indexWrite.after=upsertGoalRows(indexWrite.after,Number(old.goal.id.slice(2,6)),[old.goal],new Map([[old.goal.id,relatedText(old.goal,old.text,wheel)]]));}
-	await commitBatch(io,plan.writes,plan.folders);
+	await commitBatch(io,await withProjectRollup(host,plan.writes,today),plan.folders);
 	return plan.goal;
 });}
 
@@ -88,7 +89,7 @@ export async function connectProject(host:ProjectsHost,g:Goal,path:string,link:b
 	const after=link?linkProject(before,p.id,`[[${p.path.replace(/\.md$/,"")}]]`,today):unlinkProject(before,p.id,p.name,today);
 	const ip=`${cleanFolder(host.settings.pinboardFolder)}/${INDEX_FILE}`,idx=await required(io,ip),wheel=await io.read(flywheelPath(host.settings.flywheelPath))??"";
 	const ng=readGoal(after,g.path);let next=upsertGoalRows(idx,Number(g.id.slice(2,6)),[ng],new Map([[g.id,relatedText(ng,after,wheel)]]));next=setFmValue(prependChangeLog(next,today,`${g.id} ↔ ${p.id} ${link?"연결":"연결 해제"} (플러그인)`),"updated",today);
-	await commitBatch(io,[{path:g.path,before,after},...await projectSideWrites(host,path,g.id,link,today),{path:ip,before:idx,after:next}]);
+	await commitBatch(io,await withProjectRollup(host,[{path:g.path,before,after},...await projectSideWrites(host,path,g.id,link,today),{path:ip,before:idx,after:next}],today));
 });}
 
 export async function createProjectForGoal(host:ProjectsHost,g:Goal,input:NewProjectInput,today:string):Promise<void>{return exclusive(host,async()=>{
@@ -100,7 +101,7 @@ export async function createProjectForGoal(host:ProjectsHost,g:Goal,input:NewPro
 	const gw=plan.writes.find(w=>w.path===g.path)!,iw=plan.writes.find(w=>w.path===ip)!,wheel=await io.read(flywheelPath(host.settings.flywheelPath))??"";
 	iw.after=upsertGoalRows(iw.after,Number(g.id.slice(2,6)),[plan.goal],new Map([[g.id,relatedText(plan.goal,gw.after,wheel)]]));
 	iw.after=setFmValue(prependChangeLog(iw.after,today,`${g.id} ↔ ${input.id} 프로젝트 생성·연결 (플러그인)`),"updated",today);
-	await commitBatch(io,plan.writes,plan.folders);
+	await commitBatch(io,await withProjectRollup(host,plan.writes,today),plan.folders);
 });}
 
 export async function connectFlywheel(host:ProjectsHost,goal:Goal,id:string,expected:string,link:boolean,today:string):Promise<void>{return exclusive(host,async()=>{
