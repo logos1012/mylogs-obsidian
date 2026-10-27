@@ -10,6 +10,7 @@ import { refreshDrawers, registerDrawer } from "./drawer/register.ts";
 import { activateMyLife, refreshMyLife, registerMyLife } from "./mylife/register.ts";
 import { refreshToolbox, registerToolbox } from "./toolbox/register.ts";
 import { activateDiary, refreshDiaries, registerDiary } from "./diary/register.ts";
+import { refreshFlywheel, registerFlywheel } from "./flywheel/register.ts";
 
 /*
  * MyLogs — Daily Pad, Pinboard, Wall Calendar, Desk Calendar, Project Folders, Drawer, My Life, Toolbox, Diary views.
@@ -26,7 +27,7 @@ import { activateDiary, refreshDiaries, registerDiary } from "./diary/register.t
  * TODO(Toolbox AGENTS 「4-3」「4-4」): running skills and registering cron (Hermes does that); the plugin only queues 「실행 요청」 lines.
  * TODO(Toolbox AGENTS 「4-5」): move 폐기 files to `10 Archive Box/Closed/` once that format is decided (now the file stays in place).
  * TODO(My Life AGENTS 「4」): writing or regenerating My Life files (Hermes does that); index editing; Weekly/Monthly charts.
- * Flywheel (계획 §10, `12 Flywheel/AGENTS.md` 「4-2」): no view; `src/flywheel/model.ts` feeds the Daily Pad new-day skeleton and the `n/7` badges.
+ * Flywheel view (`mylogs-flywheel`, 계획 「10-1」: 오늘 체크 / 최근 4주 / 바퀴 카드 / 요소 추가): src/flywheel/.
  * Daily Pad 결정 대기 (계획 §4 「못 한 일 버튼」): src/pending/. Desk Calendar 날짜 칸의 못 한 일: src/desk/.
  * Shared UI: top navigation (src/ui/nav.ts), hidden help (src/ui/tip.ts), item detail popover (src/ui/popover.ts).
  * TODO(계획 「기본 방침」 5, 「결정할 것」 1): index updates (Daily Pad Index.md, Desk Calendar Index.md).
@@ -60,6 +61,7 @@ export default class MyLogsPlugin extends Plugin {
 			refreshMyLife(this);
 			refreshToolbox(this);
 			refreshDiaries(this);
+			refreshFlywheel(this);
 		},
 		600,
 		true,
@@ -100,6 +102,7 @@ export default class MyLogsPlugin extends Plugin {
 		registerMyLife(this);
 		registerToolbox(this);
 		registerDiary(this);
+		registerFlywheel(this);
 
 		this.addSettingTab(new MyLogsSettingTab(this.app, this));
 	}

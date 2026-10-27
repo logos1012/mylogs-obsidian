@@ -1,7 +1,7 @@
 import { type ItemView, setIcon } from "obsidian";
 import { tip } from "./tip.ts";
 
-/** Every MyLogs view, in vault folder order (01 Pinboard … 11 Toolbox). */
+/** Every MyLogs view, in vault folder order (01 Pinboard … 12 Flywheel). */
 export const APP_VIEWS: { type: string; label: string; icon: string; desc: string }[] = [
 	{ type: "mylogs-pinboard", label: "Pinboard", icon: "target", desc: "올해의 목표와 진척" },
 	{ type: "mylogs-wall-calendar", label: "Wall", icon: "calendar-range", desc: "Wall Calendar · 한 해의 달별 일정" },
@@ -12,6 +12,7 @@ export const APP_VIEWS: { type: string; label: string; icon: string; desc: strin
 	{ type: "mylogs-my-life", label: "My Life", icon: "book-open", desc: "하루·주·달·해의 정리" },
 	{ type: "mylogs-diary", label: "Diary", icon: "feather", desc: "일기" },
 	{ type: "mylogs-toolbox", label: "Toolbox", icon: "wrench", desc: "AI 스킬 등록부" },
+	{ type: "mylogs-flywheel", label: "Flywheel", icon: "repeat", desc: "매일 조금씩 나를 키우는 바퀴" },
 ];
 
 /**

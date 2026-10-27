@@ -9889,3 +9889,172 @@ button.mylogs-pop-act.is-warning {
 	color: var(--text-warning);
 	font-size: var(--font-ui-smaller);
 }
+
+/* 휴대폰: Obsidian 헤더가 떠 있고(fixed) 본문에 그만큼 위 여백(--view-top-spacing)이 붙는다.
+   네비게이션이 헤더 뒤에 가려지지 않도록 여백을 네비게이션으로 옮긴다. */
+.is-phone .workspace-leaf-content > .mylogs-appnav {
+	margin-top: var(--view-top-spacing, 0);
+	position: relative;
+	z-index: 1;
+}
+.is-phone .mod-root .workspace-leaf-content > .mylogs-appnav + .view-content {
+	margin-top: 0;
+}
+
+/* Pinboard 상세 정리 (0.14.0) */
+.mylogs-pinboard-container .pb-d-more {
+	margin: 0 0 18px;
+	padding: 10px 18px;
+	border: 1px solid var(--pb-line);
+	border-radius: var(--pb-radius);
+	background: var(--pb-card);
+}
+.mylogs-pinboard-container .pb-d-more > summary {
+	cursor: pointer;
+	color: var(--pb-muted);
+	font-size: 12px;
+	list-style-position: inside;
+}
+.mylogs-pinboard-container .pb-d-more[open] > summary {
+	margin-bottom: 10px;
+}
+.mylogs-pinboard-container .pb-d-more .pb-d-props {
+	margin: 0 0 12px;
+	padding: 0;
+	border: 0;
+	box-shadow: none;
+	background: none;
+}
+.mylogs-pinboard-container .pb-d-more .pb-rollup {
+	padding-top: 10px;
+	border-top: 1px solid var(--pb-line);
+}
+.mylogs-pinboard-container .pb-src-chip {
+	margin-left: 10px;
+	padding: 1px 8px;
+	border-radius: 999px;
+	background: var(--pb-chip, rgba(0, 0, 0, 0.05));
+	color: var(--pb-muted);
+	font-size: 11px;
+	font-weight: 500;
+	vertical-align: middle;
+}
+.mylogs-pinboard-container .pb-rel-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.mylogs-pinboard-container .pb-rel-warn {
+	color: var(--pb-warn, #b9770e);
+	cursor: help;
+}
+.mylogs-pinboard-container button.pb-rel-more {
+	margin-left: auto;
+	opacity: 0.5;
+}
+.mylogs-pinboard-container .pb-rel-item:hover button.pb-rel-more,
+.is-mobile .mylogs-pinboard-container button.pb-rel-more {
+	opacity: 1;
+}
+.mylogs-pinboard-container .pb-rel-addbtn {
+	margin-top: 10px;
+}
+
+/* 프로젝트 상세 정리 (0.14.0) */
+.mylogs-projects .pf-workspace-nav { align-items: center; }
+.mylogs-projects .pf-workspace-titlerow { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; }
+.mylogs-projects .pf-workspace-titlerow h1 { margin: 6px 0; }
+.mylogs-projects button.pf-status-pill { height: 28px; min-height: 28px; padding: 0 12px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--pf-accent-soft); color: var(--pf-accent); border: 0; box-shadow: none; }
+.mylogs-projects .pf-status-pill.is-archived { padding: 3px 12px; border-radius: 999px; font-size: 12px; background: var(--background-modifier-hover); color: var(--text-muted); }
+.mylogs-projects .pf-workspace-action .pf-action-k { display: flex; align-items: center; justify-content: space-between; }
+.mylogs-projects button.pf-icon-btn { width: 32px; height: 32px; padding: 4px; }
+.mylogs-projects .pf-workspace-goal { display: flex; align-items: center; gap: 6px; }
+.mylogs-projects .pf-workspace-goal .pf-workspace-link { flex: 1; text-align: left; }
+.mylogs-projects .pf-warn { color: var(--text-warning); cursor: help; }
+.mylogs-projects .pf-workspace-info { margin-top: 28px; }
+.mylogs-projects .pf-workspace-info > h2 { font-size: 15px; margin: 0 0 8px; }
+.pf-schedule-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pf-schedule-layout.is-calendar-closed { grid-template-columns: 1fr; }
+.is-mobile .mylogs-projects button.pf-icon-btn { width: 44px; height: 44px; }
+
+/* ───────────────────────── Flywheel (0.14.0) ───────────────────────── */
+.mylogs-flywheel-container { container-type: inline-size; }
+.mylogs-flywheel { max-width: 1040px; margin: 0 auto; padding: 24px 20px 64px; --fw-done: var(--color-green, #3a8a5c); --fw-miss: var(--color-red, #c4554d); --fw-rest: var(--color-blue, #5b7fbf); }
+.mylogs-flywheel h1 { margin: 2px 0 6px; font-size: 30px; }
+.mylogs-flywheel h2 { margin: 0; font-size: 15px; }
+.mylogs-flywheel h3 { margin: 0; font-size: 16px; }
+.fw-eyebrow { color: var(--text-muted); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+.fw-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding-bottom: 18px; margin-bottom: 22px; border-bottom: 1px solid var(--background-modifier-border); }
+.fw-head-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.fw-count { color: var(--text-muted); font-size: 12px; }
+button.fw-purpose { all: unset; display: block; color: var(--text-normal); font-size: 15px; cursor: pointer; line-height: 1.5; }
+button.fw-purpose.is-empty, .fw-field-v.is-empty, .fw-today-min.is-empty { color: var(--text-faint) !important; font-style: italic; }
+.mylogs-flywheel button.fw-btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; font-size: 13px; }
+.fw-btn-icon { display: inline-flex; }
+.fw-btn-icon svg { width: 14px; height: 14px; }
+.fw-sec-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.fw-date { color: var(--text-muted); font-size: 13px; }
+.mylogs-flywheel section { margin-bottom: 32px; }
+.fw-muted { color: var(--text-muted); font-size: 13px; }
+
+.fw-today-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.fw-today-card { position: relative; display: flex; gap: 12px; align-items: flex-start; padding: 14px; border: 1px solid var(--background-modifier-border); border-radius: 12px; background: var(--background-primary); transition: background 0.15s; }
+.fw-today-card.is-done { background: color-mix(in srgb, var(--fw-done) 8%, var(--background-primary)); border-color: color-mix(in srgb, var(--fw-done) 35%, var(--background-modifier-border)); }
+.mylogs-flywheel button.fw-check { flex: 0 0 auto; width: 28px; height: 28px; padding: 0; border-radius: 8px; border: 1.5px solid var(--text-faint); background: transparent; box-shadow: none; display: inline-flex; align-items: center; justify-content: center; color: #fff; }
+.fw-today-card.is-done button.fw-check { background: var(--fw-done); border-color: var(--fw-done); }
+.mylogs-flywheel button.fw-check[disabled] { opacity: 0.35; }
+.fw-check svg { width: 16px; height: 16px; }
+.fw-today-name { font-weight: 600; }
+.fw-today-min { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
+.fw-missed { position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--fw-miss); cursor: help; }
+.fw-today-missing { display: flex; align-items: center; gap: 10px; margin-top: 10px; color: var(--text-muted); font-size: 13px; }
+
+.fw-legend { display: flex; gap: 12px; color: var(--text-muted); font-size: 11px; }
+.fw-lg { display: inline-flex; align-items: center; gap: 4px; }
+.fw-grid { display: grid; grid-template-columns: minmax(90px, 160px) repeat(var(--weeks), minmax(0, 1fr)); gap: 6px 10px; align-items: center; }
+.fw-grid-week { color: var(--text-faint); font-size: 11px; }
+.fw-grid-name { font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.fw-grid-cell { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.fw-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; flex: 1; }
+.fw-cell, .mylogs-flywheel button.fw-cell { display: inline-block; width: 100%; max-width: 16px; aspect-ratio: 1; min-height: 0; height: auto; padding: 0; border: 0; border-radius: 4px; box-shadow: none; background: var(--background-modifier-border); }
+.fw-lg .fw-cell { width: 10px; }
+.mylogs-flywheel .fw-cell.m-x { background: var(--fw-done); }
+.mylogs-flywheel .fw-cell.m-miss { background: color-mix(in srgb, var(--fw-miss) 55%, var(--background-primary)); }
+.mylogs-flywheel .fw-cell.m-rest { background: color-mix(in srgb, var(--fw-rest) 40%, var(--background-primary)); }
+.mylogs-flywheel .fw-cell.m-blank { background: transparent; outline: 1px dashed var(--background-modifier-border); outline-offset: -1px; }
+.mylogs-flywheel .fw-cell.m-out, .mylogs-flywheel .fw-cell.m-future { background: transparent; }
+.fw-rate { flex: 0 0 auto; min-width: 30px; color: var(--text-muted); font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+
+.fw-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; counter-reset: fw; }
+.fw-card { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 16px; border: 1px solid var(--background-modifier-border); border-radius: 14px; background: var(--background-primary); }
+.fw-card:not(:last-child)::after { content: "→"; position: absolute; right: -13px; top: 50%; transform: translateY(-50%); color: var(--text-faint); font-size: 14px; }
+.fw-card.st-쉼, .fw-card.st-none { opacity: 0.7; }
+.fw-card-top { display: flex; align-items: center; gap: 8px; }
+.fw-card-top h3 { flex: 1; }
+.fw-identity { color: var(--text-muted); font-size: 13px; font-style: italic; }
+.fw-field { display: grid; grid-template-columns: 34px 1fr; gap: 8px; align-items: baseline; }
+.fw-field-k { color: var(--text-faint); font-size: 11px; }
+button.fw-field-v { all: unset; cursor: pointer; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.fw-field.is-min button.fw-field-v { font-weight: 600; }
+button.fw-field-v:hover { color: var(--text-accent); }
+.fw-card-foot { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.mylogs-flywheel button.fw-goal, .mylogs-flywheel button.fw-outputs { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border-radius: 999px; font-size: 12px; background: var(--background-modifier-hover); border: 0; box-shadow: none; color: var(--text-muted); }
+.fw-pill { padding: 1px 8px; border-radius: 999px; font-size: 11px; background: var(--background-modifier-hover); color: var(--text-muted); }
+.fw-gone { margin-top: 12px; color: var(--text-muted); font-size: 12px; }
+.fw-empty { text-align: center; padding: 60px 20px; }
+.fw-empty p { color: var(--text-muted); }
+
+@container (max-width: 620px) {
+	.mylogs-flywheel { padding: 16px 14px 48px; }
+	.fw-head { flex-direction: column; }
+	.fw-head-right { justify-content: flex-start; }
+	.fw-grid { grid-template-columns: 1fr; gap: 4px; }
+	.fw-grid-corner, .fw-grid-week { display: none; }
+	.fw-grid-name { margin-top: 10px; }
+	.fw-card:not(:last-child)::after { content: "↓"; right: 50%; top: auto; bottom: -15px; transform: none; }
+	.mylogs-flywheel .fw-days { flex: 0 1 auto; grid-template-columns: repeat(7, 22px); gap: 4px; }
+	.fw-cell, .mylogs-flywheel button.fw-cell { max-width: 22px; width: 22px; }
+	.fw-grid-cell { justify-content: space-between; }
+	.mylogs-flywheel button.fw-check { width: 36px; height: 36px; }
+}
+.mylogs-flywheel .fw-cell.m-today { background: transparent; outline: 1.5px solid var(--fw-done); outline-offset: -1.5px; }
