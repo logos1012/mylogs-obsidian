@@ -1,4 +1,6 @@
 import { loadProjectProgress, saveProgressSettings } from "./project-rollup.ts";
+import { mountAppNav } from "../ui/nav.ts";
+import { tip } from "../ui/tip.ts";
 import { applyProjectProgress, contributions, projectWeight, type ProjectProgress } from "./project-progress.ts";
 import {
 	debounce,
@@ -244,6 +246,7 @@ export class PinboardView extends ItemView {
 		this.contentEl.empty();
 		this.contentEl.addClass("mylogs-pinboard-container");
 		this.rootEl = this.contentEl.createDiv({ cls: "mylogs-pinboard" });
+		mountAppNav(this);
 		this.layerEl = this.contentEl.createDiv({ cls: "pb-detail-layer" });
 		const viewport = this.contentEl.ownerDocument.defaultView?.visualViewport;
 		if (viewport) {
@@ -547,8 +550,7 @@ export class PinboardView extends ItemView {
 			box.createDiv({ cls: "pb-missing-title", text: "모든 칸이 채워져 있어요" });
 			return;
 		}
-		box.createDiv({ cls: "pb-missing-title", text: `채워 넣을 칸 ${d.missing.length}개` });
-		box.createDiv({ cls: "pb-note", text: "비어 있는 값은 지어내지 않고 그대로 비워 두었습니다. 노트에 적으면 바로 반영됩니다." });
+		tip(box.createDiv({ cls: "pb-missing-title", text: `채워 넣을 칸 ${d.missing.length}개` }), "비어 있는 값은 지어내지 않고 그대로 비워 두었어요. 적으면 바로 반영돼요.");
 		const ul = box.createEl("ul");
 		for (const m of d.missing) {
 			const b = ul.createEl("li").createEl("button", { cls: "pb-linkish", attr: { type: "button" } });
@@ -823,7 +825,6 @@ export class PinboardView extends ItemView {
 		const h = body.createDiv({ cls: "pb-d-title", attr: { role: "heading", "aria-level": "2" } });
 		this.hdot(h, g);
 		this.inlineField(h, g, "title", { display: g.title });
-		body.createDiv({ cls: "pb-inline-hint", text: "제목·설명·값을 누르면 이 자리에서 수정할 수 있어요." });
 		const pickers = body.createDiv({ cls: "pb-d-pickers" });
 		this.statusPicker(pickers, g);
 		this.healthPicker(pickers, g);
@@ -1042,7 +1043,7 @@ export class PinboardView extends ItemView {
 		top.createSpan({ cls: "pb-muted", text: `${r.subAchieved}/${r.subTotal} 달성` });
 		this.bar(pc, r.progress).addClass("is-big");
 		const weighted = subs.some((s) => s.weight !== null);
-		pc.createDiv({ cls: "pb-note", text: `Sub Goal 진행률의 ${weighted ? "가중 " : ""}평균 (중단 제외, 미정은 0)` });
+		tip(top, `Sub Goal 진행률의 ${weighted ? "가중 " : ""}평균 (중단 제외, 미정은 0)`);
 	}
 
 	private subProgress(pc: HTMLElement, s: Goal, lines: ProgressLine[], today: string): void {
@@ -1072,7 +1073,7 @@ export class PinboardView extends ItemView {
 
  private progressSettings(parent: HTMLElement, g: Goal): void {
   const box = parent.createDiv({ cls: "pb-rollup" });
-  box.createDiv({ cls: "pb-note", text: g.progressSource === "projects" ? "프로젝트 마일스톤 가중 자동 집계 · 실제 결과와 달성 확정은 별도" : "실제 결과값으로 진척 계산" });
+  tip(box.createDiv({ cls: "pb-rollup-mode", text: g.progressSource === "projects" ? "프로젝트 마일스톤으로 자동 계산" : "실제 결과값으로 계산" }), g.progressSource === "projects" ? "프로젝트 마일스톤 달성을 비중대로 합쳐 진척을 계산해요. 실제 결과와 달성 확정은 따로예요." : "현재 값으로 진척을 계산해요.");
   const rows = contributions(g, this.data?.projectProgress ?? []);
   for (const row of rows) box.createDiv({ cls: "pb-rollup-row", text: `${row.title} · ${row.done}/${row.total} · ${Math.round(row.progress)}% × 비중 ${Math.round(row.share * 10) / 10}%${row.issue ? ` · ⚠ ${row.issue}` : ""}` });
   if (g.progressSource === "projects" && !rows.length) box.createDiv({ cls: "pb-note", text: "연결된 프로젝트가 없어 0%예요. 아래에서 프로젝트를 연결해 주세요." });
@@ -1084,7 +1085,7 @@ export class PinboardView extends ItemView {
    select.createEl("option", { attr: { value: "projects" }, text: "프로젝트 마일스톤 자동 집계" });
    select.createEl("option", { attr: { value: "manual" }, text: "실제 결과값으로 계산" });
    select.value = g.progressSource ?? "manual";
-   form.createDiv({ cls: "pb-note", text: "비중: 모두 1이면 동일 비중. 3과 1이면 75%와 25%. 0은 기여 제외." });
+   tip(select, "비중: 모두 1이면 같은 비중 · 3과 1이면 75%와 25% · 0은 기여 제외");
    const inputs = rows.map(row => {
     const label = form.createEl("label", { cls: "pb-rollup-weight" }); label.createSpan({ text: row.title });
     const input = label.createEl("input", { attr: { type: "number", value: String(row.weight), min: "0", step: "any", inputmode: "decimal", "aria-label": `${row.title} 비중` } });
@@ -1233,7 +1234,8 @@ export class PinboardView extends ItemView {
 	private relatedCard(parent: HTMLElement, rel: RelatedItem[], g: Goal): void {
 		const main = g.type === "main-goal";
 		const c = this.card(parent, "관련 업무");
-		c.createDiv({ cls: "pb-note", text: main ? "이 목표와 Sub Goal에 연결된 일이에요. 진행률은 바꾸지 않아요. 프로젝트는 Sub Goal에서 연결해요." : "이 목표를 움직이는 일이에요. 진행률은 바꾸지 않아요 (진행률은 현재 값으로만)." });
+		const ct = c.querySelector<HTMLElement>(".pb-card-title");
+		if (ct) tip(ct, main ? "이 목표와 Sub Goal에 연결된 일이에요. 진행률은 바꾸지 않아요. 프로젝트는 Sub Goal에서 연결해요." : "이 목표를 움직이는 일이에요. 진행률은 바꾸지 않아요 (진행률은 현재 값으로만).");
 		const group = (kind: RelatedItem["kind"], label: string, icon: string, empty: string) => {
 			const items = rel.filter((r) => r.kind === kind);
 			const grp = c.createDiv({ cls: `pb-rel-group is-${kind}` });
@@ -1413,7 +1415,7 @@ export class PinboardView extends ItemView {
 			});
 			vbtns.push(b);
 		}
-		vf.createDiv({ cls: "pb-note", text: "보고됨: 말로 전한 것 · 확인됨: 산출물·실행 결과로 확인한 것" });
+		tip(seg, "보고됨: 말로 전한 것 · 확인됨: 산출물·실행 결과로 확인한 것");
 		const ev = field("근거 (선택)").createEl("input", { cls: "pb-input", attr: { type: "text", placeholder: `비우면: ${defaultEvidence(today)}` } });
 		const err = form.createDiv({ cls: "pb-form-err" });
 		const btns = form.createDiv({ cls: "pb-form-btns" });

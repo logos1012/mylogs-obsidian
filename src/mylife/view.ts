@@ -25,6 +25,8 @@ import {
 	type ViewStateResult,
 	type WorkspaceLeaf,
 } from "obsidian";
+import { mountAppNav } from "../ui/nav.ts";
+import { tip } from "../ui/tip.ts";
 import type MyLogsPlugin from "../main.ts";
 import { addDays, fromIsoDate } from "../parser.ts";
 import { todayIsoLocal } from "../desk/model.ts";
@@ -328,6 +330,7 @@ export class MyLifeView extends ItemView {
 		this.contentEl.empty();
 		this.contentEl.addClass("mylogs-my-life-container");
 		this.rootEl = this.contentEl.createDiv({ cls: "mylogs-my-life" });
+		mountAppNav(this);
 		if (Platform.isMobile) this.register(trackKeyboard(this.contentEl));
 		this.headerEl = this.rootEl.createDiv({ cls: "mlf-top" });
 		this.tabsEl = this.rootEl.createDiv({ cls: "mlf-tabs", attr: { role: "tablist" } });
@@ -477,9 +480,7 @@ export class MyLifeView extends ItemView {
 	private renderMissing(unit: MyLifeUnit, path: string): void {
 		this.dropNote();
 		const card = this.bodyEl.createDiv({ cls: "mlf-empty" });
-		card.createDiv({ cls: "mlf-empty-title", text: "아직 쓰지 않았다" });
-		card.createEl("code", { cls: "mlf-empty-path", text: path });
-		card.createDiv({ cls: "mlf-empty-hint", text: `${UNIT_HINT[unit]}. 이 화면은 파일을 만들지 않는다.` });
+		tip(card.createDiv({ cls: "mlf-empty-title", text: "아직 정리되지 않았어요" }), `${UNIT_HINT[unit]}. 이 화면은 파일을 만들지 않아요.`);
 	}
 
 	// ── unit (오늘 / 이번 주 / 이번 달 / 올해) ──
@@ -532,8 +533,8 @@ export class MyLifeView extends ItemView {
 		const toggle = head.createEl("button", { cls: "mlf-card-toggle", attr: { type: "button", "aria-label": `${name} 접기/펼치기` } });
 		const chev = toggle.createSpan({ cls: "mlf-chevron" });
 		setIcon(chev, "chevron-down");
-		toggle.createEl("h3", { cls: "mlf-card-title", text: name });
-		if (hint) toggle.createSpan({ cls: "mlf-card-hint", text: hint });
+		const title = toggle.createEl("h3", { cls: "mlf-card-title", text: name });
+		if (hint) tip(title, hint);
 		head.createDiv({ cls: "mlf-card-tools" });
 		toggle.addEventListener("click", () => {
 			const now = !card.hasClass("is-collapsed");

@@ -1,4 +1,5 @@
 import { Menu } from "obsidian";
+import { tip } from "../ui/tip.ts";
 import type { Project } from "./model.ts";
 import { milestoneSummary, type MilestoneChange, type Milestone } from "./milestones.ts";
 
@@ -29,7 +30,7 @@ export function renderMilestones(parent: HTMLElement, p: Project, state: Milesto
 		}
 		const body = details.createDiv({ cls: "pf-ms-body" });
 		if (p.milestoneError) { body.createDiv({ cls: "pf-ms-error", text: p.milestoneError }); return; }
-		if (!summary.total) body.createDiv({ cls: "pf-ms-hint", text: "완료까지 확인할 중요한 도달 상태를 적어 주세요." });
+		if (!summary.total) tip(head, "완료까지 확인할 중요한 도달 상태를 적어 주세요.");
 		const locked = !!(state.busy || state.editor || state.removing);
 		const button = (where: HTMLElement, text: string, action: () => void, disabled = false): HTMLButtonElement => {
 			const b = where.createEl("button", { text, attr: { type: "button" } }); b.disabled = disabled;
@@ -85,7 +86,7 @@ export function renderMilestones(parent: HTMLElement, p: Project, state: Milesto
 			date.addEventListener("input", () => { editor.due = date.value; editor.dateDirty = true; });
 			button(dateLabel, "날짜 지우기", () => { editor.due = ""; editor.dateDirty = true; date.value = ""; }, !!state.busy);
 			if (editor.dueIssue) form.createDiv({ cls: "pf-ms-error", text: `${editor.dueIssue} 새 날짜를 고르거나 날짜 지우기를 누르세요.` });
-			form.createDiv({ cls: "pf-ms-hint", text: "달력에 ◆ 마일스톤으로 표시됩니다. 할 일로 추가되지는 않아요." });
+			tip(input, "달력에 ◆ 마일스톤으로 표시돼요. 할 일로 추가되지는 않아요.");
 			const actions = form.createDiv({ cls: "pf-ms-editor-actions" });
 			const submit = actions.createEl("button", { text: state.busy ? "저장 중…" : "저장", attr: { type: "submit" } }); submit.disabled = !!state.busy;
 			const cancel = () => { state.editor = undefined; state.error = ""; paint(); void refresh(); };

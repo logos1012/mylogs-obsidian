@@ -10,6 +10,7 @@
 
 import type { App } from "obsidian";
 import { addDays } from "../parser.ts";
+import { tip } from "../ui/tip.ts";
 import { actionSheet, enableTouchMenus, menuEventAt, pickTarget, type SheetAction, tabBar } from "../ui/mobile.ts";
 import { type DeskItem, type MonthData, weekdayMon0 } from "./model.ts";
 import { type DaySlot, dayInMonth, dayLabel, defaultDay, type DeskDragKind, type DeskTarget, deskMoveTargets, type WeekSlot } from "./mobile-targets.ts";
@@ -79,10 +80,13 @@ export function renderDeskMobile(h: DeskMobileHost): void {
 		h.renderEmpty(root);
 		return;
 	}
-	tabBar(root, TABS, s.tab, (t) => {
-		st.tab = t;
-		renderDeskMobile(h);
-	});
+	tip(
+		tabBar(root, TABS, s.tab, (t) => {
+			st.tab = t;
+			renderDeskMobile(h);
+		}),
+		"항목을 누르면 보낼 곳을 골라요 · 길게 누르면 자세한 내용과 못 한 일 처리·수정·삭제",
+	);
 
 	if (s.tab === "month") {
 		h.renderBands(root);
@@ -100,7 +104,6 @@ export function renderDeskMobile(h: DeskMobileHost): void {
 			wire(h, row.querySelector<HTMLElement>(".dc-items"), h.allocItems(monday), "alloc");
 		}
 	}
-	root.createDiv({ cls: "dc-m-foot", text: "항목을 누르면 보낼 곳 · 길게 누르거나 ⋯: 못 한 일 처리, 수정, 삭제" });
 	h.contentEl.scrollTop = scrollTop;
 }
 

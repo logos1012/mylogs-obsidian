@@ -8,6 +8,7 @@
  */
 
 import type { App } from "obsidian";
+import { tip } from "../ui/tip.ts";
 import { enableTouchMenus, pickTarget } from "../ui/mobile.ts";
 import { type Entry, entryKind, liveStatuses, type Skill, type SkillKind } from "./model.ts";
 import type { ToolboxData } from "./actions.ts";
@@ -38,9 +39,8 @@ export function renderToolboxSectionMobile<C extends string>(h: ToolboxMobileHos
 	const entries = d.entries.filter((e) => entryKind(e) === kind);
 	const sec = root.createDiv({ cls: `tb-section kind-${kind}` });
 	const head = sec.createDiv({ cls: "tb-section-head" });
-	head.createEl("h2", { text: kind });
+	tip(head.createEl("h2", { text: kind }), h.lead(kind));
 	head.createSpan({ cls: "tb-section-count", text: `${entries.length}` });
-	head.createSpan({ cls: "tb-section-lead", text: h.lead(kind) });
 	if (!entries.length) {
 		sec.createDiv({ cls: "tb-section-empty", text: `${kind} 스킬이 없어요.` });
 		return;

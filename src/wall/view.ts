@@ -1,6 +1,9 @@
 import { toggleLinkedProjectTask } from "../projects/task-actions.ts";
+import { mountAppNav } from "../ui/nav.ts";
+import { ItemPopover } from "../ui/popover.ts";
+import { tip } from "../ui/tip.ts";
 import { scheduleTarget } from "../projects/schedule-dnd.ts";
-import { debounce, ItemView, Keymap, Menu, normalizePath, Notice, Platform, TAbstractFile, TFile, TFolder, type ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { debounce, ItemView, Keymap, normalizePath, Notice, Platform, TAbstractFile, TFile, TFolder, type ViewStateResult, WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { loadMilestoneCalendar, renderMilestoneMarkers, renderMilestoneIssues, watchesMilestoneProjects, type MilestoneCalendar } from "../projects/milestone-calendar-ui.ts";
 import { pad2, toIsoDate } from "../parser.ts";
@@ -138,6 +141,7 @@ export class WallCalendarView extends ItemView {
 		this.contentEl.empty();
 		this.contentEl.addClass("mylogs-wall-calendar-container");
 		this.rootEl = this.contentEl.createDiv({ cls: "mylogs-wall-calendar" });
+		mountAppNav(this);
 		if (Platform.isMobile) this.register(enableTouchMenus(this.contentEl));
 		const onFile = (f: TAbstractFile, old?: string) => {
 			const p = this.yearPath();
@@ -209,10 +213,9 @@ export class WallCalendarView extends ItemView {
 
 		if (this.text === null) {
 			const empty = sheet.createDiv({ cls: "wc-missing" });
-			empty.createSpan({ text: `${this.yearPath()} 파일이 없어요.` });
-			const b = empty.createEl("button", { cls: "mod-cta", text: `${this.year}.md 만들기`, attr: { type: "button" } });
+			empty.createSpan({ text: `${this.year}년 Wall Calendar가 아직 없어요.` });
+			const b = tip(empty.createEl("button", { cls: "mod-cta", text: `${this.year}년 달력 만들기`, attr: { type: "button" } }), "마일스톤은 프로젝트에서 읽어 표시해요. 달력 파일은 자동으로 만들지 않아요.");
 			b.addEventListener("click", () => void this.createYearFile());
-			empty.createDiv({ text: "마일스톤은 프로젝트에서 읽어 표시합니다. 달력 파일은 자동으로 만들지 않아요." });
 		}
 
 		const wy = parseWallYear(this.text ?? wallYearSkeleton(this.year, todayIso()), this.year);
@@ -231,6 +234,7 @@ export class WallCalendarView extends ItemView {
 				li.createSpan({ cls: "wc-why", text: x.why });
 			}
 		}
+		this.renderLegend(sheet);
 		const foot = sheet.createDiv({ cls: "wc-foot" });
 		const link = foot.createEl("a", { text: `원본: ${this.yearPath()}`, attr: { href: "#" } });
 		link.addEventListener("click", (e) => {
@@ -270,6 +274,10 @@ export class WallCalendarView extends ItemView {
 			b.addEventListener("click", () => void this.goTo(thisYear));
 		}
 
+	}
+
+	/** Symbol legend, at the bottom of the sheet: reference, not something to read first. */
+	private renderLegend(sheet: HTMLElement): void {
 		const lg = sheet.createDiv({ cls: "wc-legend" });
 		const leg = (cls: string, label: string) => {
 			const s = lg.createSpan({ cls: `wc-lg ${cls}` });
@@ -283,7 +291,7 @@ export class WallCalendarView extends ItemView {
 		leg("k-event s-scheduled", "행사");
 		leg("k-note s-scheduled", "메모");
 		lg.createSpan({ cls: "ml-milestone-legend", text: "◆ 마일스톤 · 프로젝트의 목표일" });
-		lg.createSpan({ cls: "wc-lg wc-hint", text: "항목을 다른 달로 끌어 옮길 수 있어요 · 항목을 누르면 메뉴 (수정·삭제)" });
+		tip(lg, "항목을 누르면 자세한 내용과 할 수 있는 일(완료·옮기기·수정·삭제)이 나와요 · 다른 달로 끌어 옮길 수 있어요");
 	}
 
 	private renderMonth(grid: HTMLElement, month: number, lines: WallLine[], hasHeading: boolean): void {
@@ -430,35 +438,20 @@ export class WallCalendarView extends ItemView {
 
 		const body = li.createSpan({ cls: "wc-body" });
 		body.createSpan({ cls: "wc-t", text: it.text });
-		if (it.status === "moved") {
-			const to = it.movedTo;
-			body.createSpan({ cls: "wc-moved", text: `→ ${!to || /Desk Calendar|^\d{4}-\d{2}$/.test(to) ? "Desk Calendar" : to}`, attr: { title: to } });
-		} else if (it.status === "cancelled") {
-			body.createSpan({ cls: "wc-cancel", text: kind === "task" ? "놓아줌" : "취소" });
-		}
-		if (it.problems.length) body.createSpan({ cls: "wc-qmark", text: "형식 확인", attr: { title: it.problems.join(" · ") } });
+		// Only what the user reads at a glance: date, text, tags. Fields (goal, project, from, why, →)
+		// are in the item popover (click).
+		if (it.problems.length) tip(body.createSpan({ cls: "wc-qmark", text: "형식 확인" }), it.problems.join(" · "));
 		const chips = body.createSpan({ cls: "wc-chips" });
-		for (const [k, v] of it.fields) {
-			if (k === "task") continue;
-			if (!v) continue;
-			if (k === "goal" || k === "project") {
-				const b = chips.createEl("button", { cls: `wc-chip ml-route-chip ${k === "goal" ? "is-goal" : "is-proj"}`, text: `${k === "goal" ? "◎" : "▤"} ${v}`, attr: { type: "button", title: k === "goal" ? "목표 관리" : "프로젝트 관리" } });
-				b.addEventListener("click", e => { e.stopPropagation(); void (k === "goal" ? this.plugin.openPinboardGoal(v) : this.plugin.openProjectAt(v)); });
-			}
-			else if (k === "why") chips.createSpan({ cls: "wc-chip is-from", text: `이유 · ${v}` });
-			else if (k === "from") chips.createSpan({ cls: "wc-chip is-from", text: `출처 · ${v}` });
-			else chips.createSpan({ cls: "wc-chip is-from", text: `${k} · ${v}` });
-		}
 		for (const t of it.tags) {
 			const c = chips.createSpan({ cls: "wc-chip is-tag", text: `#${t}` });
 			c.style.setProperty("--h", String(tagHue(t)));
 		}
 		if (it.test && this.plugin.settings.showTestMarkers) chips.createSpan({ cls: "wc-testmark", text: "TEST", attr: { title: "#test 테스트 데이터" } });
 
-		li.addEventListener("click", (e) => this.openMenu(e, month, l, target));
+		li.addEventListener("click", (e) => this.openMenu(e, month, l, target, li));
 		li.addEventListener("contextmenu", (e) => {
 			e.preventDefault();
-			this.openMenu(e, month, l, target);
+			this.openMenu(e, month, l, target, li);
 		});
 		if (canEdit) {
 			li.draggable = true;
@@ -499,10 +492,22 @@ export class WallCalendarView extends ItemView {
 
 	// ── menu ──
 
-	private openMenu(e: MouseEvent, month: number, l: WallLine, target: WallTarget): void {
+	private openMenu(e: MouseEvent, month: number, l: WallLine, target: WallTarget, anchor: HTMLElement): void {
 		if ((e.target as HTMLElement).closest("a")) return;
 		const it = l.item;
-		const menu = new Menu();
+		const menu = new ItemPopover();
+		menu.title = it.text || l.line.trim();
+		menu.badge = [KIND_LABEL[it.kind ?? "note"] ?? "형식 확인", it.status === "scheduled" ? "" : it.status === "cancelled" && it.kind === "task" ? "놓아줌" : it.status === "cancelled" ? "취소" : it.status === "done" ? "완료" : "옮김"].filter(Boolean).join(" · ");
+		if (it.start) menu.row("날짜", `${it.start}${it.end && it.end !== it.start ? ` ~ ${it.end}` : ""}${it.time ? ` ${it.time}` : ""}`);
+		else menu.row("날짜", `${month}월 중`);
+		if (it.movedTo) menu.row("보낸 곳", /Desk Calendar|^\d{4}-\d{2}$/.test(it.movedTo) ? "Desk Calendar" : it.movedTo);
+		const goal = getField(l.line, "goal");
+		if (goal) menu.row("목표", goal, () => void this.plugin.openPinboardGoal(goal));
+		const project = getField(l.line, "project");
+		if (project) menu.row("프로젝트", project, () => void this.plugin.openProjectAt(project));
+		menu.row("이유", getField(l.line, "why"));
+		menu.row("출처", getField(l.line, "from"));
+		if (it.problems.length) menu.row("형식 확인", it.problems.join(" · "));
 		const canEdit = this.editable(month);
 		const now = new Date();
 		const isCurrent = this.year === now.getFullYear() && month === now.getMonth() + 1;
@@ -541,7 +546,7 @@ export class WallCalendarView extends ItemView {
 					.onClick(async () => {
 						const why = await new TextPromptModal(this.app, {
 							title: "놓아주는 이유",
-							desc: `${it.text} · (why:: 이유)로 남겨요.`,
+							desc: `「${it.text}」을(를) 하지 않기로 해요. 이유를 한 줄로 남겨요.`,
 							placeholder: "예: 지금 목표와 관계없음",
 							cta: "놓아주기",
 						}).ask();
@@ -581,8 +586,8 @@ export class WallCalendarView extends ItemView {
 					void this.app.workspace.getLeaf(Keymap.isModEvent(e)).openFile(f, { eState: { line: l.index } });
 				}),
 		);
-		if (!canEdit) menu.addItem((m) => m.setTitle("지난 달은 기록으로 남겨요 (읽기 전용)").setDisabled(true));
-		menu.showAtMouseEvent(e);
+		if (!canEdit) menu.sub = "지난 달은 기록으로 남겨요 (읽기 전용)";
+		menu.show(anchor);
 	}
 
 	// ── edit / delete ──
@@ -596,16 +601,16 @@ export class WallCalendarView extends ItemView {
 		const oldDate = splitWallBody(body).date.trim();
 		const v = await askForm(this.app, {
 			title: `${KIND_LABEL[it.kind ?? "note"] ?? "항목"} 수정`,
-			desc: "다른 필드와 태그는 그대로 둬요. 날짜나 달을 바꾸면 그 자리로 옮겨요.",
+			desc: "날짜나 달을 바꾸면 그 자리로 옮겨요.",
 			fields: [
 				{ key: "text", label: "내용", type: "text", value: contentText(body, WALL_DATE_RE) },
 				...(it.kind !== "note"
-					? [{ key: "date", label: "날짜", type: "text" as const, value: oldDate, desc: "MM/DD, 기간은 MM/DD~MM/DD, 시각은 MM/DD 14:00. 비우면 이달 중", placeholder: `${pad2(month)}/DD` }]
+					? [{ key: "date", label: "날짜", type: "text" as const, value: oldDate, desc: "비우면 ‘이달 중’", placeholder: `${pad2(month)}/DD` }]
 					: []),
 				{ key: "month", label: "달", type: "select", value: String(month), options: months },
-				{ key: "goal", label: "목표 (goal::)", type: "text", value: getField(body, "goal"), placeholder: "G-2026-01.2" },
-				{ key: "project", label: "프로젝트 (project::)", type: "text", value: getField(body, "project"), placeholder: "P-…" },
-				...(hasWhy ? [{ key: "why", label: "이유 (why::)", type: "text" as const, value: getField(body, "why") }] : []),
+				{ key: "goal", label: "목표", type: "text", value: getField(body, "goal"), placeholder: "연결할 목표 (선택)" },
+				{ key: "project", label: "프로젝트", type: "text", value: getField(body, "project"), placeholder: "연결할 프로젝트 (선택)" },
+				...(hasWhy ? [{ key: "why", label: "이유", type: "text" as const, value: getField(body, "why") }] : []),
 			],
 			validate: (x) => {
 				const out: string[] = [];
@@ -615,7 +620,7 @@ export class WallCalendarView extends ItemView {
 					const n = normalizeDateInput(x.date, this.year, +x.month);
 					if (!n.ok) out.push(n.reason);
 				}
-				if (hasWhy && it.status === "cancelled" && it.kind === "task" && !x.why) out.push("놓아준 할 일에는 이유(why::)가 있어야 해요.");
+				if (hasWhy && it.status === "cancelled" && it.kind === "task" && !x.why) out.push("놓아준 할 일에는 이유가 있어야 해요.");
 				return out;
 			},
 		});
@@ -653,15 +658,15 @@ export class WallCalendarView extends ItemView {
 			notes,
 			footer: "잘못 넣은 줄, 중복, 테스트 데이터를 지울 때 써요.",
 			alt: task
-				? { label: "놓아주기 (기록 남김)", desc: "하지 않기로 한 일이면 지우지 말고 놓아주기로 남길 수 있어요: [-] … (why:: 이유)." }
+				? { label: "놓아주기 (기록 남김)", desc: "하지 않기로 한 일이면 지우지 말고 이유와 함께 놓아주기로 남길 수 있어요." }
 				: event
-					? { label: "행사 취소 (취소선)", desc: "취소된 행사면 지우지 말고 취소선으로 남길 수 있어요: ~~…~~." }
+					? { label: "행사 취소 (취소선)", desc: "취소된 행사면 지우지 말고 취소 표시로 남길 수 있어요." }
 					: undefined,
 		});
 		if (ans === "delete") {
 			await this.apply(`${this.ym(month)} 삭제: ${l.line.trim()}`, (d) => deleteWallItem(d, this.year, target));
 		} else if (ans === "alt" && task) {
-			const why = await new TextPromptModal(this.app, { title: "놓아주는 이유", desc: `${it.text} · (why:: 이유)로 남겨요.`, placeholder: "예: 지금 목표와 관계없음", cta: "놓아주기" }).ask();
+			const why = await new TextPromptModal(this.app, { title: "놓아주는 이유", desc: `「${it.text}」을(를) 하지 않기로 해요. 이유를 한 줄로 남겨요.`, placeholder: "예: 지금 목표와 관계없음", cta: "놓아주기" }).ask();
 			if (why === null) return;
 			await this.apply(`${this.ym(month)} 할 일 놓아줌: ${it.text}`, (d) => cancelWallTask(d, this.year, target, why));
 		} else if (ans === "alt" && event) {
@@ -678,6 +683,7 @@ export class WallCalendarView extends ItemView {
 		const btns: Record<NewKind, HTMLButtonElement> = {} as Record<NewKind, HTMLButtonElement>;
 		const row = form.createDiv({ cls: "wc-addrow" });
 		const date = row.createEl("input", { cls: "wc-addate", attr: { type: "text", placeholder: `${pad2(month)}/DD`, "aria-label": "날짜 (MM/DD, 비우면 이달 중)", inputmode: "numeric" } });
+		tip(date, "비우면 ‘이달 중’ · 기간은 10/15~10/17 · 시각은 10/15 14:00");
 		const text = row.createEl("input", { cls: "wc-addtext", attr: { type: "text", placeholder: "내용", "aria-label": "내용" } });
 		const setKind = (k: NewKind) => {
 			kind = k;
@@ -696,7 +702,6 @@ export class WallCalendarView extends ItemView {
 		}
 		setKind("task");
 		const actions = form.createDiv({ cls: "wc-addactions" });
-		actions.createSpan({ cls: "wc-addhint", text: "날짜를 비우면 ‘이달 중’" });
 		const cancel = actions.createEl("button", { text: "닫기", attr: { type: "button" } });
 		cancel.addEventListener("click", () => {
 			this.addOpen = null;

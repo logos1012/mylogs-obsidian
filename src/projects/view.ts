@@ -1,4 +1,6 @@
 import { renderProjectSchedule, type ScheduleState } from "./schedule-ui.ts";
+import { mountAppNav } from "../ui/nav.ts";
+import { tip } from "../ui/tip.ts";
 import { loadProjectTasks } from "./task-actions.ts";
 import type { ProjectTask } from "./tasks.ts";
 import { scheduleSource, type ScheduleItem } from "./schedule-dnd.ts";
@@ -157,6 +159,7 @@ export class ProjectFoldersView extends ItemView {
 		this.contentEl.empty();
 		this.contentEl.addClass("mylogs-projects-container");
 		this.rootEl = this.contentEl.createDiv({ cls: "mylogs-projects" });
+		mountAppNav(this);
 		const viewport = this.contentEl.ownerDocument.defaultView?.visualViewport;
 		if (viewport) {
 			const keepEditorVisible = () => this.rootEl.querySelector(".pf-ms-editor:focus-within")?.scrollIntoView({ block: "nearest" });
@@ -533,9 +536,8 @@ export class ProjectFoldersView extends ItemView {
 		for (const col of buildKanban(d.projects, this.filter)) {
 			const c = board.createDiv({ cls: `pf-col st-${col.status}` });
 			const head = c.createDiv({ cls: "pf-col-head" });
-			head.createSpan({ cls: "pf-col-name", text: col.status });
+			tip(head.createSpan({ cls: "pf-col-name", text: col.status }), STATUS_HINT[col.status]);
 			head.createSpan({ cls: "pf-col-count", text: String(col.total) });
-			c.createDiv({ cls: "pf-col-hint", text: STATUS_HINT[col.status] });
 			const list = c.createDiv({ cls: "pf-col-list" });
 			this.dropZone(c, col.status);
 			for (const p of col.cards) this.renderCard(list, p, today, false);
