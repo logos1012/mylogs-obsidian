@@ -1,5 +1,6 @@
 import { debounce, ItemView, Keymap, Menu, normalizePath, Notice, Platform, TAbstractFile, TFile, TFolder, type ViewStateResult, WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
+import { loadMilestoneCalendar, renderMilestoneMarkers, renderMilestoneIssues, watchesMilestoneProjects, type MilestoneCalendar } from "../projects/milestone-calendar-ui.ts";
 import { pad2, toIsoDate } from "../parser.ts";
 import { setFrontmatterScalar } from "../writer.ts";
 import {
@@ -64,6 +65,7 @@ export class WallCalendarView extends ItemView {
 	private text: string | null = null;
 	private loadSeq = 0;
 	private busy = false;
+	private milestones: MilestoneCalendar = { markers: [], issues: [] };
 	/** Month whose inline add form is open (kept across re-renders). */
 	private addOpen: number | null = null;
 
@@ -117,6 +119,7 @@ export class WallCalendarView extends ItemView {
 
 	private availableYears(): number[] {
 		const out = new Set<number>([new Date().getFullYear(), this.year]);
+		for (const m of this.milestones.markers) out.add(Number(m.date.slice(0, 4)));
 		const dir = this.app.vault.getAbstractFileByPath(normalizePath(this.folder()));
 		if (dir instanceof TFolder) {
 			for (const c of dir.children) {
@@ -136,7 +139,7 @@ export class WallCalendarView extends ItemView {
 		if (Platform.isMobile) this.register(enableTouchMenus(this.contentEl));
 		const onFile = (f: TAbstractFile, old?: string) => {
 			const p = this.yearPath();
-			if (f.path === p || old === p) this.scheduleReload();
+			if (f.path === p || old === p || watchesMilestoneProjects(this.plugin, f.path) || (old && watchesMilestoneProjects(this.plugin, old))) this.scheduleReload();
 		};
 		this.registerEvent(this.app.vault.on("modify", (f) => onFile(f)));
 		this.registerEvent(this.app.vault.on("create", (f) => onFile(f)));
@@ -166,8 +169,12 @@ export class WallCalendarView extends ItemView {
 		const seq = ++this.loadSeq;
 		const f = this.file(this.yearPath());
 		const text = f ? await this.app.vault.read(f) : null;
+		const milestones = await loadMilestoneCalendar(this.plugin);
 		if (seq !== this.loadSeq) return;
 		this.text = text;
+		this.milestones = milestones;
+		// Project sync must not erase a calendar task the user is currently typing.
+		if (this.addOpen !== null && this.rootEl.querySelector(".wc-addform")) return;
 		this.render();
 	}
 
@@ -183,7 +190,7 @@ export class WallCalendarView extends ItemView {
 
 	/** Past months are a record: AGENTS.md 「흐름」 4 — 지난달 칸은 고치지 않는다. */
 	private editable(month: number): boolean {
-		return this.monthState(month) !== "past";
+		return this.text !== null && this.monthState(month) !== "past";
 	}
 
 	// ── render ──
@@ -196,16 +203,17 @@ export class WallCalendarView extends ItemView {
 		const binding = sheet.createDiv({ cls: "wc-binding", attr: { "aria-hidden": "true" } });
 		for (let i = 0; i < 30; i++) binding.createEl("i");
 		this.renderHead(sheet);
+		renderMilestoneIssues(sheet, this.milestones.issues, path => void this.plugin.openProjectAt(path));
 
 		if (this.text === null) {
 			const empty = sheet.createDiv({ cls: "wc-missing" });
 			empty.createSpan({ text: `${this.yearPath()} 파일이 없어요.` });
 			const b = empty.createEl("button", { cls: "mod-cta", text: `${this.year}.md 만들기`, attr: { type: "button" } });
 			b.addEventListener("click", () => void this.createYearFile());
-			return;
+			empty.createDiv({ text: "마일스톤은 프로젝트에서 읽어 표시합니다. 달력 파일은 자동으로 만들지 않아요." });
 		}
 
-		const wy = parseWallYear(this.text, this.year);
+		const wy = parseWallYear(this.text ?? wallYearSkeleton(this.year, todayIso()), this.year);
 		const grid = sheet.createDiv({ cls: "wc-months" });
 		for (const sec of wy.months) this.renderMonth(grid, sec.month, sec.lines, sec.headingIndex !== -1);
 
@@ -272,6 +280,7 @@ export class WallCalendarView extends ItemView {
 		leg("k-task s-cancelled", "놓아줌");
 		leg("k-event s-scheduled", "행사");
 		leg("k-note s-scheduled", "메모");
+		lg.createSpan({ cls: "ml-milestone-legend", text: "◆ 마일스톤 · 프로젝트의 목표일" });
 		lg.createSpan({ cls: "wc-lg wc-hint", text: "항목을 다른 달로 끌어 옮길 수 있어요 · 항목을 누르면 메뉴 (수정·삭제)" });
 	}
 
@@ -297,11 +306,13 @@ export class WallCalendarView extends ItemView {
 		this.renderMini(head, month, lines);
 
 		const body = cell.createDiv({ cls: "wc-mbody" });
+		const milestones = this.milestones.markers.filter(m => m.date.startsWith(`${this.year}-${pad2(month)}-`));
+		renderMilestoneMarkers(body, milestones, todayIso(), path => void this.plugin.openProjectAt(path), true);
 		if (this.addOpen === month) this.renderAddForm(body, month);
 		const dated = lines.filter((l) => l.item.start !== null && l.item.ok).sort((a, b) => (itemSortKey(a.item) < itemSortKey(b.item) ? -1 : itemSortKey(a.item) > itemSortKey(b.item) ? 1 : a.index - b.index));
 		const undated = lines.filter((l) => l.item.start === null && l.item.ok);
 		const broken = lines.filter((l) => !l.item.ok);
-		if (!lines.length && this.addOpen !== month) {
+		if (!lines.length && !milestones.length && this.addOpen !== month) {
 			const e = body.createDiv({ cls: "wc-empty" });
 			e.createSpan({ text: !hasHeading ? `## ${this.year}-${pad2(month)} 제목이 없어요` : state === "past" ? "적힌 일이 없던 달" : "아직 비어 있어요" });
 		}
@@ -357,6 +368,7 @@ export class WallCalendarView extends ItemView {
 			}
 		}
 		const mini = head.createDiv({ cls: "wc-mini", attr: { "aria-hidden": "true" } });
+		const milestoneDays = new Set(this.milestones.markers.filter(m => m.date.startsWith(`${this.year}-${pad2(month)}-`)).map(m => Number(m.date.slice(8))));
 		for (let i = 0; i < 7; i++) mini.createEl("i", { cls: i === 0 ? "sun" : i === 6 ? "sat" : "", text: WEEKDAYS[i] });
 		const first = new Date(this.year, month - 1, 1, 12);
 		for (let i = 0; i < first.getDay(); i++) mini.createSpan();
@@ -369,6 +381,7 @@ export class WallCalendarView extends ItemView {
 			if (wd === 6) c.addClass("sat");
 			const m = marks.get(d);
 			if (m) c.addClass("has", ...m);
+			if (milestoneDays.has(d)) c.addClass("has-milestone");
 			if (`${this.year}-${pad2(month)}-${pad2(d)}` === today) c.addClass("today");
 		}
 	}

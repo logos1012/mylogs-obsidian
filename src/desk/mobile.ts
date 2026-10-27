@@ -38,6 +38,7 @@ export interface DeskMobileHost {
 	/** Run a target with the call its desktop drop zone makes (`runDeskTarget`). */
 	move(t: DeskTarget, it: DeskItem): Promise<unknown>;
 	register(cb: () => void): void;
+	renderMilestones(parent: HTMLElement, from: string, to: string): void;
 }
 
 interface State {
@@ -94,6 +95,7 @@ export function renderDeskMobile(h: DeskMobileHost): void {
 			wire(h, row.querySelector<HTMLElement>(".dc-items"), h.dayItems(s.day), "day");
 		} else {
 			const monday = addDays(s.day, -weekdayMon0(s.day));
+			h.renderMilestones(row, monday, addDays(monday, 6));
 			h.renderAllocCell(row, monday);
 			wire(h, row.querySelector<HTMLElement>(".dc-items"), h.allocItems(monday), "alloc");
 		}
