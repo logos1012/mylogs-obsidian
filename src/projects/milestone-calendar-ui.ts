@@ -1,5 +1,4 @@
-import { scheduleSource, selectSchedule, type ScheduleItem } from "./schedule-dnd.ts";
-import { Notice } from "obsidian";
+import { scheduleSource, type ScheduleItem } from "./schedule-dnd.ts";
 import { parseFrontmatterText } from "../pinboard/model.ts";
 import { activeRoot, archiveRoot, type ProjectsHost } from "./actions.ts";
 import { hubLocation, parseProject } from "./model.ts";
@@ -39,9 +38,9 @@ export function renderMilestoneMarkers(parent: HTMLElement, markers: MilestoneMa
 		content.createSpan({ cls: "ml-milestone-meta", text: `마일스톤 · ${m.projectTitle}${state !== "planned" ? " · " + status : ""}` });
 		if(host && !m.archived && m.source !== undefined) {
    const item: ScheduleItem = {kind:"milestone",projectPath:m.projectPath,projectId:m.projectId,line:m.line,title:m.title,source:m.source,date:m.date};
+   // 날짜를 바꾸려면 끌어서 날짜 칸에 놓는다 (휴대폰은 살짝 길게 누른 뒤 끌기).
    scheduleSource(button,host,item);
-   const move = row.createEl("button", {cls:"ml-milestone-move",text:"옮기기",attr:{type:"button","aria-label":`${m.title} 날짜 선택`}});
-   move.addEventListener("click",e=>{e.stopPropagation();selectSchedule(host,item);new Notice(`「${m.title}」을 옮길 날짜 칸을 누르세요. Esc로 취소할 수 있어요.`);});
+   button.setAttr("title",`${m.projectTitle} · ${m.date} · ${status} · 끌어서 다른 날짜로 옮겨요`);
   }
   button.addEventListener("click", e => { e.stopPropagation(); open(m.projectPath); });
 	}

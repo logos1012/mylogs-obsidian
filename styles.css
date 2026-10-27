@@ -2564,7 +2564,7 @@ body.theme-dark .mylogs-pinboard-container .pb-scrim {
 		grid-template-columns: minmax(0, 1fr);
 	}
 	.mylogs-pinboard-container .pb-d-side {
-		order: -1;
+		order: 1;
 	}
 }
 @container pbview (max-width: 480px) {
@@ -10058,3 +10058,31 @@ button.fw-field-v:hover { color: var(--text-accent); }
 	.mylogs-flywheel button.fw-check { width: 36px; height: 36px; }
 }
 .mylogs-flywheel .fw-cell.m-today { background: transparent; outline: 1.5px solid var(--fw-done); outline-offset: -1.5px; }
+
+/* 휴대폰 터치 끌기 (0.15.0) */
+.ml-touch-ghost { position: fixed; z-index: var(--layer-dragged-item, 80); transform: translate(-50%, -130%); padding: 6px 10px; border-radius: 8px; background: var(--background-primary); border: 1px solid var(--interactive-accent); box-shadow: var(--shadow-l); color: var(--text-normal); font-size: 13px; pointer-events: none; white-space: nowrap; max-width: 70vw; overflow: hidden; text-overflow: ellipsis; }
+.ml-schedule-draggable.is-dragging { opacity: 0.45; }
+.ml-schedule-draggable { -webkit-touch-callout: none; user-select: none; }
+
+/* Desk Calendar 휴대폰: 한 달 그리드 (0.15.0) */
+.mylogs-desk-calendar.dc-m .dc-m-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin: 4px 0 14px; padding: 6px; border: 1px solid var(--background-modifier-border); border-radius: 12px; background: var(--background-primary); }
+.mylogs-desk-calendar.dc-m .dc-m-wd { text-align: center; font-size: 11px; color: var(--text-muted); padding: 2px 0 4px; }
+.mylogs-desk-calendar.dc-m .dc-m-wd:nth-child(6) { color: var(--color-blue, #4a74c9); }
+.mylogs-desk-calendar.dc-m .dc-m-wd:nth-child(7) { color: var(--color-red, #c9564a); }
+.mylogs-desk-calendar.dc-m button.dc-m-day-btn { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 3px; height: 52px; min-height: 52px; padding: 5px 0 0; border: 0; border-radius: 8px; background: transparent; box-shadow: none; color: var(--text-normal); }
+.mylogs-desk-calendar.dc-m button.dc-m-day-btn.is-week { background: var(--background-secondary); }
+.mylogs-desk-calendar.dc-m button.dc-m-day-btn.is-out { color: var(--text-faint); }
+.mylogs-desk-calendar.dc-m .dc-m-num { font-size: 14px; line-height: 22px; width: 24px; height: 22px; border-radius: 11px; text-align: center; font-variant-numeric: tabular-nums; }
+.mylogs-desk-calendar.dc-m .is-today .dc-m-num { background: var(--interactive-accent); color: var(--text-on-accent); font-weight: 600; }
+.mylogs-desk-calendar.dc-m button.dc-m-day-btn.is-selected { outline: 2px solid var(--interactive-accent); outline-offset: -2px; }
+.mylogs-desk-calendar.dc-m .dc-m-dots { display: flex; gap: 2px; align-items: center; min-height: 6px; }
+.mylogs-desk-calendar.dc-m .dc-m-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--text-muted); }
+.mylogs-desk-calendar.dc-m .dc-m-dot.k-event { background: var(--interactive-accent); }
+.mylogs-desk-calendar.dc-m .dc-m-dot.k-task.s-scheduled { background: var(--text-normal); }
+.mylogs-desk-calendar.dc-m .dc-m-dot.s-done, .mylogs-desk-calendar.dc-m .dc-m-dot.s-moved, .mylogs-desk-calendar.dc-m .dc-m-dot.s-cancelled { background: var(--background-modifier-border); }
+.mylogs-desk-calendar.dc-m .dc-m-more { font-size: 9px; line-height: 6px; color: var(--text-muted); }
+.mylogs-desk-calendar.dc-m .dc-m-ms { position: absolute; top: 3px; right: 4px; font-size: 8px; color: var(--color-purple, #8a5cd1); }
+.mylogs-desk-calendar.dc-m .dc-m-cell { margin-bottom: 12px; }
+.mylogs-desk-calendar.dc-m details.dc-m-month { margin: 8px 0 24px; border-top: 1px solid var(--background-modifier-border); padding-top: 8px; }
+.mylogs-desk-calendar.dc-m details.dc-m-month > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; font-weight: 600; cursor: pointer; }
+.mylogs-desk-calendar.dc-m .dc-m-count { min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--background-modifier-hover); font-size: 11px; text-align: center; font-weight: 500; }

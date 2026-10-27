@@ -309,6 +309,7 @@ export class DeskCalendarView extends ItemView {
 				}),
 			register: (cb) => this.register(cb),
 			renderMilestones: (parent, from, to) => this.renderMilestoneRange(parent, from, to, true),
+			milestoneDays: () => new Set(this.milestones.markers.map((m) => m.date)),
 		};
 	}
 

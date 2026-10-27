@@ -8,12 +8,14 @@ import { todayIsoLocal } from "../desk/model.ts";
 import { askForm } from "../ui/modals.ts";
 export type ScheduleItem = {kind:"milestone";projectPath:string;projectId:string;line:number;title:string;source:string;date?:string} | {kind:"task";projectPath:string;projectId:string;title:string;task:ProjectTask};
 const MIME="application/x-mylogs-project-schedule";
+const TOUCH_DROP="mylogs-schedule-drop";
 let active:{app:object;item:ScheduleItem}|null=null;
 let saving=false;
 export const selectedSchedule=(host:ProjectsHost):ScheduleItem|null=>active?.app===host.app?active.item:null;
 export function selectSchedule(host:ProjectsHost,item:ScheduleItem|null):void {active=item?{app:host.app,item}:null;}
 export function scheduleSource(el:HTMLElement,host:ProjectsHost,item:ScheduleItem):void {
  el.draggable=true;el.addClass("ml-schedule-draggable");
+ touchDrag(el,host,item);
  el.addEventListener("dragstart",e=>{e.stopPropagation();selectSchedule(host,item);e.dataTransfer?.setData(MIME,"1");if(e.dataTransfer)e.dataTransfer.effectAllowed="move";el.addClass("is-dragging");});
  el.addEventListener("dragend",()=>{el.removeClass("is-dragging");if(!saving)selectSchedule(host,null);});
 }
@@ -40,5 +42,40 @@ export function scheduleTarget(el:HTMLElement,host:ProjectsHost,target:ScheduleT
  el.addEventListener("dragleave",e=>{if(!el.contains(e.relatedTarget as Node|null))el.removeClass("ml-schedule-over");});
  el.addEventListener("drop",e=>{if(!e.dataTransfer?.types.includes(MIME)||!accepts())return;e.preventDefault();e.stopPropagation();el.removeClass("ml-schedule-over");void run();});
  el.addEventListener("click",e=>{if(!accepts()||(e.target as HTMLElement).closest(".ml-schedule-draggable, input, a, [role=checkbox]"))return;e.stopPropagation();void run();});
+ // Touch drop (`touchDrag`): a custom event, so long-press click guards cannot swallow it.
+ el.addEventListener(TOUCH_DROP,()=>{if(accepts())void run();});
  el.addEventListener("keydown",e=>{if(e.key==="Escape")selectSchedule(host,null);if(e.target===el&&(e.key==="Enter"||e.key===" ")&&accepts()){e.preventDefault();void run();}});
+}
+
+/**
+ * Touch screens have no HTML5 drag: a long press (~350 ms) picks the item up, a ghost follows the
+ * finger, and lifting it over a schedule target (`scheduleTarget`) drops it there — the same
+ * `run()` as a click on that target. Moving before the press completes is an ordinary scroll.
+ */
+function touchDrag(el:HTMLElement,host:ProjectsHost,item:ScheduleItem):void {
+ let timer:number|null=null,ghost:HTMLElement|null=null,over:HTMLElement|null=null,sx=0,sy=0,dragged=0;
+ const targetAt=(x:number,y:number)=>{const hit=el.doc.elementFromPoint(x,y) as HTMLElement|null;return hit?.closest<HTMLElement>(".ml-schedule-target")??null;};
+ const end=()=>{if(timer!==null)window.clearTimeout(timer);timer=null;ghost?.remove();ghost=null;over?.removeClass("ml-schedule-over");over=null;el.removeClass("is-dragging");};
+ el.addEventListener("touchstart",e=>{
+  if(e.touches.length!==1)return;const p=e.touches[0];sx=p.clientX;sy=p.clientY;
+  e.stopPropagation(); // not the view-wide long-press menu: here a long press picks the item up
+  timer=window.setTimeout(()=>{timer=null;selectSchedule(host,item);el.addClass("is-dragging");
+   ghost=el.doc.body.createDiv({cls:"ml-touch-ghost",text:`◆ ${item.title}`});ghost.style.left=`${sx}px`;ghost.style.top=`${sy}px`;
+   navigator.vibrate?.(10);},350);
+ },{passive:true});
+ el.addEventListener("touchmove",e=>{
+  const p=e.touches[0];if(!p)return;
+  if(!ghost){if(Math.abs(p.clientX-sx)>8||Math.abs(p.clientY-sy)>8)end();return;}
+  e.preventDefault();ghost.style.left=`${p.clientX}px`;ghost.style.top=`${p.clientY}px`;
+  const t=targetAt(p.clientX,p.clientY);if(t!==over){over?.removeClass("ml-schedule-over");over=t;over?.addClass("ml-schedule-over");}
+ },{passive:false});
+ el.addEventListener("touchend",e=>{
+  if(!ghost){end();return;}
+  const p=e.changedTouches[0],t=p?targetAt(p.clientX,p.clientY):null;end();dragged=Date.now();
+  if(t)t.dispatchEvent(new CustomEvent(TOUCH_DROP));else selectSchedule(host,null);
+ });
+ el.addEventListener("touchcancel",()=>{end();selectSchedule(host,null);});
+ // The tap that ends a drag must not also open the project / swallow-native menu.
+ el.addEventListener("click",e=>{if(Date.now()-dragged<600){e.preventDefault();e.stopImmediatePropagation();}},{capture:true});
+ el.addEventListener("contextmenu",e=>{if(ghost||timer!==null)e.preventDefault();});
 }
