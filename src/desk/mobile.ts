@@ -98,6 +98,8 @@ export function renderDeskMobile(h: DeskMobileHost): void {
 	if (cur.during.length) sum.createSpan({ cls: "dc-m-count", text: String(cur.during.length) });
 	h.renderBands(month);
 	wire(h, month.querySelector<HTMLElement>(".dc-during ul"), cur.during, "during");
+	// Wall Calendar lines waiting to come into this month: keep them in sight.
+	if (month.querySelector(".dc-wallin")) month.open = true;
 	tip(sum, "항목을 누르면 보낼 곳을 골라요 · 길게 누르면 자세한 내용과 못 한 일 처리·수정·삭제");
 	h.contentEl.scrollTop = scrollTop;
 }

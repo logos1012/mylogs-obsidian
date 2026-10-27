@@ -10086,3 +10086,23 @@ button.fw-field-v:hover { color: var(--text-accent); }
 .mylogs-desk-calendar.dc-m details.dc-m-month { margin: 8px 0 24px; border-top: 1px solid var(--background-modifier-border); padding-top: 8px; }
 .mylogs-desk-calendar.dc-m details.dc-m-month > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; font-weight: 600; cursor: pointer; }
 .mylogs-desk-calendar.dc-m .dc-m-count { min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--background-modifier-hover); font-size: 11px; text-align: center; font-weight: 500; }
+
+/* Desk: Wall Calendar에서 온 이달의 일 (0.16.0) */
+.mylogs-desk-calendar .dc-wallin { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--background-modifier-border); }
+.mylogs-desk-calendar .dc-wallin-lbl { color: var(--text-accent); }
+.mylogs-desk-calendar .dc-wallin-items { margin: 4px 0 0; padding: 0; list-style: none; }
+.mylogs-desk-calendar .dc-wallin-it { cursor: grab; }
+.mylogs-desk-calendar.dc-wall-dragging .dc-day:not(.dc-out), .mylogs-desk-calendar.dc-wall-dragging .dc-during { outline: 1px dashed var(--interactive-accent); outline-offset: -2px; }
+
+/* 휴대폰: Obsidian 하단 메뉴바(떠 있는 navbar)에 가리지 않게 본문 영역을 그 높이만큼 올린다.
+   스크롤하는 화면은 끝에 여백이 생기고, 높이 100% 화면(Pinboard 상세·Diary)은 메뉴바 위에서 끝난다. */
+.is-phone .workspace-leaf-content > .mylogs-appnav + .view-content {
+	box-sizing: border-box;
+	padding-bottom: calc(var(--view-bottom-spacing, 0px) + 12px);
+}
+.is-phone .mylogs-pinboard-container .pb-detail-layer {
+	bottom: calc(var(--view-bottom-spacing, 0px) + 12px);
+}
+body.is-phone button.mylogs-m-fab {
+	bottom: calc(16px + var(--view-bottom-spacing, env(safe-area-inset-bottom, 0px)));
+}
