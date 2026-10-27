@@ -1,4 +1,10 @@
 import { scheduleSource, type ScheduleItem } from "./schedule-dnd.ts";
+import { Notice } from "obsidian";
+import { ItemPopover } from "../ui/popover.ts";
+import { askForm } from "../ui/modals.ts";
+import { readProject } from "../pinboard/create-actions.ts";
+import { saveMilestone } from "./milestone-actions.ts";
+import { todayIsoLocal } from "../desk/model.ts";
 import { parseFrontmatterText } from "../pinboard/model.ts";
 import { activeRoot, archiveRoot, type ProjectsHost } from "./actions.ts";
 import { hubLocation, parseProject } from "./model.ts";
@@ -42,7 +48,7 @@ export function renderMilestoneMarkers(parent: HTMLElement, markers: MilestoneMa
    scheduleSource(button,host,item);
    button.setAttr("title",`${m.projectTitle} · ${m.date} · ${status} · 끌어서 다른 날짜로 옮겨요`);
   }
-  button.addEventListener("click", e => { e.stopPropagation(); open(m.projectPath); });
+  button.addEventListener("click", e => { e.stopPropagation(); if (host && !m.archived && m.source !== undefined) milestonePopover(button, host, m, status, open); else open(m.projectPath); });
 	}
 }
 export function renderMilestoneIssues(parent: HTMLElement, issues: MilestoneCalendar["issues"], open: (path: string) => void): void {
@@ -53,4 +59,38 @@ export function renderMilestoneIssues(parent: HTMLElement, issues: MilestoneCale
 		const b = group.createEl("button", { text: `${issue.path.split("/").pop()} · ${issue.message}`, attr: { type: "button" } });
 		b.addEventListener("click", () => open(issue.path));
 	}
+}
+
+/** Click on a calendar ◆: what it is, and edit its name/date or mark it done right there. */
+function milestonePopover(anchor: HTMLElement, host: ProjectsHost, m: MilestoneMarker, status: string, open: (path: string) => void): void {
+	const pop = new ItemPopover();
+	pop.title = m.title;
+	pop.badge = `마일스톤 · ${status}`;
+	pop.row("프로젝트", m.projectTitle, () => open(m.projectPath));
+	pop.row("날짜", m.date);
+	const save = async (change: Parameters<typeof saveMilestone>[3], done: string) => {
+		try {
+			const { p } = await readProject(host, m.projectPath);
+			await saveMilestone(host, p, m.source ?? "", change, todayIsoLocal());
+			new Notice(done);
+		} catch (err) {
+			new Notice(err instanceof Error ? err.message : String(err));
+		}
+	};
+	pop.addItem((i) => i.setTitle("이름·날짜 수정…").setIcon("pencil").onClick(async () => {
+		const v = await askForm(host.app, {
+			title: "마일스톤 수정",
+			fields: [
+				{ key: "text", label: "이름", type: "text", value: m.title },
+				{ key: "due", label: "날짜", type: "date", value: m.date },
+			],
+			validate: (x) => (x.text ? [] : ["이름을 적어 주세요."]),
+		});
+		if (v) await save({ kind: "edit", line: m.line, text: v.text, due: v.due }, "마일스톤을 고쳤어요.");
+	}));
+	pop.addItem((i) => i.setTitle(m.done ? "달성 취소" : "달성으로 표시").setIcon("check").onClick(() => void save({ kind: "check", line: m.line, done: !m.done }, m.done ? "달성을 취소했어요." : "달성으로 표시했어요.")));
+	pop.addSeparator();
+	pop.addItem((i) => i.setTitle("프로젝트 열기").setIcon("folder-kanban").onClick(() => open(m.projectPath)));
+	pop.sub = "끌어서 다른 날짜로 옮길 수도 있어요";
+	pop.show(anchor);
 }

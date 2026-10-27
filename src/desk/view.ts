@@ -1,5 +1,11 @@
 import { toggleLinkedProjectTask } from "../projects/task-actions.ts";
 import { mountAppNav } from "../ui/nav.ts";
+import { parseWallYear, type WallLine } from "../wall/parse.ts";
+import { deskLineFor, deskLink, insertIntoDesk, markSentToDesk, type WallTarget } from "../wall/edit.ts";
+import { commitBatch } from "../pinboard/batch.ts";
+import { setFrontmatterScalar } from "../writer.ts";
+import { vaultIO } from "../pinboard/create-actions.ts";
+import { actionSheet } from "../ui/mobile.ts";
 import { ItemPopover } from "../ui/popover.ts";
 import { tip } from "../ui/tip.ts";
 import { scheduleTarget } from "../projects/schedule-dnd.ts";
@@ -107,6 +113,10 @@ export class DeskCalendarView extends ItemView {
 	private ctx: Ctx | null = null;
 	private zones: DropZone[] = [];
 	private drag: Drag | null = null;
+	/** This month's Wall Calendar year file (its open lines can be dragged into the month). */
+	private wallText: string | null = null;
+	/** A Wall line being dragged onto a day or 이달 중. */
+	private wallDrag: WallLine | null = null;
 	private busy = false;
 	private pendingReload = false;
 	private reloadTimer: number | null = null;
@@ -161,7 +171,7 @@ export class DeskCalendarView extends ItemView {
 	}
 
 	private watchedPaths(): string[] {
-		return [-1, 0, 1].map((n) => this.monthPath(shiftMonth(this.month, n)));
+		return [...[-1, 0, 1].map((n) => this.monthPath(shiftMonth(this.month, n))), this.wallPath(+this.month.slice(0, 4))];
 	}
 
 	// ── lifecycle ──
@@ -218,9 +228,12 @@ export class DeskCalendarView extends ItemView {
 			loaded.set(key, parseMonthFile(text, ym.year, ym.month));
 		}
 		const milestones = await loadMilestoneCalendar(this.plugin);
+		const wf = this.fileAt(this.wallPath(+this.month.slice(0, 4)));
+		const wallText = wf ? await this.app.vault.read(wf) : null;
 		if (seq !== this.loadSeq) return;
 		this.milestones = milestones;
 		this.months = loaded;
+		this.wallText = wallText;
 		this.render();
 	}
 
@@ -401,6 +414,8 @@ export class DeskCalendarView extends ItemView {
 		const ul = during.createEl("ul");
 		if (!cur.during.length) ul.createEl("li", { cls: "dc-it dc-none", text: "없음" });
 		for (const it of cur.during) this.renderDuringItem(ul, it, ctx);
+		this.wallDropZone(during, null);
+		this.renderWallItems(during);
 		const markers = this.milestones.markers.filter(m => m.date.startsWith(this.month + "-"));
 		if (markers.length) {
 			const list = root.createEl("details", { cls: "dc-milestone-month" });
@@ -497,6 +512,7 @@ export class DeskCalendarView extends ItemView {
 			for (const it of items) this.renderDayItem(ul, it, ctx);
 		}
 		if (!dayExists(ctx, iso)) return;
+		if (inMonth) this.wallDropZone(cell, iso);
 		const monday = addDays(iso, -wd);
 		this.addZone(cell, {
 			accepts: (d) =>
@@ -636,6 +652,120 @@ export class DeskCalendarView extends ItemView {
   finally{this.busy=false;}
   if(handled)await this.reload();else await this.exec(planToggle(it,today));
  }
+
+	// ── Wall Calendar → this month ──
+
+	/** Open Wall Calendar lines of this month that are not in the Desk Calendar yet. */
+	private wallLines(): WallLine[] {
+		if (this.wallText === null) return [];
+		const ym = parseMonthKey(this.month);
+		if (!ym) return [];
+		const sec = parseWallYear(this.wallText, ym.year).months[ym.month - 1];
+		return (sec?.lines ?? []).filter((l) => l.item.ok && l.item.status === "scheduled" && (l.item.kind === "task" || l.item.kind === "event"));
+	}
+
+	private renderWallItems(band: HTMLElement): void {
+		const lines = this.wallLines();
+		if (!lines.length) return;
+		const box = band.createDiv({ cls: "dc-wallin" });
+		tip(box.createDiv({ cls: "dc-lbl dc-wallin-lbl", text: `Wall Calendar에서 · ${lines.length}` }), Platform.isMobile ? "Wall Calendar에 적은 이달의 일이에요. 누르면 이달 중이나 날짜에 넣어요." : "Wall Calendar에 적은 이달의 일이에요. 날짜 칸이나 이달 중으로 끌어 넣어요.");
+		const ul = box.createEl("ul", { cls: "dc-wallin-items" });
+		for (const l of lines) {
+			const li = ul.createEl("li", { cls: `dc-it dc-k-${l.item.kind} dc-s-scheduled dc-wallin-it` });
+			li.createSpan({ cls: "dc-sym", attr: { "aria-hidden": "true" } });
+			const body = li.createSpan({ cls: "dc-body" });
+			if (l.item.start) body.createSpan({ cls: "dc-tm", text: `${+l.item.start.slice(5, 7)}/${+l.item.start.slice(8, 10)}` });
+			body.createSpan({ cls: "dc-txt", text: l.item.text });
+			if (Platform.isMobile) {
+				li.addEventListener("click", () => void this.chooseWallTarget(l));
+				continue;
+			}
+			li.draggable = true;
+			li.addClass("dc-draggable");
+			li.addEventListener("dragstart", (e) => {
+				this.wallDrag = l;
+				e.dataTransfer?.setData("text/plain", l.line.trim());
+				if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+				li.addClass("dc-dragging");
+				this.rootEl.addClass("dc-is-dragging", "dc-wall-dragging");
+			});
+			li.addEventListener("dragend", () => {
+				this.wallDrag = null;
+				li.removeClass("dc-dragging");
+				this.rootEl.removeClass("dc-is-dragging", "dc-wall-dragging");
+				this.rootEl.querySelectorAll(".dc-drop-hover").forEach((x) => x.removeClass("dc-drop-hover"));
+			});
+		}
+	}
+
+	/** Day cell (`iso`) or 이달 중 (`null`) accepts a dragged Wall line. */
+	private wallDropZone(el: HTMLElement, iso: string | null): void {
+		el.addEventListener("dragover", (e) => {
+			if (!this.wallDrag) return;
+			e.preventDefault();
+			if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+			el.addClass("dc-drop-hover");
+		});
+		el.addEventListener("dragleave", (e) => {
+			if (this.wallDrag && !el.contains(e.relatedTarget as Node | null)) el.removeClass("dc-drop-hover");
+		});
+		el.addEventListener("drop", (e) => {
+			const l = this.wallDrag;
+			if (!l) return;
+			e.preventDefault();
+			e.stopPropagation();
+			el.removeClass("dc-drop-hover");
+			this.wallDrag = null;
+			void this.takeFromWall(l, iso);
+		});
+	}
+
+	private async chooseWallTarget(l: WallLine): Promise<void> {
+		const first = `${this.month}-01`;
+		await actionSheet(this.app, l.item.text, [
+			{ label: "이달 중에 넣기", icon: "inbox", run: () => this.takeFromWall(l, null) },
+			{
+				label: "날짜 고르기…",
+				icon: "calendar",
+				run: async () => {
+					const d = await pickDate(this.app, "어느 날에 넣을까요?", l.item.start?.startsWith(this.month) ? l.item.start : todayIsoLocal().startsWith(this.month) ? todayIsoLocal() : first);
+					if (d && d.startsWith(this.month)) await this.takeFromWall(l, d);
+					else if (d) new Notice("이 달 안의 날짜를 골라 주세요.");
+				},
+			},
+		]);
+	}
+
+	/** Wall line → this Desk month (a day or 이달 중); the Wall line becomes `→ [[Desk]]`. One checked batch. */
+	private async takeFromWall(l: WallLine, iso: string | null): Promise<void> {
+		if (this.busy) return;
+		const ym = parseMonthKey(this.month);
+		if (!ym) return;
+		this.busy = true;
+		try {
+			const io = vaultIO(this.app);
+			const wallPath = this.wallPath(ym.year), deskPath = this.monthPath(this.month);
+			const wall = await io.read(wallPath), desk = await io.read(deskPath);
+			if (wall === null || desk === null) throw new Error("Wall Calendar나 Desk Calendar 파일이 없어요.");
+			const target: WallTarget = { month: ym.month, index: l.index, line: l.line };
+			const today = todayIsoLocal();
+			const put = insertIntoDesk(desk, deskLineFor(l.line.replace(/^\s*[-*+]\s+/, ""), l.item), iso);
+			if (!put.ok) throw new Error(iso ? `Desk Calendar에 ${iso} 칸이 없어요.` : "Desk Calendar에 이달 중 섹션이 없어요.");
+			const sent = markSentToDesk(wall, ym.year, target, deskLink(this.plugin.settings.deskCalendarFolder, ym.year, ym.month));
+			if (!sent.ok) throw new Error("Wall Calendar 줄이 그새 바뀌었어요. 다시 그렸어요.");
+			await commitBatch(io, [
+				{ path: deskPath, before: desk, after: setFrontmatterScalar(put.text, "updated", today) },
+				{ path: wallPath, before: wall, after: setFrontmatterScalar(sent.text, "updated", today) },
+			]);
+			await logDeskChange(this.plugin, `Wall Calendar에서 「${l.item.text}」 → ${iso ?? "이달 중"}`);
+			new Notice(`「${l.item.text}」을(를) ${iso ? `${+iso.slice(5, 7)}월 ${+iso.slice(8, 10)}일` : "이달 중"}에 넣었어요.`);
+		} catch (err) {
+			new Notice(err instanceof Error ? err.message : String(err));
+		} finally {
+			this.busy = false;
+			await this.reload();
+		}
+	}
 
 	// ── drag and drop ──
 
