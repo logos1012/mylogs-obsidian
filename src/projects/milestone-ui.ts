@@ -1,6 +1,6 @@
 import { Menu } from "obsidian";
 import type { Project } from "./model.ts";
-import { milestoneSummary, type MilestoneChange } from "./milestones.ts";
+import { milestoneSummary, type MilestoneChange, type Milestone } from "./milestones.ts";
 
 export interface MilestoneUIState {
 	open: boolean;
@@ -11,10 +11,10 @@ export interface MilestoneUIState {
 }
 
 /** Same disclosure and inline controls on desktop and mobile; no modal or hover-only controls. */
-export function renderMilestones(parent: HTMLElement, p: Project, state: MilestoneUIState, save: (change: MilestoneChange, expected: string) => Promise<void>, refresh: () => Promise<void>): void {
+export function renderMilestones(parent: HTMLElement, p: Project, state: MilestoneUIState, save: (change: MilestoneChange, expected: string) => Promise<void>, refresh: () => Promise<void>, schedule?: (item: Milestone) => void, draggable?: (el: HTMLElement, item: Milestone) => void): void {
 	const host = parent.createDiv({ cls: "pf-milestones" });
 	host.addEventListener("contextmenu", e => e.stopPropagation());
-	host.addEventListener("dragstart", e => { e.stopPropagation(); e.preventDefault(); });
+	host.addEventListener("dragstart", e => { e.stopPropagation(); if (!draggable) e.preventDefault(); });
 	const source = p.milestoneSource ?? "", items = p.milestones ?? [], summary = milestoneSummary(items);
 	const paint = (focus = false): void => {
 		host.empty();
@@ -43,6 +43,7 @@ export function renderMilestones(parent: HTMLElement, p: Project, state: Milesto
 		};
 		for (const item of items) {
 			const row = body.createDiv({ cls: `pf-ms-row${item.done ? " is-done" : ""}` });
+			if (!p.archived && !locked) draggable?.(row, item);
 			const label = row.createEl("label", { cls: "pf-ms-check" });
 			const check = label.createEl("input", { attr: { type: "checkbox", "aria-label": `${item.text} 달성 확인` } });
 			check.checked = item.done; check.disabled = p.archived || locked;
@@ -55,7 +56,7 @@ export function renderMilestones(parent: HTMLElement, p: Project, state: Milesto
 			const dateText = item.dueIssue ? "날짜 확인" : item.due ? item.due.slice(2).replace(/-/g, "/") : "날짜";
 			if (p.archived) { if (item.due || item.dueIssue) row.createSpan({ cls: "pf-ms-date", text: dateText }); }
 			else {
-				const date = button(row, dateText, () => editItem(true), locked);
+				const date = button(row, dateText, () => schedule ? schedule(item) : editItem(true), locked);
 				date.addClass("pf-ms-date"); date.setAttr("aria-label", `${item.text} 목표일 ${item.due || "미정"} 수정`);
 				date.setAttr("title", item.dueIssue || `목표일: ${item.due || "미정"}`);
 			}

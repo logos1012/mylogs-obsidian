@@ -1,6 +1,6 @@
 {
 	"name": "mylogs-obsidian",
-	"version": "0.10.4",
+	"version": "0.11.0",
 	"description": "MyLogs: Obsidian plugin for the MyLogs bullet-journal vault (Daily Pad view).",
 	"main": "main.js",
 	"private": true,

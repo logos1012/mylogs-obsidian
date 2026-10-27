@@ -1,3 +1,5 @@
+import { toggleLinkedProjectTask } from "../projects/task-actions.ts";
+import { scheduleTarget } from "../projects/schedule-dnd.ts";
 import { debounce, ItemView, Keymap, Menu, normalizePath, Notice, Platform, TAbstractFile, TFile, TFolder, type ViewStateResult, WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { loadMilestoneCalendar, renderMilestoneMarkers, renderMilestoneIssues, watchesMilestoneProjects, type MilestoneCalendar } from "../projects/milestone-calendar-ui.ts";
@@ -307,7 +309,7 @@ export class WallCalendarView extends ItemView {
 
 		const body = cell.createDiv({ cls: "wc-mbody" });
 		const milestones = this.milestones.markers.filter(m => m.date.startsWith(`${this.year}-${pad2(month)}-`));
-		renderMilestoneMarkers(body, milestones, todayIso(), path => void this.plugin.openProjectAt(path), true);
+		renderMilestoneMarkers(body, milestones, todayIso(), path => void this.plugin.openProjectAt(path), true, this.plugin);
 		if (this.addOpen === month) this.renderAddForm(body, month);
 		const dated = lines.filter((l) => l.item.start !== null && l.item.ok).sort((a, b) => (itemSortKey(a.item) < itemSortKey(b.item) ? -1 : itemSortKey(a.item) > itemSortKey(b.item) ? 1 : a.index - b.index));
 		const undated = lines.filter((l) => l.item.start === null && l.item.ok);
@@ -367,7 +369,7 @@ export class WallCalendarView extends ItemView {
 				marks.set(d.getDate(), set);
 			}
 		}
-		const mini = head.createDiv({ cls: "wc-mini", attr: { "aria-hidden": "true" } });
+		const mini = head.createDiv({ cls: "wc-mini", attr: { "aria-label": "날짜 배정 달력" } });
 		const milestoneDays = new Set(this.milestones.markers.filter(m => m.date.startsWith(`${this.year}-${pad2(month)}-`)).map(m => Number(m.date.slice(8))));
 		for (let i = 0; i < 7; i++) mini.createEl("i", { cls: i === 0 ? "sun" : i === 6 ? "sat" : "", text: WEEKDAYS[i] });
 		const first = new Date(this.year, month - 1, 1, 12);
@@ -376,7 +378,8 @@ export class WallCalendarView extends ItemView {
 		const today = todayIso();
 		for (let d = 1; d <= days; d++) {
 			const wd = (first.getDay() + d - 1) % 7;
-			const c = mini.createSpan({ text: String(d) });
+			const c = mini.createSpan({ text: String(d), attr: {tabindex:"0",role:"button","aria-label":`${this.year}-${pad2(month)}-${pad2(d)}에 배정`} });
+			scheduleTarget(c, this.plugin, {kind:"day",date:`${this.year}-${pad2(month)}-${pad2(d)}`}, () => this.reload());
 			if (wd === 0) c.addClass("sun");
 			if (wd === 6) c.addClass("sat");
 			const m = marks.get(d);
@@ -410,7 +413,7 @@ export class WallCalendarView extends ItemView {
 			sym.setAttr("aria-checked", it.status === "done" ? "true" : "false");
 			sym.addEventListener("click", (e) => {
 				e.stopPropagation();
-				void this.apply(`${this.ym(month)} 할 일 ${it.status === "done" ? "완료 취소" : "완료"}: ${it.text}`, (d) => toggleWallTask(d, this.year, target));
+				void this.toggleProjectAware(month, target);
 			});
 		}
 
@@ -436,6 +439,7 @@ export class WallCalendarView extends ItemView {
 		if (it.problems.length) body.createSpan({ cls: "wc-qmark", text: "형식 확인", attr: { title: it.problems.join(" · ") } });
 		const chips = body.createSpan({ cls: "wc-chips" });
 		for (const [k, v] of it.fields) {
+			if (k === "task") continue;
 			if (!v) continue;
 			if (k === "goal" || k === "project") {
 				const b = chips.createEl("button", { cls: `wc-chip ml-route-chip ${k === "goal" ? "is-goal" : "is-proj"}`, text: `${k === "goal" ? "◎" : "▤"} ${v}`, attr: { type: "button", title: k === "goal" ? "목표 관리" : "프로젝트 관리" } });
@@ -507,7 +511,7 @@ export class WallCalendarView extends ItemView {
 				m
 					.setTitle(it.status === "done" ? "완료 취소" : "완료")
 					.setIcon("check")
-					.onClick(() => void this.apply(`${this.ym(month)} 할 일 ${it.status === "done" ? "완료 취소" : "완료"}: ${it.text}`, (d) => toggleWallTask(d, this.year, target))),
+					.onClick(() => void this.toggleProjectAware(month, target)),
 			);
 		}
 		if (canEdit && isCurrent && it.status === "scheduled" && it.ok) {
@@ -730,6 +734,14 @@ export class WallCalendarView extends ItemView {
 		});
 		window.setTimeout(() => text.focus(), 0);
 	}
+
+	private async toggleProjectAware(month: number, target: WallTarget): Promise<void> {
+  if(this.busy)return; this.busy=true;let handled=false;
+  try{handled=await toggleLinkedProjectTask(this.plugin,this.yearPath(),target.index,target.line,todayIso());}
+  catch(e){handled=true;new Notice(e instanceof Error?e.message:String(e));}
+  finally{this.busy=false;}
+  if(handled)await this.reload();else await this.apply(`${this.ym(month)} 할 일 완료 표시`,d=>toggleWallTask(d,this.year,target));
+ }
 
 	// ── edits ──
 

@@ -1,3 +1,7 @@
+import { renderProjectSchedule, type ScheduleState } from "./schedule-ui.ts";
+import { loadProjectTasks } from "./task-actions.ts";
+import type { ProjectTask } from "./tasks.ts";
+import { scheduleSource, type ScheduleItem } from "./schedule-dnd.ts";
 import { Component, debounce, ItemView, Keymap, Menu, normalizePath, Notice, Platform, setIcon, type TAbstractFile, TFile, TFolder, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { toIsoDate } from "../parser.ts";
@@ -62,6 +66,7 @@ function dotDate(iso: string): string {
 interface Loaded {
 	projects: Project[];
 	texts: Map<string, string>;
+	tasks: Map<string, ProjectTask[]>;
 	goals: Goal[];
 	elements: FlywheelElement[];
 	/** Pinboard areas (for list order and the new-project suggestions). */
@@ -83,6 +88,7 @@ export class ProjectFoldersView extends ItemView {
 	private busy = false;
 	private dragging: Project | null = null;
 	private pending = false;
+	private scheduleStates = new Map<string, ScheduleState>();
 	private milestoneStates = new Map<string, MilestoneUIState>();
 	private selectedId: string | null = null;
 	private workspaceComponent: Component | null = null;
@@ -141,7 +147,7 @@ export class ProjectFoldersView extends ItemView {
 	// ── paths ──
 
 	private watched(path: string): boolean {
-		const roots = [activeRoot(this.plugin), archiveRoot(this.plugin), cleanFolder(this.plugin.settings.pinboardFolder), cleanFolder(this.plugin.settings.flywheelPath)];
+		const roots = [activeRoot(this.plugin), archiveRoot(this.plugin), cleanFolder(this.plugin.settings.deskCalendarFolder), cleanFolder(this.plugin.settings.wallCalendarFolder), cleanFolder(this.plugin.settings.pinboardFolder), cleanFolder(this.plugin.settings.flywheelPath)];
 		return roots.some((r) => path === r || path.startsWith(`${r}/`));
 	}
 
@@ -179,7 +185,7 @@ export class ProjectFoldersView extends ItemView {
 	/** Re-read the hubs and re-render (waits while a write or a drag is in progress). */
 	async refresh(): Promise<void> {
 		if (!this.rootEl) return;
-		if (this.busy || this.dragging || this.rootEl.querySelector(".pf-ms-editor, .pf-ms-remove") || [...this.milestoneStates.values()].some(s => s.busy)) {
+		if (this.scheduleLocked() || this.busy || this.dragging || this.rootEl.querySelector(".pf-ms-editor, .pf-ms-remove") || [...this.milestoneStates.values()].some(s => s.busy)) {
 			this.pending = true;
 			return;
 		}
@@ -214,7 +220,9 @@ export class ProjectFoldersView extends ItemView {
 		const goals = (await readGoals(this.plugin)).map(x => x.goal);
 		const wheel = this.app.vault.getAbstractFileByPath(flywheelPath(this.plugin.settings.flywheelPath));
 		const elements = parseFlywheel(wheel instanceof TFile ? await this.app.vault.read(wheel) : null);
-		return { projects, pinAreas, texts, goals, elements };
+		const tasks = new Map<string, ProjectTask[]>();
+		for (const p of projects) if (p.id === this.selectedId) tasks.set(p.id, await loadProjectTasks(this.plugin, p, texts.get(p.id)!));
+		return { projects, pinAreas, texts, goals, elements, tasks };
 	}
 
 	private async run(fn: () => Promise<unknown>): Promise<void> {
@@ -344,9 +352,11 @@ export class ProjectFoldersView extends ItemView {
 
 	// ── rendering ──
 
+	private scheduleLocked(): boolean { return [...this.scheduleStates.values()].some(s => s.busy || !!s.draft || !!s.editing); }
+
 	canNavigate(): boolean {
-		if (this.busy || [...this.milestoneStates.values()].some(s => s.busy || s.editor || s.removing)) {
-			new Notice("편집 중인 마일스톤을 먼저 저장하거나 취소해 주세요.");
+		if (this.scheduleLocked() || this.busy || [...this.milestoneStates.values()].some(s => s.busy || s.editor || s.removing)) {
+			new Notice("편집 중인 할 일·마일스톤을 먼저 저장하거나 취소해 주세요.");
 			this.rootEl?.querySelector<HTMLTextAreaElement>(".pf-ms-editor textarea")?.focus();
 			return false;
 		}
@@ -361,7 +371,7 @@ export class ProjectFoldersView extends ItemView {
 		if (matches.length !== 1 || !matches[0].id) { new Notice("프로젝트를 하나로 찾지 못했어요. 등록부와 허브 id를 확인해 주세요."); return false; }
 		this.selectedId = matches[0].id;
 		this.milestoneStates.set(matches[0].path, { open: true });
-		this.render(); this.contentEl.scrollTop = 0;
+		await this.refresh(); this.contentEl.scrollTop = 0;
 		this.rootEl.querySelector<HTMLElement>(".pf-workspace h1")?.focus();
 		this.app.workspace.requestSaveLayout();
 		return true;
@@ -386,6 +396,9 @@ export class ProjectFoldersView extends ItemView {
 	private renderProject(root: HTMLElement, p: Project, d: Loaded): void {
 		root.empty();
 		this.workspaceComponent = this.addChild(new Component());
+		let schedule = this.scheduleStates.get(p.id);
+		if (!schedule) { schedule = { month: todayIso().slice(0, 7), draft: "" }; this.scheduleStates.set(p.id, schedule); }
+		const choose = (item: ScheduleItem) => schedule?.select?.(item);
 		const navigate = (fn: () => void) => { if (this.canNavigate()) fn(); };
 		renderWorkspace(root, p, {
 			app: this.app, component: this.workspaceComponent, goals: d.goals, elements: d.elements, paths: this.app.vault.getFiles().map(f => f.path), text: d.texts.get(p.id) ?? "",
@@ -396,13 +409,14 @@ export class ProjectFoldersView extends ItemView {
 			link: () => void this.connectGoal(p), unlink: g => void this.connectGoal(p, g, false), repair: g => void this.connectGoal(p, g),
 			file: path => navigate(() => { const f = this.app.vault.getAbstractFileByPath(path); if (f instanceof TFile) void this.app.workspace.getLeaf("tab").openFile(f); else new Notice(`파일을 찾지 못했어요: ${path}`); }),
 			wheel: e => navigate(() => { void this.app.workspace.openLinkText(`${flywheelPath(this.plugin.settings.flywheelPath)}#${e.id} ${e.name}`, p.path, "tab"); }),
-			milestones: el => { let ms = this.milestoneStates.get(p.path); if (!ms) { ms = { open: true }; this.milestoneStates.set(p.path, ms); } renderMilestones(el, p, ms, (change, expected) => saveMilestone(this.plugin, p, expected, change, todayIso()), () => this.refresh()); },
+			milestones: el => { let ms = this.milestoneStates.get(p.path); if (!ms) { ms = { open: true }; this.milestoneStates.set(p.path, ms); } renderMilestones(el, p, ms, (change, expected) => saveMilestone(this.plugin, p, expected, change, todayIso()), () => this.refresh(), m => choose({kind:"milestone",projectPath:p.path,projectId:p.id,line:m.line,title:m.text,source:p.milestoneSource??"",date:m.due}), (el,m) => scheduleSource(el,this.plugin,{kind:"milestone",projectPath:p.path,projectId:p.id,line:m.line,title:m.text,source:p.milestoneSource??"",date:m.due})); },
+			schedule: el => renderProjectSchedule(el, this.plugin, p, d.tasks.get(p.id) ?? [], schedule!, () => this.refresh(), d.texts.get(p.id) ?? ""),
 		});
 	}
 
 	private render(): void {
 		if (!this.rootEl) return;
-		if (this.rootEl.querySelector(".pf-ms-editor, .pf-ms-remove") || [...this.milestoneStates.values()].some(s => s.busy)) return;
+		if (this.scheduleLocked() || this.rootEl.querySelector(".pf-ms-editor, .pf-ms-remove") || [...this.milestoneStates.values()].some(s => s.busy)) return;
 		if (this.workspaceComponent) { this.removeChild(this.workspaceComponent); this.workspaceComponent = null; }
 		if (this.selectedId && this.data) {
 			const matches = this.data.projects.filter(p => p.id === this.selectedId);
@@ -602,7 +616,7 @@ export class ProjectFoldersView extends ItemView {
 
 		let ms = this.milestoneStates.get(p.path);
 		if (!ms) { ms = { open: false }; this.milestoneStates.set(p.path, ms); }
-		renderMilestones(card, p, ms, (change, expected) => saveMilestone(this.plugin, p, expected, change, todayIso()), () => this.refresh());
+		renderMilestones(card, p, ms, (change, expected) => saveMilestone(this.plugin, p, expected, change, todayIso()), () => this.refresh(), m => { void this.openProject(p.id).then(ok => { if(ok)this.scheduleStates.get(p.id)?.select?.({kind:"milestone",projectPath:p.path,projectId:p.id,line:m.line,title:m.text,source:p.milestoneSource??"",date:m.due}); }); }, (el,m) => scheduleSource(el,this.plugin,{kind:"milestone",projectPath:p.path,projectId:p.id,line:m.line,title:m.text,source:p.milestoneSource??"",date:m.due}));
 
 		const foot = card.createDiv({ cls: "pf-card-foot" });
 		if (p.archived && p.completed) foot.createSpan({ text: `완료 ${dotDate(p.completed)}` });

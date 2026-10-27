@@ -10,6 +10,7 @@ export interface WorkspaceHost {
 	goal(id: string): void; link(): void; unlink(g: Goal): void; repair(g: Goal): void;
 	file(path: string): void; wheel(e: FlywheelElement): void;
 	milestones(parent: HTMLElement): void;
+	schedule?(parent: HTMLElement): void;
 }
 
 /** One management screen; existing theme tokens and no dashboard-within-a-dashboard. */
@@ -35,6 +36,7 @@ export function renderWorkspace(root: HTMLElement, p: Project, h: WorkspaceHost)
 	action.createDiv({ cls: "pf-action-v", text: p.action || "미확인" });
 	if (p.actionDraft) action.createSpan({ text: "AI 초안", cls: "pf-draft" });
 	h.milestones(main);
+	h.schedule?.(main);
 	for (const [n, s] of workspaceSections(h.text).entries()) {
 		const section = main.createEl("details", { cls: "pf-workspace-section" }); section.open = n < 2;
 		section.createEl("summary", { text: s.title });

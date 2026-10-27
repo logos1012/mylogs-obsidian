@@ -18,20 +18,26 @@ export async function saveMilestone(host: ProjectsHost, displayed: Project, expe
 		const description = (change.kind === "add" ? change.text.trim() : change.kind === "edit" ? `${old?.text} → ${change.text.trim()}` : old?.text ?? "") + dateChange;
 		const summary = milestoneSummary(readMilestones(edited).items);
 		const title = `마일스톤 ${verb}`, detail = `${title}: ${description}`;
-		const after = applyHubChange(edited, { today, decision: `${detail} (사용자 확인)` });
-		const ym = today.slice(0, 7), mp = monthlyLogPath(p.folder, p.name, ym), lp = logIndexPath(p.folder, p.name), ap = p.folder + "/AGENTS.md", rp = registryPath(host);
-		const required = async (path: string) => { const t = await io.read(path); if (t === null) throw new Error(`필수 기록 파일이 없어요: ${path}`); return t; };
-		const m = await io.read(mp), l = await required(lp), a = await required(ap), r = await required(rp);
-		const entry = formatLogEntry({ date: today, title, context: `「${p.title}」 마일스톤 관리`, done: detail, result: summary.label, decision: "사용자 확인. 목표 진척·프로젝트 상태는 변경하지 않음", open: "", next: p.action || "미확인", evidence: "사용자 입력 (프로젝트 화면)" });
-		const rr = upsertActiveRow(r, { id: p.id, updated: today });
-		if (!rr.ok) throw new Error(rr.reason);
-		const templates = m === null ? await loadTemplates(host) : null;
-		await commitBatch(io, [
-			{ path: p.path, before: text, after },
-			{ path: mp, before: m, after: m === null ? newMonthlyLog(templates!.monthlyLog, p.name, ym, entry) : appendLogEntry(m, entry) },
-			{ path: lp, before: l, after: updateLogIndex(l, { name: p.name, ym, today, recent: `${detail} · ${summary.label}` }) },
-			{ path: ap, before: a, after: setFmValue(updateProjectAgents(a, { name: p.name, ym, today }), "updated", today) },
-			{ path: rp, before: r, after: logRegistryChange(rr.text, today, `${p.id} ${detail} · ${summary.label} (플러그인)`) },
-		]);
+		await commitBatch(io, await projectRecordWrites(host, p, text, edited, title, detail, summary.label, today));
 	});
+}
+
+/** Shared audit writes, included in the same batch as calendar task edits. */
+export async function projectRecordWrites(host: ProjectsHost, p: Project, text: string, edited: string, title: string, detail: string, result: string, today: string): Promise<import("../pinboard/batch.ts").Write[]> {
+	const io = vaultIO(host.app);
+	const after = applyHubChange(edited, { today, decision: `${detail} (사용자 확인)` });
+	const ym = today.slice(0, 7), mp = monthlyLogPath(p.folder, p.name, ym), lp = logIndexPath(p.folder, p.name), ap = p.folder + "/AGENTS.md", rp = registryPath(host);
+	const required = async (path: string) => { const t = await io.read(path); if (t === null) throw new Error(`필수 기록 파일이 없어요: ${path}`); return t; };
+	const m = await io.read(mp), l = await required(lp), a = await required(ap), r = await required(rp);
+	const entry = formatLogEntry({ date: today, title, context: `「${p.title}」 ${title}`, done: detail, result, decision: "사용자 확인. 목표 진척·프로젝트 상태는 변경하지 않음", open: "", next: p.action || "미확인", evidence: "사용자 입력 (프로젝트 화면)" });
+	const rr = upsertActiveRow(r, { id: p.id, updated: today });
+	if (!rr.ok) throw new Error(rr.reason);
+	const templates = m === null ? await loadTemplates(host) : null;
+	return [
+		{ path: p.path, before: text, after },
+		{ path: mp, before: m, after: m === null ? newMonthlyLog(templates!.monthlyLog, p.name, ym, entry) : appendLogEntry(m, entry) },
+		{ path: lp, before: l, after: updateLogIndex(l, { name: p.name, ym, today, recent: `${detail} · ${result}` }) },
+		{ path: ap, before: a, after: setFmValue(updateProjectAgents(a, { name: p.name, ym, today }), "updated", today) },
+		{ path: rp, before: r, after: logRegistryChange(rr.text, today, `${p.id} ${detail} · ${result} (플러그인)`) },
+	];
 }

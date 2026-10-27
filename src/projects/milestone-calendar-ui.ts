@@ -1,3 +1,5 @@
+import { scheduleSource, selectSchedule, type ScheduleItem } from "./schedule-dnd.ts";
+import { Notice } from "obsidian";
 import { parseFrontmatterText } from "../pinboard/model.ts";
 import { activeRoot, archiveRoot, type ProjectsHost } from "./actions.ts";
 import { hubLocation, parseProject } from "./model.ts";
@@ -24,7 +26,7 @@ export async function loadMilestoneCalendar(host: ProjectsHost): Promise<Milesto
 }
 
 /** Color + diamond + label, separate from checkbox lists and their counters/drag handlers. */
-export function renderMilestoneMarkers(parent: HTMLElement, markers: MilestoneMarker[], today: string, open: (path: string) => void, showDate = false): void {
+export function renderMilestoneMarkers(parent: HTMLElement, markers: MilestoneMarker[], today: string, open: (path: string) => void, showDate = false, host?: ProjectsHost): void {
 	if (!markers.length) return;
 	const list = parent.createDiv({ cls: "ml-milestone-markers", attr: { role: "list", "aria-label": "프로젝트 마일스톤" } });
 	for (const m of markers) {
@@ -35,7 +37,13 @@ export function renderMilestoneMarkers(parent: HTMLElement, markers: MilestoneMa
 		const content = button.createSpan({ cls: "ml-milestone-content" });
 		content.createSpan({ cls: "ml-milestone-title", text: `${showDate ? m.date.slice(5).replace("-", "/") + " " : ""}${m.title}` });
 		content.createSpan({ cls: "ml-milestone-meta", text: `마일스톤 · ${m.projectTitle}${state !== "planned" ? " · " + status : ""}` });
-		button.addEventListener("click", e => { e.stopPropagation(); open(m.projectPath); });
+		if(host && !m.archived && m.source !== undefined) {
+   const item: ScheduleItem = {kind:"milestone",projectPath:m.projectPath,projectId:m.projectId,line:m.line,title:m.title,source:m.source,date:m.date};
+   scheduleSource(button,host,item);
+   const move = row.createEl("button", {cls:"ml-milestone-move",text:"옮기기",attr:{type:"button","aria-label":`${m.title} 날짜 선택`}});
+   move.addEventListener("click",e=>{e.stopPropagation();selectSchedule(host,item);new Notice(`「${m.title}」을 옮길 날짜 칸을 누르세요. Esc로 취소할 수 있어요.`);});
+  }
+  button.addEventListener("click", e => { e.stopPropagation(); open(m.projectPath); });
 	}
 }
 export function renderMilestoneIssues(parent: HTMLElement, issues: MilestoneCalendar["issues"], open: (path: string) => void): void {
