@@ -4376,6 +4376,15 @@ body.theme-dark .mylogs-pinboard-container .pb-scrim {
 		gap: 10px;
 		padding: 9px 14px;
 	}
+	/* Milestones and items both stack in the content column (a day with ◆ has three children). */
+	.mylogs-desk-calendar .dc-day > :not(.dc-dhead) {
+		grid-column: 2;
+		min-width: 0;
+	}
+	.mylogs-desk-calendar .dc-day > .dc-dhead {
+		grid-column: 1;
+		grid-row: 1 / span 6;
+	}
 	.mylogs-desk-calendar .dc-day .dc-dhead {
 		flex-direction: column;
 		align-items: flex-start;

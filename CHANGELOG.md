@@ -2,6 +2,10 @@
 
 버전 번호는 `manifest.json`의 `version`과 같고, 같은 이름의 git 태그와 GitHub Release가 있다(앞에 v를 붙이지 않는다).
 
+## 0.16.1 — 2026-10-28
+
+- **Desk Calendar 휴대폰 날짜 칸 수정:** 마일스톤(◆)이 있는 날은 할 일 목록이 날짜 칸(54px)으로 밀려나 글자가 한 자씩 세로로 쌓였다. 마일스톤과 할 일이 모두 오른쪽 칸에 쌓이도록 고쳤다(좁은 화면 공통).
+
 ## 0.16.0 — 2026-10-28
 
 - **Wall Calendar → Desk Calendar 끌어 넣기:** Desk Calendar의 「이달 중」 아래에 그달 Wall Calendar에 적어 둔 일(아직 Desk로 오지 않은 할 일·행사)이 「Wall Calendar에서」로 보인다. 데스크톱은 날짜 칸이나 이달 중으로 끌어 놓고, 휴대폰은 눌러서 「이달 중에 넣기 / 날짜 고르기」. Desk에 `(from:: Wall Calendar)`로 들어가고 Wall 줄은 `→ [[Desk]]`로 바뀐다. 두 파일을 한 번에 확인·저장한다.
