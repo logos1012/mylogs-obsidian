@@ -541,7 +541,7 @@ export class PinboardView extends ItemView {
 		}
 
 		const updated = d.goals.map((g) => g.updated).filter((u) => /^\d{4}-\d{2}-\d{2}/.test(u)).sort();
-		page.createDiv({ cls: "pb-foot", text: `노트 최종 갱신 ${updated[updated.length - 1] ?? "미정"} · 원본 ${this.folder()}/${d.year}/ 노트 ${d.goals.length}개` });
+		page.createDiv({ cls: "pb-foot", text: `마지막 갱신 ${updated[updated.length - 1] ?? "미정"}` });
 	}
 
 	private renderMissing(page: HTMLElement, d: Loaded): void {
@@ -833,9 +833,7 @@ export class PinboardView extends ItemView {
 		const newest = newestFirst(logs.map((l) => ({ ...l, date: l.line.date })));
 
 		// latest update
-		const latest = this.card(body, "최근 업데이트");
-		if (newest.length) this.updateView(latest, newest[0].line, g, true);
-		else latest.createDiv({ cls: "pb-muted", text: "아직 진척 기록이 없어요. 아래 「업데이트 추가」로 남길 수 있어요." });
+		if (newest.length) this.updateView(this.card(body, "최근 업데이트"), newest[0].line, g, true);
 
 		// progress
 		const pc = this.card(body, "진행");
@@ -848,14 +846,11 @@ export class PinboardView extends ItemView {
 				today,
 			);
 		if(!main){
-			this.progressSettings(pc, g);
-			const form=pc.createDiv();
-			this.smallBtn(pc,g.measure==="milestone"?"실제 달성 확인":"실제 성과 기록","실제 결과를 기록해요",async()=>{
-				if(g.measure==="milestone"){
-					const ok=await askForm(this.app,{title:"하위 목표 달성 확인",desc:`「${g.target||g.title}」 조건을 실제로 달성했나요? 연결된 프로젝트 완료와는 별도로 기록해요.`,fields:[],cta:"달성으로 기록"});
-					if(ok)await this.writeGoal(g,{status:"achieved",log:{date:todayIso(),text:"사용자가 달성 조건 충족을 확인",verify:"보고됨",evidence:"MyLogs 플러그인, 사용자 확인"}});
-				}else this.updateForm(form,g,()=>form.empty());
-			},"pencil");
+			// 수치 목표의 결과 기록은 「진척 기록 · 업데이트 추가」 하나로 (같은 입력 폼).
+			if(g.measure==="milestone"&&!isEnded(g.status)) this.smallBtn(pc,"달성 확인","조건을 실제로 달성했으면 눌러요. 진척 기록에도 한 줄 남아요.",async()=>{
+				const ok=await askForm(this.app,{title:"하위 목표 달성 확인",desc:`「${g.target||g.title}」 조건을 실제로 달성했나요? 연결된 프로젝트 완료와는 별도로 기록해요.`,fields:[],cta:"달성으로 기록"});
+				if(ok)await this.writeGoal(g,{status:"achieved",log:{date:todayIso(),text:"사용자가 달성 조건 충족을 확인",verify:"보고됨",evidence:"MyLogs 플러그인, 사용자 확인"}});
+			},"check");
 		}
 
 		// description
@@ -924,41 +919,36 @@ export class PinboardView extends ItemView {
 			});
 		}
 
-		// side
+		// side: what the goal is about. Settings and record details fold away under 「세부 설정」.
 		const dl = side.createEl("dl", { cls: "pb-d-props" });
-		const prop = (k: string, fill: (dd: HTMLElement) => void) => {
-			dl.createEl("dt", { text: k });
-			fill(dl.createEl("dd"));
+		const prop = (into: HTMLElement, k: string, fill: (dd: HTMLElement) => void) => {
+			into.createEl("dt", { text: k });
+			fill(into.createEl("dd"));
 		};
-		prop("id", (x) => x.setText(g.id));
-		if (main) prop("기간", (x) => this.inlineField(x, g, "period"));
+		if (main) prop(dl, "기간", (x) => this.inlineField(x, g, "period"));
 		else
-			prop("기한", (x) => {
+			prop(dl, "기한", (x) => {
 				this.inlineField(x, g, "due", { type: "date" });
 				if (!g.due) return;
 				const dd = dday(g.due, today);
 				if (!isEnded(g.status)) x.createSpan({ cls: `pb-dd${dd.cls ? ` is-${dd.cls}` : ""}`, text: ` ${dd.big}` });
 			});
-		if (!main)
-			prop("상위 목표", (x) => {
-				if (!parent) return void x.setText(g.parent || "—");
-				const a = x.createEl("button", { cls: "pb-linkish", text: `${parent.id} ${parent.title}`, attr: { type: "button" } });
+		if (!main && parent)
+			prop(dl, "상위 목표", (x) => {
+				const a = x.createEl("button", { cls: "pb-linkish", text: parent.title, attr: { type: "button" } });
 				a.addEventListener("click", () => this.openGoal(parent.id));
 			});
-		prop("영역", (x) => this.inlineField(x, g, "area"));
+		prop(dl, "영역", (x) => this.inlineField(x, g, "area"));
 		if (!main) {
-			prop("측정", (x) => this.inlineField(x, g, "measure", { display: MEASURE_KO[g.measure] ?? g.measure, choices: [["", "미정"], ["metric", "수치"], ["milestone", "이정표"]] }));
-			prop("종류", (x) => this.inlineField(x, g, "kind", { display: KIND_KO[g.kind] ?? g.kind, choices: [["", "미정"], ["outcome", "결과"], ["performance", "수행"]] }));
-			prop("단위", (x) => this.inlineField(x, g, "unit"));
-			prop("가중치", (x) => this.inlineField(x, g, "weight", { display: g.weight === null ? "1 (기본)" : fmtNum(g.weight) }));
+			const more = side.createEl("details", { cls: "pb-d-more" });
+			more.createEl("summary", { text: "세부 설정" });
+			const dl2 = more.createEl("dl", { cls: "pb-d-props" });
+			prop(dl2, "측정", (x) => this.inlineField(x, g, "measure", { display: MEASURE_KO[g.measure] ?? g.measure, choices: [["", "미정"], ["metric", "수치"], ["milestone", "이정표"]] }));
+			prop(dl2, "종류", (x) => this.inlineField(x, g, "kind", { display: KIND_KO[g.kind] ?? g.kind, choices: [["", "미정"], ["outcome", "결과"], ["performance", "수행"]] }));
+			prop(dl2, "단위", (x) => this.inlineField(x, g, "unit"));
+			prop(dl2, "가중치", (x) => this.inlineField(x, g, "weight", { display: g.weight === null ? "1 (기본)" : fmtNum(g.weight) }));
+			this.progressSettings(more, g);
 		}
-		prop("상태", (x) => x.setText(STATUS_KO[g.status] ?? g.status));
-		prop("갱신", (x) => x.setText(g.updated || "—"));
-		const sbtn = side.createDiv({ cls: "pb-d-side-btns" });
-		const openNote = sbtn.createEl("button", { cls: "mod-cta", attr: { type: "button" } });
-		setIcon(openNote.createSpan({ cls: "pb-btn-icon" }), "file-text");
-		openNote.appendText("노트 열기");
-		openNote.addEventListener("click", (e) => this.openPath(g.path, Keymap.isModEvent(e)));
 
 		scroll.scrollTop = prevScroll;
 		if (fresh) panel.focus({ preventScroll: true });
@@ -1048,10 +1038,11 @@ export class PinboardView extends ItemView {
 
 	private subProgress(pc: HTMLElement, s: Goal, lines: ProgressLine[], today: string): void {
 		const p = displaySubProgress(s);
-		if (s.progressSource === "projects") pc.createDiv({ cls: "pb-d-label", text: "프로젝트 가중 진척 · 자동" });
 		const top = pc.createDiv({ cls: "pb-bignum" });
 		top.createEl("b", { text: p === null ? "미정" : `${Math.round(p)}%` });
-		if (s.progressSource === "projects") pc.createDiv({ cls: "pb-d-label", text: "실제 성과 (진척과 별도)" });
+		if (s.progressSource === "projects") {
+			tip(top.createSpan({ cls: "pb-src-chip", text: "프로젝트 기준" }), "연결된 프로젝트의 마일스톤 달성으로 자동 계산해요. 아래 실제 값과는 따로예요. 계산 방식은 오른쪽 「세부 설정」에서 바꿔요.");
+		} else tip(top, "현재 값으로 계산해요");
 		const path = pc.createDiv({ cls: "pb-inline-metrics" });
 		const metric = (field: InlineGoalField, label: string) => {
 			const box = path.createDiv({ cls: "pb-inline-metric" });
@@ -1170,7 +1161,7 @@ export class PinboardView extends ItemView {
 		const { points, target } = chartSeries(s, lines, today);
 		const box = parent.createDiv({ cls: "pb-chart" });
 		if (points.length < 2) {
-			box.createDiv({ cls: "pb-muted pb-chart-empty", text: "값(value)이 있는 진척 기록이 쌓이면 시간 흐름이 그려져요." });
+			box.remove();
 			return;
 		}
 		const W = 600;
@@ -1236,13 +1227,13 @@ export class PinboardView extends ItemView {
 		const c = this.card(parent, "관련 업무");
 		const ct = c.querySelector<HTMLElement>(".pb-card-title");
 		if (ct) tip(ct, main ? "이 목표와 Sub Goal에 연결된 일이에요. 진행률은 바꾸지 않아요. 프로젝트는 Sub Goal에서 연결해요." : "이 목표를 움직이는 일이에요. 진행률은 바꾸지 않아요 (진행률은 현재 값으로만).");
-		const group = (kind: RelatedItem["kind"], label: string, icon: string, empty: string) => {
+		const group = (kind: RelatedItem["kind"], label: string, icon: string) => {
 			const items = rel.filter((r) => r.kind === kind);
+			if (!items.length) return;
 			const grp = c.createDiv({ cls: `pb-rel-group is-${kind}` });
 			const h = grp.createDiv({ cls: "pb-d-label" });
 			setIcon(h.createSpan({ cls: "pb-rel-icon" }), icon);
-			h.appendText(`${label} ${items.length}`);
-			if (!items.length) grp.createDiv({ cls: "pb-muted", text: empty });
+			h.appendText(label);
 			const ul = grp.createEl("ul");
 			for (const r of items) {
 				const li = ul.createEl("li", { cls: "pb-rel-item" });
@@ -1250,29 +1241,49 @@ export class PinboardView extends ItemView {
 					const a = li.createEl("a", { cls: "internal-link", text: r.label, href: "#" });
 					a.addEventListener("click", (e) => {
 						e.preventDefault();
-						this.openPath(r.path!, Keymap.isModEvent(e));
+						if (kind === "project") void this.plugin.openProjectAt(r.path!);
+						else this.openPath(r.path!, Keymap.isModEvent(e));
 					});
 				} else li.createSpan({ text: r.label });
 				if (r.status) li.createSpan({ cls: "pb-rel-status", text: r.status });
-				if (r.broken) li.createSpan({ cls: "pb-rel-warn", text: "찾을 수 없음", attr: { title: "projects·project_ids에 있지만 프로젝트 허브를 찾지 못했어요" } });
-				else if (r.oneSided) li.createSpan({ cls: "pb-rel-warn", text: "한쪽만 연결", attr: { title: "목표의 projects·project_ids와 허브의 goals 중 한쪽에만 있어요" } });
-				if (kind === "habit" && !main && r.id) this.smallBtn(li, "연결 해제", "요소와 결과물은 유지해요", () => this.pickFlywheel(g, r.id!), "unlink");
-				if (kind !== "project" || main) continue;
-				const acts = li.createSpan({ cls: "pb-rel-acts" });
-				if (r.oneSided && r.path) this.smallBtn(acts, "고치기", "양쪽 모두 연결해요 (목표의 projects·project_ids와 허브의 goals)", () => this.linkProject(g, r.path!, true));
-				if (r.path) this.smallBtn(acts, "연결 해제", "목표와 허브 양쪽에서 연결을 지워요", () => this.linkProject(g, r.path!, false));
-				else this.smallBtn(acts, "목록에서 빼기", "목표의 projects·project_ids에서 지워요", () => this.dropBrokenLink(g, r));
+				if (r.broken) tip(li.createSpan({ cls: "pb-rel-warn", text: "⚠" }), "프로젝트를 찾을 수 없어요. ⋯에서 목록에서 뺄 수 있어요.");
+				else if (r.oneSided) tip(li.createSpan({ cls: "pb-rel-warn", text: "⚠" }), "연결이 한쪽에만 기록돼 있어요. ⋯에서 고칠 수 있어요.");
+				if (main || kind === "memo") continue;
+				const more = li.createEl("button", { cls: "clickable-icon pb-rel-more", attr: { type: "button", "aria-label": "연결 메뉴" } });
+				setIcon(more, "more-horizontal");
+				more.addEventListener("click", (e) => {
+					e.stopPropagation();
+					if (!this.canNavigate()) return;
+					const m = new Menu();
+					const run = (fn: () => Promise<void>) => () => void fn().catch((err) => new Notice(`MyLogs: ${err instanceof Error ? err.message : String(err)}`, 12000));
+					if (kind === "habit" && r.id) m.addItem((i) => i.setTitle("연결 해제").setIcon("unlink").onClick(run(() => this.pickFlywheel(g, r.id!))));
+					if (kind === "project") {
+						if (r.oneSided && r.path) m.addItem((i) => i.setTitle("연결 고치기").setIcon("link").onClick(run(() => this.linkProject(g, r.path!, true))));
+						if (r.path) m.addItem((i) => i.setTitle("연결 해제").setIcon("unlink").onClick(run(() => this.linkProject(g, r.path!, false))));
+						else m.addItem((i) => i.setTitle("목록에서 빼기").setIcon("x").onClick(run(() => this.dropBrokenLink(g, r))));
+					}
+					m.showAtMouseEvent(e);
+				});
 			}
-			if (kind === "project" && !main) {
-				const row = grp.createDiv({ cls: "pb-rel-add" });
-				this.smallBtn(row, "프로젝트 연결…", "Project Folders의 프로젝트를 골라 양쪽에 연결해요", () => this.pickProject(g), "link");
-				this.smallBtn(row, "새 프로젝트 만들고 연결…", "새 프로젝트를 만들고 이 목표에 연결해요", () => this.newProjectFor(g), "folder-plus");
-			}
-			if (kind === "habit" && !main) this.smallBtn(grp, "Flywheel 연결", "기존 요소를 이 목표에 연결해요", () => this.pickFlywheel(g), "repeat");
 		};
-		group("project", "프로젝트", "folder-kanban", "연결된 프로젝트가 없어요.");
-		group("habit", "Flywheel", "repeat", "연결된 Flywheel 요소가 없어요.");
-		group("memo", "메모 (수단)", "sticky-note", "「수단」 섹션이 비어 있어요.");
+		group("project", "프로젝트", "folder-kanban");
+		group("habit", "Flywheel", "repeat");
+		group("memo", "메모", "sticky-note");
+		if (!rel.length) c.createDiv({ cls: "pb-muted", text: main ? "Sub Goal에서 프로젝트나 Flywheel을 연결해요." : "아직 연결된 일이 없어요." });
+		if (!main) {
+			const add = c.createEl("button", { cls: "pb-small-btn pb-rel-addbtn", attr: { type: "button" } });
+			setIcon(add.createSpan({ cls: "pb-btn-icon" }), "plus");
+			add.appendText("연결");
+			add.addEventListener("click", (e) => {
+				if (!this.canNavigate()) return;
+				const m = new Menu();
+				const run = (fn: () => Promise<void>) => () => void fn().catch((err) => new Notice(`MyLogs: ${err instanceof Error ? err.message : String(err)}`, 12000));
+				m.addItem((i) => i.setTitle("기존 프로젝트 연결…").setIcon("link").onClick(run(() => this.pickProject(g))));
+				m.addItem((i) => i.setTitle("새 프로젝트 만들고 연결…").setIcon("folder-plus").onClick(run(() => this.newProjectFor(g))));
+				m.addItem((i) => i.setTitle("Flywheel 연결…").setIcon("repeat").onClick(run(() => this.pickFlywheel(g))));
+				m.showAtMouseEvent(e);
+			});
+		}
 	}
 
 	private smallBtn(parent: HTMLElement, text: string, title: string, run: () => Promise<void>, icon?: string): void {
