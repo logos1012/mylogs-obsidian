@@ -1,3 +1,4 @@
+import { toggleLinkedProjectTask } from "./projects/task-actions.ts";
 import {
 	Component,
 	ItemView,
@@ -179,7 +180,7 @@ function renderItem(li: HTMLElement, sl: SourceLine, it: ParsedItem, opts: ItemR
 	for (const tag of it.tags) meta.push(metaEl.createSpan({ cls: "ml-tag", text: `#${tag}` }));
 	const flywheel = kind === "task" && isFlywheelLine(sl.line);
 	for (const [k, v] of it.fields) {
-		if (k === "goal") continue;
+		if (k === "goal" || k === "task") continue;
 		if (flywheel && (k === "flywheel" || k === "missed")) continue; // shown as the badge / red dot below
 		const label = FIELD_LABEL[k] ?? k;
 		const text = k === "moved" ? `${label} ${v}` : `${label}: ${v}`;
@@ -915,6 +916,8 @@ export class DailyPadView extends ItemView {
 		if (!file) return;
 		li.addClass("is-pending");
 		const date = this.date;
+  try { if (await toggleLinkedProjectTask(this.plugin, file.path, sl.index, sl.line, todayIso())) { this.renderDesk(await this.readDesk()); return; } }
+  catch(e) { new Notice(e instanceof Error ? e.message : String(e)); this.renderDesk(await this.readDesk()); return; }
 		const result = await this.processToggle(file, (data) => {
 			const sec = findDaySection(data, date);
 			if (!sec.found) return null;

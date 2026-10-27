@@ -1,3 +1,5 @@
+import { toggleLinkedProjectTask } from "../projects/task-actions.ts";
+import { scheduleTarget } from "../projects/schedule-dnd.ts";
 import { ItemView, Keymap, Menu, moment, normalizePath, Notice, Platform, setIcon, type TAbstractFile, TFile, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { loadMilestoneCalendar, renderMilestoneMarkers, renderMilestoneIssues, watchesMilestoneProjects, type MilestoneCalendar } from "../projects/milestone-calendar-ui.ts";
@@ -368,7 +370,7 @@ export class DeskCalendarView extends ItemView {
 	}
 
 	private renderMilestoneRange(parent: HTMLElement, from: string, to: string, showDate = false): void {
-		renderMilestoneMarkers(parent, this.milestones.markers.filter(m => m.date >= from && m.date <= to), todayIsoLocal(), path => void this.plugin.openProjectAt(path), showDate);
+		renderMilestoneMarkers(parent, this.milestones.markers.filter(m => m.date >= from && m.date <= to), todayIsoLocal(), path => void this.plugin.openProjectAt(path), showDate, this.plugin);
 	}
 
 	private renderBands(root: HTMLElement, cur: MonthData, ctx: Ctx): void {
@@ -470,6 +472,8 @@ export class DeskCalendarView extends ItemView {
 	private renderDayCell(row: HTMLElement, iso: string, cur: MonthData, ctx: Ctx): void {
 		const wd = weekdayMon0(iso);
 		const cell = row.createDiv({ cls: `dc-cell dc-day dc-wd${wd}` });
+		scheduleTarget(cell, this.plugin, {kind:"day",date:iso}, () => this.reload());
+		cell.setAttr("tabindex", "0"); cell.setAttr("aria-label", `${iso} 날짜 칸`);
 		const inMonth = iso.slice(0, 7) === cur.key;
 		const data = ctx.months.find((m) => m.key === iso.slice(0, 7));
 		const items = data?.days.get(iso) ?? [];
@@ -577,7 +581,7 @@ export class DeskCalendarView extends ItemView {
 		if (it.item.time) body.createSpan({ cls: "dc-tm", text: it.item.time });
 		body.createSpan({ cls: "dc-txt", text: it.item.text });
 		if (it.item.movedTo) meta.createSpan({ cls: "dc-fld dc-mto", text: `→ ${it.item.movedTo}` });
-		for (const [k, v] of it.item.fields) if (k !== "goal") {
+		for (const [k, v] of it.item.fields) if (k !== "goal" && k !== "task") {
 			if (k === "project") {
 				const b = meta.createEl("button", { cls: "dc-fld ml-route-chip", text: `프로젝트 ${v}`, attr: { type: "button" } });
 				b.addEventListener("click", e => { e.stopPropagation(); void this.plugin.openProjectAt(v); });
@@ -596,7 +600,7 @@ export class DeskCalendarView extends ItemView {
 				e.preventDefault();
 				e.stopPropagation();
 				li.addClass("is-pending");
-				void this.exec(planToggle(it, ctx.today));
+				void this.toggleProjectAware(it, ctx.today);
 			};
 			sym.addEventListener("click", toggle);
 			sym.addEventListener("keydown", (e) => {
@@ -631,6 +635,14 @@ export class DeskCalendarView extends ItemView {
 			this.openMenu(e, it, kind);
 		});
 	}
+
+	private async toggleProjectAware(it: DeskItem, today: string): Promise<void> {
+  if(this.busy)return; this.busy=true; let handled=false;
+  try { handled=await toggleLinkedProjectTask(this.plugin,this.monthPath(it.file),it.index,it.line,today); }
+  catch(e){handled=true;new Notice(e instanceof Error?e.message:String(e));}
+  finally{this.busy=false;}
+  if(handled)await this.reload();else await this.exec(planToggle(it,today));
+ }
 
 	// ── drag and drop ──
 
@@ -691,7 +703,7 @@ export class DeskCalendarView extends ItemView {
 				i
 					.setTitle(it.item.status === "done" ? "완료 취소" : "완료")
 					.setIcon("check")
-					.onClick(() => void this.exec(planToggle(it, ctx.today))),
+					.onClick(() => void this.toggleProjectAware(it, ctx.today)),
 			);
 		}
 		if (kind === "day" && isOpenTask(it)) {

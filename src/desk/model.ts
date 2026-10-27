@@ -327,7 +327,7 @@ export function parseMonthFile(text: string, year: number, month: number): Month
 			index: idx,
 			line: lines[idx],
 			item: parsed,
-			key: normKey(parsed.text),
+			key: Object.fromEntries(parsed.fields).task ? `task:${Object.fromEntries(parsed.fields).task}` : normKey(parsed.text),
 			problems: [...parsed.problems],
 			section: section === "during" ? "during" : sub === "alloc" ? "alloc" : "day",
 			assign: [],

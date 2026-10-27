@@ -9588,3 +9588,29 @@ body.is-mobile button.ml-milestone-marker { min-height: 44px; }
  .mylogs-pinboard-container .pb-inline-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
  .mylogs-pinboard-container .pb-inline-metric:last-child { grid-column: 1 / -1; }
 }
+
+/* Project execution: one task list next to a quiet, real month calendar. */
+.pf-schedule{margin:16px 0;border-top:1px solid var(--background-modifier-border);padding-top:16px;min-width:0}
+.pf-schedule h2{font-size:18px;margin:0 0 6px}.pf-schedule h3{font-size:14px;margin:12px 0 8px}
+.pf-schedule-head p,.pf-schedule-muted{color:var(--text-muted);font-size:12px}.pf-schedule-head p{margin:0 0 10px}
+.pf-schedule-selection{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:40px;font-size:13px;margin-bottom:10px;color:var(--text-muted)}
+.pf-schedule-layout{display:grid;grid-template-columns:minmax(190px, .8fr) minmax(320px,1.2fr);gap:16px;align-items:start}
+.pf-schedule-list,.pf-schedule-calendar{min-width:0}.pf-schedule-calendar{border:1px solid var(--background-modifier-border);border-radius:8px;overflow:hidden}
+.pf-schedule-nav{display:flex;align-items:center;gap:6px;padding:8px}.pf-schedule-nav strong{flex:1;font-size:16px}
+.pf-schedule-slots{display:flex;flex-wrap:wrap;gap:4px;padding:0 8px 8px}.pf-schedule-slots button{font-size:11px;padding:4px 7px;min-height:30px}
+.pf-schedule-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}.pf-schedule-weekday{text-align:center;font-size:11px;color:var(--text-muted);padding:6px}
+.pf-schedule-day{min-height:82px;border-top:1px solid var(--background-modifier-border);border-right:1px solid var(--background-modifier-border);padding:4px;min-width:0;cursor:pointer}.pf-schedule-day:nth-child(7n){border-right:0}
+.pf-schedule-day.is-today .pf-schedule-daynum{background:var(--interactive-accent);color:var(--text-on-accent);border-radius:50%}.pf-schedule-daynum{display:inline-flex;align-items:center;justify-content:center;width:23px;height:23px;font-size:12px}
+.pf-schedule-day button{display:block;text-align:left;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;line-height:1.5;padding:3px 4px;height:auto;min-height:26px;box-shadow:none;margin:3px 0}
+.pf-schedule .pf-schedule-milestone{color:var(--text-normal);border:1px solid color-mix(in srgb,#8d6ac4 35%,transparent);background:color-mix(in srgb,#8d6ac4 12%,var(--background-primary));text-align:left}
+.pf-schedule-list>.pf-schedule-milestone{display:block;width:100%;margin:4px 0;white-space:normal;min-height:36px}
+.pf-task-form{display:flex;gap:4px;flex-wrap:wrap;margin:8px 0}.pf-task-form input{flex:1;min-width:100px;width:100px;font-size:16px}.pf-task-row{display:flex;gap:6px;align-items:center;border-bottom:1px solid var(--background-modifier-border);min-height:42px;padding:4px 0}.pf-task-row>input{flex:none;margin:0 3px}
+.pf-task-body{flex:1;min-width:0}.pf-task-body .pf-task-title{display:block;width:100%;height:auto;white-space:normal;background:none;border:0;box-shadow:none;text-align:left;padding:2px 0;font-size:13px}.pf-task-body>.pf-schedule-muted{display:block;font-size:11px}.pf-task-row.is-done .pf-task-title{text-decoration:line-through;color:var(--text-muted)}
+.pf-task-more{position:relative;flex:none}.pf-task-more>summary{list-style:none;cursor:pointer;min-width:32px;min-height:32px;text-align:center;padding:5px}.pf-task-more[open]{padding:4px;background:var(--background-secondary);border-radius:5px}.pf-task-more button{display:block;font-size:12px}
+.ml-schedule-draggable{cursor:grab}.ml-schedule-draggable.is-dragging{opacity:.5}.ml-schedule-target.ml-schedule-over{outline:2px solid var(--interactive-accent);outline-offset:-2px;background:color-mix(in srgb,var(--interactive-accent) 14%,var(--background-primary))}
+.ml-schedule-target:focus-visible{outline:2px solid var(--interactive-accent);outline-offset:-2px}.ml-milestone-markers [role=listitem]{display:flex;align-items:center;gap:2px}.ml-milestone-marker{flex:1;min-width:0}.ml-milestone-move{flex:none;font-size:10px;padding:3px 4px;min-height:28px;height:auto;box-shadow:none}
+.wc-mini .ml-schedule-target{cursor:pointer}.pf-schedule.is-busy{opacity:.65;pointer-events:none}
+@media(max-width:800px){.pf-schedule-layout{grid-template-columns:1fr}.pf-schedule-day{min-height:88px}.pf-schedule-day button{font-size:10px;min-height:30px}.pf-schedule button,.pf-task-more>summary{min-height:44px}.pf-schedule-day button{min-height:32px}.pf-schedule-slots button{font-size:12px}.pf-task-form input{min-height:44px}.pf-task-title{min-height:44px}.ml-milestone-move{min-height:44px;padding:4px 6px}.wc-mini .ml-schedule-target{min-height:30px}}
+.pf-schedule-chosen{font-size:12px;padding:4px 10px 10px;color:var(--text-accent)}
+.pf-schedule{container-type:inline-size}
+@container (max-width:600px){.pf-schedule-layout{grid-template-columns:1fr}.pf-schedule-list{display:block}.pf-schedule-day{min-height:90px}.pf-schedule-day button{white-space:normal;overflow-wrap:anywhere;text-align:left}.pf-schedule-list>.pf-schedule-milestone{display:inline-block;width:auto;max-width:100%;margin-right:4px}}
