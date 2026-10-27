@@ -1,4 +1,6 @@
 import { ItemView, Keymap, Menu, Notice, Platform, setIcon, type TAbstractFile, TFile, type WorkspaceLeaf } from "obsidian";
+import { mountAppNav } from "../ui/nav.ts";
+import { tip } from "../ui/tip.ts";
 import type MyLogsPlugin from "../main.ts";
 import { addDays } from "../parser.ts";
 import { todayIsoLocal, shiftMonth } from "../desk/model.ts";
@@ -125,6 +127,7 @@ export class DrawerView extends ItemView {
 		this.contentEl.empty();
 		this.contentEl.addClass("mylogs-drawer-container");
 		this.rootEl = this.contentEl.createDiv({ cls: "mylogs-drawer" });
+		mountAppNav(this);
 		const onFile = (f: TAbstractFile, old?: string) => {
 			const paths = this.watchedPaths();
 			if (paths.includes(f.path) || (old && paths.includes(old))) this.scheduleReload();
@@ -262,15 +265,14 @@ export class DrawerView extends ItemView {
 		const top = root.createEl("header", { cls: "dr-top" });
 		const left = top.createDiv();
 		left.createDiv({ cls: "dr-eyebrow", text: "Drawer · 서랍" });
-		left.createEl("h1", { text: "하기로 했는데 지금은 아닌 것" });
-		left.createDiv({ cls: "dr-sub", text: "날짜 대신 다시 꺼낼 조건을 붙여 둔다. 들어오고, 분류되고, 나간다." });
+		tip(left.createEl("h1", { text: "하기로 했는데 지금은 아닌 것" }), "날짜 대신 다시 꺼낼 조건을 붙여 둬요. 들어오고, 분류되고, 나가요.");
 		const right = top.createDiv({ cls: "dr-right" });
 		const n = this.data ? activeCount(this.data) : 0;
 		const cnt = right.createDiv({ cls: "dr-count" });
 		cnt.createSpan({ cls: "dr-count-n", text: String(n) });
 		cnt.appendText(" 항목");
-		if (n > TOO_MANY) cnt.createSpan({ cls: "dr-badge dr-warn", text: `${TOO_MANY}개 초과 · 입구가 느슨해졌어요`, attr: { title: "보통 10~30개를 유지해요. 결정 대기와 못 한 일의 「서랍에」가 너무 쉽게 열려 있지 않은지 봐요." } });
-		else if (this.data) cnt.createSpan({ cls: "dr-count-hint", text: "보통 10~30개" });
+		if (n > TOO_MANY) tip(cnt.createSpan({ cls: "dr-badge dr-warn", text: `${TOO_MANY}개 초과` }), "보통 10~30개를 유지해요. 결정 대기와 못 한 일의 「서랍에」가 너무 쉽게 열려 있지 않은지 봐요.");
+		else if (this.data) tip(cnt, "보통 10~30개를 유지해요");
 		cnt.createSpan({ cls: "dr-today", text: `오늘 ${dotDate(today)}` });
 		const row = right.createDiv({ cls: "dr-controls" });
 		if (this.exists) {
@@ -282,8 +284,7 @@ export class DrawerView extends ItemView {
 	private renderEmpty(root: HTMLElement): void {
 		const card = root.createDiv({ cls: "dr-empty" });
 		card.createDiv({ cls: "dr-empty-title", text: "Drawer 파일이 아직 없어요" });
-		card.createEl("code", { text: drawerPath(this.plugin) });
-		card.createEl("p", { text: "보류 · 아이디어 · 프로젝트 후보 세 섹션과 변경 기록이 있는 빈 틀을 만들어요. 06 Drawer/AGENTS.md 「3. 파일 형식」과 같아요." });
+		tip(card.createEl("p", { text: "보류 · 아이디어 · 프로젝트 후보 세 칸이 있는 빈 서랍을 만들어요." }), drawerPath(this.plugin));
 		this.btn(card, "Drawer.md 만들기", () => void this.run(() => createDrawerFile(this.plugin)), { icon: "plus", cls: "dr-btn-primary" });
 	}
 
@@ -294,8 +295,7 @@ export class DrawerView extends ItemView {
 		const head = sec.createDiv({ cls: "dr-cands-head" });
 		const c = this.cands;
 		const today = todayIsoLocal();
-		head.createSpan({ cls: "dr-lbl", text: c && c.date !== today ? "어제 들어온 후보" : "오늘 들어온 후보" });
-		head.createSpan({ cls: "dr-cands-hint", text: c ? `Daily Pad ${dotDate(c.date)} · 결정 대기 · 넣기 / 놓아주기 둘 중 하나` : "Daily Pad 결정 대기의 #서랍후보 · #프로젝트후보가 여기에 보여요" });
+		tip(head.createSpan({ cls: "dr-lbl", text: c && c.date !== today ? "어제 들어온 후보" : "오늘 들어온 후보" }), c ? `Daily Pad ${dotDate(c.date)} 결정 대기에서 왔어요 · 넣기 / 놓아주기 둘 중 하나를 골라요` : "Daily Pad 결정 대기의 서랍 후보 · 프로젝트 후보가 여기에 보여요");
 		if (!c) {
 			sec.createDiv({ cls: "dr-cands-none", text: "오늘은 들어온 후보가 없어요." });
 			return;
@@ -311,7 +311,7 @@ export class DrawerView extends ItemView {
 			const body = li.createDiv({ cls: "dr-cand-body" });
 			body.createDiv({ cls: "dr-cand-text", text: cand.text });
 			const meta = body.createDiv({ cls: "dr-meta" });
-			if (cand.when) meta.createSpan({ cls: "dr-when", text: cand.when, attr: { title: "다시 꺼낼 조건 (when::)" } });
+			if (cand.when) meta.createSpan({ cls: "dr-when", text: cand.when, attr: { title: "다시 꺼낼 조건" } });
 			else meta.createSpan({ cls: "dr-when is-missing", text: "조건 없음", attr: { title: "넣을 때 다시 꺼낼 조건을 물어요" } });
 			this.renderSources(meta, cand.from);
 			if (cand.test && this.plugin.settings.showTestMarkers) meta.createSpan({ cls: "dr-tdot", attr: { title: "#test 테스트 데이터" } });
@@ -348,10 +348,8 @@ export class DrawerView extends ItemView {
 	private renderColumn(board: HTMLElement, col: ColumnData, data: DrawerData, today: string): void {
 		const c = board.createDiv({ cls: `dr-col sec-${DRAWER_SECTIONS.indexOf(col.section)}` });
 		const head = c.createDiv({ cls: "dr-col-head" });
-		head.createSpan({ cls: "dr-col-name", text: col.section });
+		tip(head.createSpan({ cls: "dr-col-name", text: col.section }), SECTION_HINT[col.section]);
 		head.createSpan({ cls: "dr-col-count", text: String(col.active.length) });
-		c.createDiv({ cls: "dr-col-hint", text: SECTION_HINT[col.section] });
-		if (!data.sections[col.section]) c.createDiv({ cls: "dr-col-missing", text: `파일에 「## ${col.section}」 제목이 없어요. 넣을 때 만들어요.` });
 		this.addZone(c, {
 			accepts: (d) => (d.kind === "item" ? isActive(d.item) && d.item.section !== col.section : true),
 			drop: (d) => {
@@ -399,7 +397,7 @@ export class DrawerView extends ItemView {
 
 		const meta = card.createDiv({ cls: "dr-meta" });
 		if (it.when) {
-			const chip = meta.createSpan({ cls: `dr-when${goal ? " is-goal" : ""}${it.when === WHEN_UNDECIDED ? " is-undecided" : ""}`, text: goal ? `목표 ${goal}` : it.when, attr: { title: goal ? `Pinboard 목표 ${goal} 열기 · 달성되면 꺼낼 때예요` : "다시 꺼낼 조건 (when::)" } });
+			const chip = meta.createSpan({ cls: `dr-when${goal ? " is-goal" : ""}${it.when === WHEN_UNDECIDED ? " is-undecided" : ""}`, text: goal ? `목표 ${goal}` : it.when, attr: { title: goal ? `Pinboard 목표 ${goal} 열기 · 달성되면 꺼낼 때예요` : "다시 꺼낼 조건" } });
 			if (goal) {
 				chip.addEventListener("click", (e) => {
 					e.stopPropagation();
@@ -451,14 +449,13 @@ export class DrawerView extends ItemView {
 	private renderDock(root: HTMLElement): void {
 		const dock = root.createEl("section", { cls: "dr-dock" });
 		const take = dock.createDiv({ cls: "dr-dock-group dr-take" });
-		take.createDiv({ cls: "dr-lbl", text: "꺼내기" });
-		take.createDiv({ cls: "dr-dock-hint", text: "카드를 끌어다 놓으면 보낸 곳에 (from:: Drawer) 줄을 만들고 Drawer 줄은 [>]로 남겨요" });
+		tip(take.createDiv({ cls: "dr-lbl", text: "꺼내기" }), "카드를 끌어다 놓으면 보낸 곳에 적고, 서랍에는 꺼낸 기록이 남아요");
 		const targets = take.createDiv({ cls: "dr-targets" });
 		const target = (id: TakeTarget, icon: string, label: string, sub: string) => {
 			const t = targets.createDiv({ cls: `dr-target tg-${id}` });
 			setIcon(t.createSpan({ cls: "dr-target-icon" }), icon);
 			t.createDiv({ cls: "dr-target-name", text: label });
-			t.createDiv({ cls: "dr-target-sub", text: sub });
+			tip(t, sub);
 			this.addZone(t, {
 				accepts: (d) => d.kind === "item" && isActive(d.item),
 				drop: (d) => {
@@ -473,12 +470,11 @@ export class DrawerView extends ItemView {
 		target("project", "folder-kanban", "프로젝트로", "새 프로젝트 창을 이름·출처로 채워 열기");
 
 		const letgo = dock.createDiv({ cls: "dr-dock-group dr-letgo" });
-		letgo.createDiv({ cls: "dr-lbl", text: "놓아주기" });
-		letgo.createDiv({ cls: "dr-dock-hint", text: "이유를 한 줄 적으면 [-] … (why::)로 남겨요" });
+		tip(letgo.createDiv({ cls: "dr-lbl", text: "놓아주기" }), "이유를 한 줄 적으면 놓아준 기록으로 남아요");
 		const t = letgo.createDiv({ cls: "dr-target tg-letgo" });
 		setIcon(t.createSpan({ cls: "dr-target-icon" }), "circle-slash");
 		t.createDiv({ cls: "dr-target-name", text: "놓아주기" });
-		t.createDiv({ cls: "dr-target-sub", text: "하지 않기로 한다" });
+		tip(t, "하지 않기로 해요");
 		this.addZone(t, {
 			accepts: (d) => d.kind === "item" && isActive(d.item),
 			drop: (d) => {
@@ -627,7 +623,7 @@ export class DrawerView extends ItemView {
 			areas: this.pinboardAreas(),
 			taken: await takenIdsAndNames(this.plugin, []),
 			prefill: { name: it.text, from: it.from, action: "" },
-			note: `Drawer 「${it.section}」의 「${it.text}」에서 시작해요. 만들면 Drawer 줄은 [>] … → [[허브]]로 남고 변경 기록에 「꺼냄」이 적혀요.`,
+			note: `Drawer 「${it.section}」의 「${it.text}」에서 시작해요. 만들면 Drawer에는 꺼낸 기록이 남아요.`,
 		});
 		if (!input) return;
 		await this.run(async () => {
@@ -653,7 +649,7 @@ export class DrawerView extends ItemView {
 
 	private async chooseLetGo(it: DrawerItem): Promise<void> {
 		const why = await promptText(this.app, "놓아주기", {
-			desc: `「${it.text}」을(를) 하지 않기로 해요. 이유를 한 줄로 남겨요. 줄은 [-] … (why:: 이유)로 남고 지우지 않아요.`,
+			desc: `「${it.text}」을(를) 하지 않기로 해요. 이유를 한 줄로 남겨요. 기록은 지우지 않고 남아요.`,
 			placeholder: "예: 지금 목표와 관계없음",
 			okText: "놓아주기",
 		});
@@ -666,7 +662,7 @@ export class DrawerView extends ItemView {
 			desc: "내용 · 조건 · 맥락 · 섹션을 고쳐요. reviewed는 오늘로 바뀌고, from·added·태그는 그대로예요. 섹션이 바뀔 때만 변경 기록에 적어요.",
 			fields: [
 				{ key: "text", label: "내용", type: "text", value: it.text },
-				{ key: "when", label: "다시 꺼낼 조건 (when::)", type: "text", value: it.when, desc: "날짜를 쓰지 않아요. Pinboard 목표 id(G-2026-01.2)면 달성 시 꺼낼 때예요." },
+				{ key: "when", label: "다시 꺼낼 조건", type: "text", value: it.when, desc: "날짜를 쓰지 않아요. Pinboard 목표 id(G-2026-01.2)면 달성 시 꺼낼 때예요." },
 				{ key: "context", label: "맥락", type: "text", value: it.context?.text ?? "", placeholder: "비우면 맥락 줄을 지워요" },
 				{ key: "section", label: "섹션", type: "select", value: it.section, options: DRAWER_SECTIONS.map((s) => [s, s] as [string, string]) },
 			],
@@ -700,7 +696,7 @@ export class DrawerView extends ItemView {
 			removes,
 			notes: ["변경 기록에는 「삭제」 한 줄이 남아요."],
 			footer: "잘못 넣은 줄, 중복, 테스트 데이터를 지울 때 써요.",
-			alt: isActive(it) ? { label: "놓아주기 (기록 남김)", desc: "하지 않기로 한 일이면 지우지 말고 놓아주기로 남길 수 있어요: [-] … (why:: 이유)." } : undefined,
+			alt: isActive(it) ? { label: "놓아주기 (기록 남김)", desc: "하지 않기로 한 일이면 지우지 말고 이유와 함께 놓아주기로 남길 수 있어요." } : undefined,
 		});
 		if (ans === "delete") await this.run(() => deleteDrawerItem(this.plugin, it));
 		else if (ans === "alt") await this.chooseLetGo(it);

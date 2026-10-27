@@ -11,6 +11,8 @@
  */
 
 import { debounce, ItemView, Keymap, Menu, normalizePath, Notice, Platform, setIcon, type TAbstractFile, TFile, type WorkspaceLeaf } from "obsidian";
+import { mountAppNav } from "../ui/nav.ts";
+import { tip } from "../ui/tip.ts";
 import type MyLogsPlugin from "../main.ts";
 import { toIsoDate } from "../parser.ts";
 import { createSkill, discardSkill, editSkill, fixRowTable, loadToolbox, nextId, registerSkill, registryPath, requestRun, setStatus, takenIdsAndNames, toolboxRoot, type ToolboxData } from "./actions.ts";
@@ -84,6 +86,7 @@ export class ToolboxView extends ItemView {
 		this.contentEl.empty();
 		this.contentEl.addClass("mylogs-toolbox-container");
 		this.rootEl = this.contentEl.createDiv({ cls: "mylogs-toolbox" });
+		mountAppNav(this);
 		this.registerEvent(
 			this.app.metadataCache.on("changed", (f) => {
 				if (this.watched(f.path)) this.scheduleRefresh();
@@ -274,9 +277,8 @@ export class ToolboxView extends ItemView {
 		const entries = d.entries.filter((e) => entryKind(e) === kind);
 		const sec = root.createDiv({ cls: `tb-section kind-${kind}` });
 		const head = sec.createDiv({ cls: "tb-section-head" });
-		head.createEl("h2", { text: kind });
+		tip(head.createEl("h2", { text: kind }), KIND_LEAD[kind]);
 		head.createSpan({ cls: "tb-section-count", text: `${entries.length}` });
-		head.createSpan({ cls: "tb-section-lead", text: KIND_LEAD[kind] });
 		if (!entries.length) {
 			sec.createDiv({ cls: "tb-section-empty", text: `${kind} 스킬이 없어요.` });
 			return;

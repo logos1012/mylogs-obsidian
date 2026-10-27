@@ -396,8 +396,7 @@ export function renderStrategyMap(parent: HTMLElement, input: MapInput, cb: MapC
 	if (isEmptyMap(input)) {
 		const empty = root.createDiv({ cls: "pbm-empty" });
 		icon(empty, "target", "pbm-empty-icon");
-		empty.createDiv({ cls: "pbm-empty-title", text: `${input.year}년 목표가 아직 없어요` });
-		empty.createDiv({ cls: "pbm-empty-hint", text: "목표를 만들면 Main → Sub → 관련 업무가 지도로 이어져요." });
+		empty.createDiv({ cls: "pbm-empty-title", text: `${input.year}년 목표가 아직 없어요`, attr: { title: "목표를 만들면 Main → Sub → 관련 업무가 지도로 이어져요." } });
 		return {
 			destroy() {
 				ac.abort();

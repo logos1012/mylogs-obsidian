@@ -15,6 +15,8 @@
  */
 
 import { Component, ItemView, Keymap, MarkdownRenderer, Menu, moment, normalizePath, Notice, Platform, setIcon, type TAbstractFile, TFile, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
+import { mountAppNav } from "../ui/nav.ts";
+import { tip } from "../ui/tip.ts";
 import type MyLogsPlugin from "../main.ts";
 import { addDays, fromIsoDate } from "../parser.ts";
 import { shiftMonthKey, type DiaryMonth, isMonthKey } from "../mylife/model.ts";
@@ -443,6 +445,7 @@ export class DiaryView extends ItemView {
 		this.contentEl.empty();
 		this.contentEl.addClass("mylogs-diary-container");
 		this.rootEl = this.contentEl.createDiv({ cls: "mylogs-diary" });
+		mountAppNav(this);
 		this.timelineEl = this.rootEl.createDiv({ cls: "dy-timeline" });
 		this.editorEl = this.rootEl.createDiv({ cls: "dy-center" });
 		this.materialEl = this.rootEl.createDiv({ cls: "dy-material" });
@@ -771,9 +774,7 @@ export class DiaryView extends ItemView {
 
 		if (!d.entries.length) {
 			const empty = el.createDiv({ cls: "dy-empty" });
-			empty.createDiv({ cls: "dy-empty-title", text: "아직 쓴 글이 없다" });
-			empty.createEl("code", { cls: "dy-empty-path", text: `${root(this.plugin)}/YYYY/YYYY-MM/` });
-			empty.createDiv({ cls: "dy-empty-hint", text: "「오늘 쓰기」가 지금 시각으로 빈 엔트리를 만든다. 본문은 내가 쓴다." });
+			tip(empty.createDiv({ cls: "dy-empty-title", text: "아직 쓴 글이 없어요" }), "「오늘 쓰기」가 지금 시각으로 빈 엔트리를 만들어요. 본문은 내가 써요.");
 			return;
 		}
 		const shown = filterEntries(d.entries, this.filter);
@@ -967,8 +968,7 @@ export class DiaryView extends ItemView {
 			}
 			const empty = el.createDiv({ cls: "dy-sheet dy-sheet-empty" });
 			empty.createDiv({ cls: "dy-empty-title", text: this.data?.entries.length ? "왼쪽에서 엔트리를 고르세요" : "빈 화면과 커서" });
-			empty.createDiv({ cls: "dy-empty-hint", text: "「오늘 쓰기」는 지금 시각으로 빈 파일을 만든다. 재료는 오른쪽에, 글은 여기에." });
-			const write = empty.createEl("button", { cls: "dy-btn dy-btn-primary", text: "오늘 쓰기", attr: { type: "button" } });
+			const write = tip(empty.createEl("button", { cls: "dy-btn dy-btn-primary", text: "오늘 쓰기", attr: { type: "button" } }), "지금 시각으로 빈 엔트리를 만들어요. 재료는 오른쪽에, 글은 여기에.");
 			write.addEventListener("click", () => void this.writeToday());
 			this.renderMaterialToggle(el);
 			return;
@@ -1094,8 +1094,7 @@ export class DiaryView extends ItemView {
 		const inFrom = (link: string) => !!sel?.from.includes(link);
 
 		const head = el.createDiv({ cls: "dy-mat-head" });
-		head.createDiv({ cls: "dy-eyebrow", text: "재료" });
-		head.createDiv({ cls: "dy-mat-hint", text: "보여 주기만 한다. 누르면 from에 링크가 남고, 본문에는 들어가지 않는다." });
+		tip(head.createDiv({ cls: "dy-eyebrow", text: "재료" }), "보여 주기만 해요. 누르면 이 글의 출처로 링크가 남고, 본문에는 들어가지 않아요.");
 
 		// ① 오늘 Daily Pad
 		const m = this.material;
@@ -1181,7 +1180,7 @@ export class DiaryView extends ItemView {
 		nav.createSpan({ cls: "dy-mat-sec-sub", text: month });
 		const next = nav.createEl("button", { cls: "dy-btn dy-btn-icon dy-btn-tiny", text: "▶", attr: { type: "button", "aria-label": "다음 달" } });
 		next.addEventListener("click", () => void this.showMyLifeMonth(shiftMonthKey(month, 1)));
-		sec.createDiv({ cls: "dy-mat-hint", text: "그 달 Daily의 깨달음·감상 · 로그와 Monthly의 깨달음·감상, 원문 그대로" });
+		tip(nav, "그 달 Daily의 깨달음·감상 · 로그와 Monthly의 깨달음·감상, 원문 그대로");
 		if (!ml || !ml.entries.length) {
 			sec.createDiv({ cls: "dy-mat-none", text: "이 달의 My Life 기록이 아직 없다" });
 			return;

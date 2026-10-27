@@ -1,4 +1,12 @@
 import { toggleLinkedProjectTask } from "./projects/task-actions.ts";
+import { mountAppNav } from "./ui/nav.ts";
+import { tip } from "./ui/tip.ts";
+import { ItemPopover } from "./ui/popover.ts";
+import { choosePending } from "./pending/actions.ts";
+import type { PendingChoice } from "./pending/ops.ts";
+import { extractCandidates } from "./drawer/candidates.ts";
+import { acceptCandidate, removeCandidateLine } from "./drawer/actions.ts";
+import { askWhen } from "./drawer/modals.ts";
 import {
 	Component,
 	ItemView,
@@ -91,6 +99,12 @@ function normalizeContent(s: string): string {
 interface ItemRenderOptions {
 	showTest: boolean;
 	onToggle?: (sl: SourceLine, el: HTMLElement) => void;
+	/** Add actions to an item's detail popover (click on the item). */
+	menu?: (sl: SourceLine, pop: ItemPopover, li: HTMLElement) => void;
+	/** Extra controls at the end of the row (e.g. 「갈 곳 정하기」). */
+	decorate?: (sl: SourceLine, li: HTMLElement) => void;
+	openGoal?: (id: string) => void;
+	openProject?: (id: string) => void;
 	/** This ISO week's completions per Flywheel element (for the `n/7` badge). */
 	flywheelWeek?: Map<string, number>;
 }
@@ -154,10 +168,6 @@ function renderItem(li: HTMLElement, sl: SourceLine, it: ParsedItem, opts: ItemR
 			});
 		} else {
 			box.addClass("is-readonly");
-			box.setAttr(
-				"title",
-				it.status === "moved" ? "옮긴 일이에요 (v0.1에서는 읽기 전용)" : "놓아준 일이에요 (v0.1에서는 읽기 전용)",
-			);
 		}
 	} else {
 		li.createSpan({ cls: "ml-sym", attr: { "aria-hidden": "true" } });
@@ -168,29 +178,48 @@ function renderItem(li: HTMLElement, sl: SourceLine, it: ParsedItem, opts: ItemR
 	if (it.time) main.createSpan({ cls: "ml-time", text: it.time });
 	main.createSpan({ cls: "ml-txt", text: it.text });
 
+	// The row shows what to read: time, text, tags. Fields (출처, 목표, 미룸, 이유, →) are in the
+	// detail popover (click the item).
 	const meta: HTMLElement[] = [];
 	const metaEl = createSpan({ cls: "ml-meta" });
-	if (it.movedTo) meta.push(metaEl.createSpan({ cls: "ml-moved", text: `→ ${it.movedTo}` }));
-	for (const [m, d] of it.assignRaw) {
-		meta.push(metaEl.createSpan({ cls: "ml-assign", text: `→ ${String(m).padStart(2, "0")}/${String(d).padStart(2, "0")}` }));
-	}
-	for (const w of it.assignWeek) meta.push(metaEl.createSpan({ cls: "ml-assign", text: `→ W${w}` }));
-	if (it.goal) meta.push(metaEl.createSpan({ cls: "ml-goal", text: it.goal, attr: { title: `목표 ${it.goal}` } }));
-	// TODO(MyLogs Plugin 계획.md 「화면 사이의 연결」): goal chip → open the Pinboard goal.
 	for (const tag of it.tags) meta.push(metaEl.createSpan({ cls: "ml-tag", text: `#${tag}` }));
 	const flywheel = kind === "task" && isFlywheelLine(sl.line);
-	for (const [k, v] of it.fields) {
-		if (k === "goal" || k === "task") continue;
-		if (flywheel && (k === "flywheel" || k === "missed")) continue; // shown as the badge / red dot below
-		const label = FIELD_LABEL[k] ?? k;
-		const text = k === "moved" ? `${label} ${v}` : `${label}: ${v}`;
-		meta.push(metaEl.createSpan({ cls: `ml-field ml-field-${k}`, text }));
-	}
-	if (it.test && opts.showTest) meta.push(metaEl.createSpan({ cls: "ml-test", text: "test", attr: { title: "#test 테스트 데이터" } }));
+	if (it.test && opts.showTest) meta.push(tip(metaEl.createSpan({ cls: "ml-test", text: "test" }), "#test 테스트 데이터"));
 	if (meta.length) body.appendChild(metaEl);
+	const detailRows = (pop: ItemPopover) => {
+		pop.title = it.text;
+		pop.badge = `${kind === "task" ? "할 일" : kind === "event" ? "행사" : "메모"}${kind === "task" ? ` · ${STATUS_LABEL[it.status]}` : ""}`;
+		if (it.time) pop.row("시각", it.time);
+		if (it.movedTo) pop.row("보낸 곳", it.movedTo);
+		const assigned = [...it.assignRaw.map(([m, d]) => `${m}/${d}`), ...it.assignWeek.map((w) => `W${w}`)];
+		if (assigned.length) pop.row("배정", assigned.join(", "));
+		if (it.goal) pop.row("목표", it.goal, opts.openGoal ? () => opts.openGoal!(it.goal) : undefined);
+		for (const [k, v] of it.fields) {
+			if (!v || k === "goal" || k === "task" || (flywheel && (k === "flywheel" || k === "missed"))) continue;
+			if (k === "project") pop.row("프로젝트", v, opts.openProject ? () => opts.openProject!(v) : undefined);
+			else pop.row(FIELD_LABEL[k] ?? k, k === "moved" ? `${v}번` : v);
+		}
+		if (it.problems.length) pop.row("형식 확인", it.problems.join(" · "));
+	};
+	li.addClass("is-openable");
+	li.addEventListener("click", (e) => {
+		if ((e.target as HTMLElement).closest("button, a, input")) return;
+		const pop = new ItemPopover();
+		detailRows(pop);
+		opts.menu?.(sl, pop, li);
+		pop.show(body);
+	});
+	li.addEventListener("contextmenu", (e) => {
+		e.preventDefault();
+		const pop = new ItemPopover();
+		detailRows(pop);
+		opts.menu?.(sl, pop, li);
+		pop.show(body);
+	});
 	// A Flywheel line is checked or left; it never gets the 못 한 일 menu (`isFlywheelLine`).
 	if (flywheel) decorateFlywheelLine(li, body, sl.line, opts.flywheelWeek);
-	if (it.problems.length) body.createDiv({ cls: "ml-problems", text: it.problems.join(" · ") });
+	if (it.problems.length) tip(body.createSpan({ cls: "ml-problems", text: "형식 확인" }), it.problems.join(" · "));
+	opts.decorate?.(sl, li);
 }
 
 // ───────────────────────── section panel ─────────────────────────
@@ -230,8 +259,7 @@ class SectionPanel {
 		this.el = parent.createDiv({ cls: `ml-panel ml-section ml-section-${this.key}` });
 		const head = this.el.createDiv({ cls: "ml-panel-head" });
 		const titles = head.createDiv({ cls: "ml-panel-titles" });
-		titles.createEl("h3", { cls: "ml-panel-title", text: this.name });
-		titles.createSpan({ cls: "ml-panel-hint", text: SECTION_HINT[this.key] });
+		tip(titles.createEl("h3", { cls: "ml-panel-title", text: this.name }), SECTION_HINT[this.key]);
 		const tools = head.createDiv({ cls: "ml-panel-tools" });
 		this.statusEl = tools.createSpan({ cls: "ml-save-status" });
 		this.editBtn = tools.createEl("button", { cls: "ml-btn ml-btn-ghost ml-edit-btn", text: "편집", attr: { type: "button" } });
@@ -652,6 +680,7 @@ export class DailyPadView extends ItemView {
 		this.contentEl.empty();
 		this.contentEl.addClass("mylogs-daily-pad-container");
 		this.rootEl = this.contentEl.createDiv({ cls: "mylogs-daily-pad" });
+		mountAppNav(this);
 		if (Platform.isMobile) this.register(trackKeyboard(this.contentEl));
 		this.buildSkeleton();
 
@@ -761,10 +790,9 @@ export class DailyPadView extends ItemView {
 		const markers = result.markers.filter(m => m.date === date), el = this.milestoneEl;
 		el.empty(); el.toggle(!!(markers.length || result.issues.length));
 		if (markers.length) {
-			el.createDiv({ cls: "ml-panel-head" }).createEl("h3", { cls: "ml-panel-title", text: date === todayIso() ? "오늘의 마일스톤" : "이날의 마일스톤" });
+			tip(el.createDiv({ cls: "ml-panel-head" }).createEl("h3", { cls: "ml-panel-title", text: date === todayIso() ? "오늘의 마일스톤" : "이날의 마일스톤" }), "프로젝트의 목표일 · 할 일 체크와는 별개예요");
 			const body = el.createDiv({ cls: "ml-panel-body" });
 			renderMilestoneMarkers(body, markers, todayIso(), path => void this.plugin.openProjectAt(path));
-			body.createDiv({ cls: "ml-panel-hint", text: "프로젝트의 목표일 · 할 일 체크와는 별개예요" });
 		}
 		renderMilestoneIssues(el, result.issues, path => void this.plugin.openProjectAt(path));
 	}
@@ -824,8 +852,6 @@ export class DailyPadView extends ItemView {
 		setIcon(icon, "notebook-pen");
 		const isToday = this.date === todayIso();
 		card.createDiv({ cls: "ml-empty-title", text: isToday ? "오늘의 페이지가 아직 없어요" : "이 날의 페이지가 아직 없어요" });
-		card.createDiv({ cls: "ml-empty-desc", text: "새 장을 만들면 섹션별로 바로 적을 수 있어요." });
-		card.createDiv({ cls: "ml-empty-path", text: this.padPath() });
 		const btn = card.createEl("button", { cls: "ml-btn ml-btn-primary", text: isToday ? "오늘 페이지 만들기" : `${this.date} 페이지 만들기`, attr: { type: "button" } });
 		btn.addEventListener("click", () => void this.createPad(btn));
 	}
@@ -873,8 +899,7 @@ export class DailyPadView extends ItemView {
 		el.empty();
 		const head = el.createDiv({ cls: "ml-panel-head" });
 		const titles = head.createDiv({ cls: "ml-panel-titles" });
-		titles.createEl("h3", { cls: "ml-panel-title", text: "Desk Calendar에서 온 일" });
-		titles.createSpan({ cls: "ml-panel-hint", text: "정본은 Desk Calendar · 체크하면 그 파일에 저장돼요" });
+		tip(titles.createEl("h3", { cls: "ml-panel-title", text: "Desk Calendar에서 온 일" }), "정본은 Desk Calendar · 체크하면 그 파일에 저장돼요");
 		const tools = head.createDiv({ cls: "ml-panel-tools" });
 		const open = tools.createEl("button", { cls: "ml-btn ml-btn-ghost", text: "달력 열기", attr: { type: "button" } });
 		open.addEventListener("click", (e) => {
@@ -902,6 +927,14 @@ export class DailyPadView extends ItemView {
 		renderItemList(body, sec.lines, {
 			showTest: this.plugin.settings.showTestMarkers,
 			onToggle: (sl, li) => void this.toggleDeskLine(sl, li),
+			openGoal: (id) => void this.plugin.openPinboardGoal(id),
+			openProject: (id) => void this.plugin.openProjectAt(id),
+			menu: (sl, pop) => {
+				const f = this.deskFile();
+				if (!f) return;
+				pop.addSeparator();
+				pop.addItem((i) => i.setTitle("Desk Calendar에서 보기").setIcon("calendar-days").onClick(() => void this.app.workspace.getLeaf(false).openFile(f, { eState: { line: sl.index } })));
+			},
 		});
 	}
 
@@ -988,18 +1021,62 @@ export class DailyPadView extends ItemView {
 		const lines = parseBodyLines(splitLinesKeepEol(padText), range.start, range.end);
 		const head = el.createDiv({ cls: "ml-panel-head" });
 		const titles = head.createDiv({ cls: "ml-panel-titles" });
-		titles.createEl("h3", { cls: "ml-panel-title", text: name });
-		titles.createSpan({ cls: "ml-panel-hint", text: "지난날 못 한 일 · 갈 곳을 골라 주세요" });
-		// TODO(MyLogs Plugin 계획.md §4 「못 한 일 버튼」): 다른 날 / 미래로 / 서랍에 / 쪼개기 / 놓아주기.
-		// When it lands, skip `(flywheel:: F-N)` lines (`isFlywheelLine`, `li.is-flywheel`): they are checked or left (12 Flywheel AGENTS 「4-2」 3).
+		tip(
+			titles.createEl("h3", { cls: "ml-panel-title", text: name }),
+			"지난날 못 한 일이에요. 항목마다 갈 곳을 하나 골라 주세요 — 다른 날 · 미래로 · 서랍에 · 쪼개기 · 놓아주기. 고를 때까지 여기 남아요.",
+		);
+		const open = lines.filter((sl) => sl.indent === 0 && sl.item?.kind === "task" && sl.item.status === "scheduled").length;
+		if (open) titles.createSpan({ cls: "ml-pending-count", text: String(open) });
 		const body = el.createDiv({ cls: "ml-panel-body" });
 		if (!lines.length) {
 			this.gentle(body, "결정을 기다리는 일이 없어요.");
 			return;
 		}
+		const candidates = new Map(extractCandidates(padText, name).map((c) => [c.index, c]));
+		const date = this.date;
+		const decidable = (sl: SourceLine) => sl.indent === 0 && sl.item?.kind === "task" && sl.item.status === "scheduled" && !isFlywheelLine(sl.line);
+		const addChoices = (sl: SourceLine, pop: ItemPopover) => {
+			if (!decidable(sl)) return;
+			const cand = candidates.get(sl.index);
+			if (cand) {
+				// 「3-6」 0: a 후보 is not a 못 한 일 — 넣기 / 놓아주기 only.
+				pop.addSeparator();
+				pop.addItem((i) =>
+					i.setTitle(cand.kind === "project" ? "Drawer 프로젝트 후보로 넣기…" : "서랍에 넣기…").setIcon("archive").setHint("다시 꺼낼 조건을 붙여 Drawer에 넣어요").onClick(() => void this.acceptCandidate(cand)),
+				);
+				pop.addItem((i) => i.setTitle("놓아주기").setIcon("circle-slash").setHint("넣지 않아요. 기록 없이 지워요").onClick(() => void this.dropCandidate(cand)));
+				return;
+			}
+			const choose = (kind: PendingChoice["kind"]) => void this.decide(date, sl, kind);
+			pop.addSeparator();
+			pop.addItem((i) => i.setTitle("다른 날…").setIcon("calendar").setHint("할 날을 다시 정해요 (Desk Calendar)").onClick(() => choose("day")));
+			pop.addItem((i) => i.setTitle("미래로…").setIcon("calendar-clock").setHint("아직 Desk Calendar가 없는 먼 달로 보내요 (Wall Calendar)").onClick(() => choose("future")));
+			pop.addItem((i) => i.setTitle("서랍에…").setIcon("archive").setHint("하기로 했지만 지금은 아니에요. 다시 꺼낼 조건을 붙여 Drawer에 둬요").onClick(() => choose("drawer")));
+			pop.addItem((i) => i.setTitle("쪼개기…").setIcon("scissors").setHint("너무 커서 못 했다면 작은 다음 행동으로 나눠 오늘 할 일에 넣어요").onClick(() => choose("split")));
+			pop.addItem((i) => i.setTitle("놓아주기…").setIcon("circle-slash").setHint("하지 않기로 해요. 이유를 한 줄 남겨요").onClick(() => choose("letgo")));
+		};
 		renderItemList(body, lines, {
 			showTest: this.plugin.settings.showTestMarkers,
 			flywheelWeek: this.flywheelWeek,
+			openGoal: (id) => void this.plugin.openPinboardGoal(id),
+			openProject: (id) => void this.plugin.openProjectAt(id),
+			menu: (sl, pop) => {
+				pop.sub = decidable(sl) ? "갈 곳을 골라 주세요" : "";
+				addChoices(sl, pop);
+			},
+			decorate: (sl, li) => {
+				if (!decidable(sl)) return;
+				const b = li.createEl("button", { cls: "ml-btn ml-decide", text: "갈 곳 정하기", attr: { type: "button" } });
+				b.addEventListener("click", (e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					const pop = new ItemPopover();
+					pop.title = sl.item!.text;
+					pop.sub = "갈 곳을 골라 주세요";
+					addChoices(sl, pop);
+					pop.show(b);
+				});
+			},
 			onToggle: (sl, li) => {
 				li.addClass("is-pending");
 				void this.processToggle(
@@ -1017,5 +1094,25 @@ export class DailyPadView extends ItemView {
 				});
 			},
 		});
+	}
+
+	private async decide(date: string, sl: SourceLine, kind: PendingChoice["kind"]): Promise<void> {
+		await this.flushAll();
+		const ok = await choosePending(this.plugin, date, sl, kind, todayIso());
+		if (!ok) this.renderPending(await this.readPad());
+	}
+
+	private async acceptCandidate(cand: ReturnType<typeof extractCandidates>[number]): Promise<void> {
+		const pad = this.padFile();
+		if (!pad) return;
+		const a = await askWhen(this.app, cand.text);
+		if (!a) return;
+		if (a.kind === "letgo") return this.dropCandidate(cand);
+		if (await acceptCandidate(this.plugin, pad, cand, cand.kind === "project" ? "프로젝트 후보" : "보류", a.when)) new Notice(`「${cand.text}」을(를) Drawer에 넣었어요.`);
+	}
+
+	private async dropCandidate(cand: ReturnType<typeof extractCandidates>[number]): Promise<void> {
+		const pad = this.padFile();
+		if (pad && (await removeCandidateLine(this.plugin, pad, cand))) new Notice(`「${cand.text}」을(를) 놓아줬어요.`);
 	}
 }

@@ -27,7 +27,8 @@ import { activateDiary, refreshDiaries, registerDiary } from "./diary/register.t
  * TODO(Toolbox AGENTS 「4-5」): move 폐기 files to `10 Archive Box/Closed/` once that format is decided (now the file stays in place).
  * TODO(My Life AGENTS 「4」): writing or regenerating My Life files (Hermes does that); index editing; Weekly/Monthly charts.
  * Flywheel (계획 §10, `12 Flywheel/AGENTS.md` 「4-2」): no view; `src/flywheel/model.ts` feeds the Daily Pad new-day skeleton and the `n/7` badges.
- * TODO(계획 §4 「못 한 일 버튼」): 다른 날 / 미래로 / 서랍에 / 쪼개기 / 놓아주기, moved count, 3rd-move questions — never on `(flywheel:: F-N)` lines.
+ * Daily Pad 결정 대기 (계획 §4 「못 한 일 버튼」): src/pending/. Desk Calendar 날짜 칸의 못 한 일: src/desk/.
+ * Shared UI: top navigation (src/ui/nav.ts), hidden help (src/ui/tip.ts), item detail popover (src/ui/popover.ts).
  * TODO(계획 「기본 방침」 5, 「결정할 것」 1): index updates (Daily Pad Index.md, Desk Calendar Index.md).
  * TODO(계획 §6 「후보」): Drawer 「프로젝트 후보」 in the Project Folders 후보 column (separate task).
  * TODO(계획 §7 「뒤로 뺀 것」, Drawer AGENTS 「4-6」): 월간 리뷰 모드 (꺼내기 / 두기 / 놓아주기 per card, departed lines deleted, 50개 초과 warning).

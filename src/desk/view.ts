@@ -1,6 +1,9 @@
 import { toggleLinkedProjectTask } from "../projects/task-actions.ts";
+import { mountAppNav } from "../ui/nav.ts";
+import { ItemPopover } from "../ui/popover.ts";
+import { tip } from "../ui/tip.ts";
 import { scheduleTarget } from "../projects/schedule-dnd.ts";
-import { ItemView, Keymap, Menu, moment, normalizePath, Notice, Platform, setIcon, type TAbstractFile, TFile, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
+import { ItemView, Keymap, moment, normalizePath, Notice, Platform, setIcon, type TAbstractFile, TFile, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { loadMilestoneCalendar, renderMilestoneMarkers, renderMilestoneIssues, watchesMilestoneProjects, type MilestoneCalendar } from "../projects/milestone-calendar-ui.ts";
 import { addDays } from "../parser.ts";
@@ -167,6 +170,7 @@ export class DeskCalendarView extends ItemView {
 		this.contentEl.empty();
 		this.contentEl.addClass("mylogs-desk-calendar-container");
 		this.rootEl = this.contentEl.createDiv({ cls: "mylogs-desk-calendar" });
+		mountAppNav(this);
 		const onFile = (f: TAbstractFile, old?: string) => {
 			const paths = this.watchedPaths();
 			if (paths.includes(f.path) || (old && paths.includes(old)) || watchesMilestoneProjects(this.plugin, f.path) || (old && watchesMilestoneProjects(this.plugin, old))) this.scheduleReload();
@@ -357,7 +361,7 @@ export class DeskCalendarView extends ItemView {
 		const a = lg.createSpan();
 		a.createEl("b", { text: "→" });
 		a.appendText("분배 칸에서 배정한 날짜·주");
-		lg.createSpan({ text: "끌어다 놓기: 이달 중 → 이번 주 할 일 → 날짜 칸 · ⋯ 또는 오른쪽 클릭: 못 한 일 처리, 수정, 삭제" });
+		tip(lg, "끌어다 놓기: 이달 중 → 이번 주 할 일 → 날짜 칸 · 항목을 누르면 자세한 내용과 못 한 일 처리·수정·삭제");
 	}
 
 	private renderEmpty(root: HTMLElement): void {
@@ -380,12 +384,12 @@ export class DeskCalendarView extends ItemView {
 		if (!cur.focus.length) fl.createEl("li", { cls: "dc-focus dc-none", text: "이달의 초점이 아직 없어요" });
 		for (const f of cur.focus) {
 			const li = fl.createEl("li", { cls: "dc-focus" });
-			const fid = li.createSpan({ cls: "dc-fid", text: f.id || "?" });
+			li.createSpan({ cls: "dc-fid", text: "◎" });
 			if (f.id) {
 				li.addClass("is-link");
-				li.setAttr("title", `목표 ${f.id} 열기`);
+				tip(li, "목표 열기");
 				li.addEventListener("click", () => this.openGoal(f.id));
-			} else fid.addClass("dc-miss");
+			}
 			li.createSpan({ cls: "dc-ftitle", text: f.title });
 			if (f.note) li.createSpan({ cls: "dc-fnote", text: f.note });
 			if (f.test && this.plugin.settings.showTestMarkers) this.testDot(li);
@@ -439,13 +443,13 @@ export class DeskCalendarView extends ItemView {
 			const p = parseMonthKey(link);
 			const where = p ? (isKo() ? `${p.month}월 파일` : link) : link;
 			if (!week) {
-				cell.createEl("p", { cls: "dc-away", text: `분배: ${where}` });
+				tip(cell.createEl("p", { cls: "dc-away", text: "앞 달에서 정리한 주" }), `이 주의 ‘이번 주 할 일’은 ${where}에 있어요`);
 				return;
 			}
-			label.createSpan({ cls: "dc-where", text: where });
+			tip(label, `이 주의 ‘이번 주 할 일’은 ${where}에 있어요`);
 		}
 		if (!week) {
-			cell.createEl("p", { cls: "dc-away", text: "분배 칸 없음" });
+			cell.createEl("p", { cls: "dc-away", text: "이번 주 칸 없음" });
 			return;
 		}
 		this.addZone(cell, {
@@ -517,16 +521,9 @@ export class DeskCalendarView extends ItemView {
 	}
 
 	private finishMeta(body: HTMLElement, meta: HTMLElement, it: DeskItem, warn: string | null): void {
-		if (it.item.goal) {
-			const g = meta.createSpan({ cls: "dc-gchip", text: it.item.goal, attr: { title: `목표 ${it.item.goal} 열기` } });
-			g.addEventListener("click", (e) => {
-				e.stopPropagation();
-				this.openGoal(it.item.goal);
-			});
-		}
 		for (const t of it.item.tags) meta.createSpan({ cls: "dc-tag", text: `#${t}` });
 		if (it.item.test && this.plugin.settings.showTestMarkers) this.testDot(meta);
-		if (warn) meta.createSpan({ cls: "dc-warnmark", text: "?", attr: { title: warn } });
+		if (warn) tip(meta.createSpan({ cls: "dc-warnmark", text: "?" }), warn);
 		if (meta.childElementCount) body.appendChild(meta);
 	}
 
@@ -580,16 +577,7 @@ export class DeskCalendarView extends ItemView {
 		const { li, body, meta } = this.itemShell(ul, it, it.item.status);
 		if (it.item.time) body.createSpan({ cls: "dc-tm", text: it.item.time });
 		body.createSpan({ cls: "dc-txt", text: it.item.text });
-		if (it.item.movedTo) meta.createSpan({ cls: "dc-fld dc-mto", text: `→ ${it.item.movedTo}` });
-		for (const [k, v] of it.item.fields) if (k !== "goal" && k !== "task") {
-			if (k === "project") {
-				const b = meta.createEl("button", { cls: "dc-fld ml-route-chip", text: `프로젝트 ${v}`, attr: { type: "button" } });
-				b.addEventListener("click", e => { e.stopPropagation(); void this.plugin.openProjectAt(v); });
-			} else meta.createSpan({ cls: "dc-fld", text: `${FIELD_LABEL[k] ?? k} ${v}` });
-		}
 		this.finishMeta(body, meta, it, it.problems.length ? it.problems.join(" · ") : null);
-		const st = it.item.status === "cancelled" && it.item.kind === "task" ? "놓아줌" : STATUS_LABEL[it.item.status];
-		li.setAttr("title", `${st} · ${KIND_LABEL[it.item.kind ?? "note"]}`);
 
 		const toggleable = it.item.kind === "task" && (it.item.status === "scheduled" || it.item.status === "done");
 		if (toggleable) {
@@ -613,7 +601,7 @@ export class DeskCalendarView extends ItemView {
 	private renderRaw(ul: HTMLElement, it: DeskItem): void {
 		const li = ul.createEl("li", { cls: "dc-it dc-raw" });
 		li.createSpan({ cls: "dc-txt", text: it.line.trim() });
-		li.createSpan({ cls: "dc-warnmark", text: "?", attr: { title: it.problems.join(" · ") || "형식 확인 필요" } });
+		tip(li.createSpan({ cls: "dc-warnmark", text: "?" }), it.problems.join(" · ") || "형식 확인 필요");
 	}
 
 	/** Drag source + item menu (⋯ button and right-click). */
@@ -621,18 +609,22 @@ export class DeskCalendarView extends ItemView {
 		if (isOpenTask(it)) {
 			li.addClass("dc-draggable");
 			li.draggable = true;
-			if (hint && !li.getAttr("title")) li.setAttr("title", hint);
 			li.addEventListener("dragstart", (e) => this.onDragStart(e, { kind, item: it }, li));
 			li.addEventListener("dragend", () => this.onDragEnd());
 		}
 		const more = li.createEl("button", { cls: "dc-more", text: "⋯", attr: { type: "button", "aria-label": "항목 메뉴" } });
 		more.addEventListener("click", (e) => {
 			e.stopPropagation();
-			this.openMenu(e, it, kind);
+			this.openMenu(e, it, kind, li);
+		});
+		// Phone: a tap opens the move sheet (`./mobile.ts`); the popover is the long press.
+		if (!Platform.isMobile) li.addEventListener("click", (e) => {
+			if ((e.target as HTMLElement).closest("button, a, [role='checkbox']")) return;
+			this.openMenu(e, it, kind, li);
 		});
 		li.addEventListener("contextmenu", (e) => {
 			e.preventDefault();
-			this.openMenu(e, it, kind);
+			this.openMenu(e, it, kind, li);
 		});
 	}
 
@@ -695,9 +687,21 @@ export class DeskCalendarView extends ItemView {
 
 	// ── item menu (let-go choices) ──
 
-	private openMenu(e: MouseEvent, it: DeskItem, kind: Drag["kind"]): void {
-		const menu = new Menu();
+	private openMenu(_e: MouseEvent, it: DeskItem, kind: Drag["kind"], anchor: HTMLElement): void {
+		const menu = new ItemPopover();
 		const ctx = this.ctx!;
+		const st = it.item.status === "cancelled" && it.item.kind === "task" ? "놓아줌" : STATUS_LABEL[it.item.status];
+		menu.title = it.item.text || it.line.trim();
+		menu.badge = `${KIND_LABEL[it.item.kind ?? "note"]} · ${st}`;
+		menu.row("자리", it.section === "day" ? `${it.date}${it.item.time ? ` ${it.item.time}` : ""}` : it.section === "alloc" ? `W${String(isoWeekNo(it.monday!)).padStart(2, "0")} 이번 주 할 일` : "이달 중");
+		if (it.item.movedTo) menu.row("보낸 곳", it.item.movedTo);
+		if (it.item.goal) menu.row("목표", it.item.goal, () => this.openGoal(it.item.goal));
+		for (const [k, v] of it.item.fields) {
+			if (!v || k === "goal" || k === "task") continue;
+			if (k === "project") menu.row("프로젝트", v, () => void this.plugin.openProjectAt(v));
+			else menu.row(FIELD_LABEL[k] ?? k, k === "moved" ? `${v}번` : v);
+		}
+		if (it.problems.length) menu.row("형식 확인", it.problems.join(" · "));
 		if (kind === "day" && it.item.kind === "task" && (it.item.status === "scheduled" || it.item.status === "done")) {
 			menu.addItem((i) =>
 				i
@@ -708,11 +712,11 @@ export class DeskCalendarView extends ItemView {
 		}
 		if (kind === "day" && isOpenTask(it)) {
 			menu.addSeparator();
-			menu.addItem((i) => i.setTitle("다른 날…").setIcon("calendar").onClick(() => void this.chooseOtherDay(it)));
-			menu.addItem((i) => i.setTitle("미래로 (Wall Calendar)…").setIcon("calendar-clock").onClick(() => void this.chooseFuture(it)));
-			menu.addItem((i) => i.setTitle("서랍에…").setIcon("archive").onClick(() => void this.chooseDrawer(it)));
-			menu.addItem((i) => i.setTitle("쪼개기…").setIcon("scissors").onClick(() => void this.chooseSplit(it)));
-			menu.addItem((i) => i.setTitle("놓아주기…").setIcon("circle-slash").onClick(() => void this.chooseLetGo(it)));
+			menu.addItem((i) => i.setTitle("다른 날…").setIcon("calendar").setHint("이번 달 안에서 할 날을 다시 정해요").onClick(() => void this.chooseOtherDay(it)));
+			menu.addItem((i) => i.setTitle("미래로…").setIcon("calendar-clock").setHint("아직 Desk Calendar가 없는 먼 달로 보내요 (Wall Calendar)").onClick(() => void this.chooseFuture(it)));
+			menu.addItem((i) => i.setTitle("서랍에…").setIcon("archive").setHint("하기로 했지만 지금은 아니에요. 다시 꺼낼 조건을 붙여 Drawer에 둬요").onClick(() => void this.chooseDrawer(it)));
+			menu.addItem((i) => i.setTitle("쪼개기…").setIcon("scissors").setHint("너무 커서 못 했다면 작은 다음 행동으로 나눠요").onClick(() => void this.chooseSplit(it)));
+			menu.addItem((i) => i.setTitle("놓아주기…").setIcon("circle-slash").setHint("하지 않기로 해요. 이유를 한 줄 남겨요").onClick(() => void this.chooseLetGo(it)));
 		}
 		if (it.item.kind === "event" && it.item.status === "scheduled") {
 			menu.addItem((i) => i.setTitle("행사 취소 (취소선)").setIcon("x").onClick(() => void this.exec(planCancelEvent(it, ctx.today))));
@@ -728,7 +732,7 @@ export class DeskCalendarView extends ItemView {
 		);
 		menu.addSeparator();
 		menu.addItem((i) => i.setTitle("파일에서 보기").setIcon("file-text").onClick(() => void this.openAt(it.file, it.index)));
-		menu.showAtMouseEvent(e);
+		menu.show(anchor);
 	}
 
 	// ── 수정 / 삭제 ──
@@ -748,22 +752,22 @@ export class DeskCalendarView extends ItemView {
 		const v = await askForm(this.app, {
 			title: `${KIND_LABEL[it.item.kind ?? "note"]} 수정 · ${this.sectionLabel(it)}`,
 			desc: copies.length
-				? `배정으로 짝이 된 줄 ${copies.length}개(${copies.map((x) => this.sectionLabel(x)).join(", ")})도 같은 내용·목표·프로젝트로 고쳐요. 다른 필드와 태그는 그대로 둬요.`
-				: "다른 필드와 태그는 그대로 둬요.",
+				? `배정된 다른 칸(${copies.map((x) => this.sectionLabel(x)).join(", ")})도 같이 고쳐요.`
+				: undefined,
 			fields: [
 				{ key: "text", label: "내용", type: "text", value: contentText(body, TIME_LEAD_RE) },
 				{ key: "time", label: "시각", type: "text", value: splitContent(body, TIME_LEAD_RE).lead.trim(), placeholder: "14:00 (비우면 없음)" },
 				...(isDay ? [{ key: "date", label: "날짜", type: "date" as const, value: it.date!, desc: "잘못 적은 날을 고칠 때. 미루는 것은 「다른 날…」이에요." }] : []),
-				{ key: "goal", label: "목표 (goal::)", type: "text", value: getField(body, "goal"), placeholder: "G-2026-01.2" },
-				{ key: "project", label: "프로젝트 (project::)", type: "text", value: getField(body, "project"), placeholder: "P-…" },
-				...(hasWhy ? [{ key: "why", label: "이유 (why::)", type: "text" as const, value: getField(body, "why") }] : []),
+				{ key: "goal", label: "목표", type: "text", value: getField(body, "goal"), placeholder: "연결할 목표 (선택)" },
+				{ key: "project", label: "프로젝트", type: "text", value: getField(body, "project"), placeholder: "연결할 프로젝트 (선택)" },
+				...(hasWhy ? [{ key: "why", label: "이유", type: "text" as const, value: getField(body, "why") }] : []),
 			],
 			validate: (x) => {
 				const out: string[] = [];
 				if (!x.text) out.push("내용을 적어 주세요.");
 				if (normalizeTime(x.time) === null) out.push("시각은 HH:MM 형식이에요 (예: 09:30, 14:00~15:00).");
 				if (isDay && !/^\d{4}-\d{2}-\d{2}$/.test(x.date)) out.push("날짜를 골라 주세요.");
-				if (hasWhy && it.item.status === "cancelled" && it.item.kind === "task" && !x.why) out.push("놓아준 할 일에는 이유(why::)가 있어야 해요.");
+				if (hasWhy && it.item.status === "cancelled" && it.item.kind === "task" && !x.why) out.push("놓아준 할 일에는 이유가 있어야 해요.");
 				return out;
 			},
 		});
@@ -813,9 +817,9 @@ export class DeskCalendarView extends ItemView {
 			notes,
 			footer: "잘못 넣은 줄, 중복, 테스트 데이터를 지울 때 써요.",
 			alt: task
-				? { label: "놓아주기 (기록 남김)", desc: "하지 않기로 한 일이면 지우지 말고 놓아주기로 남길 수 있어요: [-] … (why:: 이유)." }
+				? { label: "놓아주기 (기록 남김)", desc: "하지 않기로 한 일이면 지우지 말고 이유와 함께 놓아주기로 남길 수 있어요." }
 				: event
-					? { label: "행사 취소 (취소선)", desc: "취소된 행사면 지우지 말고 취소선으로 남길 수 있어요: ~~…~~." }
+					? { label: "행사 취소 (취소선)", desc: "취소된 행사면 지우지 말고 취소 표시로 남길 수 있어요." }
 					: undefined,
 		});
 		if (ans === "delete") await this.exec(planDelete(it, ctx.months, ctx.today));
