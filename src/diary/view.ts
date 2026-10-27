@@ -396,7 +396,8 @@ export class DiaryView extends ItemView {
 	private filter: TimelineFilter = {};
 	private calendarOpen = false;
 	private calendarMonth: string = todayIsoLocal().slice(0, 7);
-	private preview = false;
+	/** Opening the view or another entry reads first (미리보기); 「쓰기」 or 「오늘 쓰기」 edits. */
+	private preview = true;
 	private editor: EntryEditor | null = null;
 	private renderChild: Component | null = null;
 	private loadSeq = 0;
@@ -427,7 +428,6 @@ export class DiaryView extends ItemView {
 		if (typeof s.selected === "string") this.selected = s.selected;
 		if (s.filter && typeof s.filter === "object") this.filter = { ...s.filter };
 		if (typeof s.calendarOpen === "boolean") this.calendarOpen = s.calendarOpen;
-		if (typeof s.preview === "boolean") this.preview = s.preview;
 		if (this.rootEl) await this.refresh();
 		await super.setState(state, result);
 	}
@@ -631,6 +631,7 @@ export class DiaryView extends ItemView {
 		await this.guard("엔트리 열기", async () => {
 			await this.editor?.settle();
 			this.selected = path;
+			this.preview = true;
 			const e = this.selectedEntry();
 			if (e && e.date.slice(0, 7) !== this.myLifeMonth) {
 				this.myLifeMonth = e.date.slice(0, 7);

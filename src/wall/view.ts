@@ -137,6 +137,9 @@ export class WallCalendarView extends ItemView {
 
 	// ── lifecycle ──
 
+	/** Scroll to this month on the next render (open, back to this year). */
+	private scrollToNow = true;
+
 	async onOpen(): Promise<void> {
 		this.contentEl.empty();
 		this.contentEl.addClass("mylogs-wall-calendar-container");
@@ -165,6 +168,7 @@ export class WallCalendarView extends ItemView {
 	async goTo(year: number): Promise<void> {
 		if (year === this.year) return;
 		this.year = year;
+		this.scrollToNow = year === new Date().getFullYear();
 		this.addOpen = null;
 		await this.reload();
 		(this.leaf as unknown as { updateHeader?: () => void }).updateHeader?.();
@@ -243,6 +247,17 @@ export class WallCalendarView extends ItemView {
 			if (f) void this.app.workspace.getLeaf(Keymap.isModEvent(e)).openFile(f);
 		});
 		this.contentEl.scrollTop = scroll;
+		if (this.scrollToNow) {
+			const now = sheet.querySelector<HTMLElement>(".wc-month.is-now");
+			if (now) {
+				this.scrollToNow = false;
+				// Open on this month (most of all on a phone, where months stack in one column).
+				window.requestAnimationFrame(() => {
+					const top = now.getBoundingClientRect().top - this.contentEl.getBoundingClientRect().top + this.contentEl.scrollTop;
+					this.contentEl.scrollTop = Math.max(0, top - 12);
+				});
+			}
+		}
 	}
 
 	private renderHead(sheet: HTMLElement): void {

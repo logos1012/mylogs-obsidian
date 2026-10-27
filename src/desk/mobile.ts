@@ -1,6 +1,6 @@
 /**
- * Desk Calendar on a phone (계획 「11. 모바일」): the month grid becomes one day per screen with
- * ◀ ▶ buttons, plus tabs 「하루 / 이번 주 할 일 / 이달 중」. Cells and items are the desktop ones
+ * Desk Calendar on a phone (계획 「11. 모바일」): a compact month grid, then the chosen day, its week's
+ * 이번 주 할 일, and 이달의 초점 · 이달 중 (see `renderDeskMobile`). Cells and items are the desktop ones
  * (`renderDayCell`, `renderAllocCell`, `renderBands`); drag and drop is replaced by a tap → where
  * to (`deskMoveTargets` → the same plan the drop runs). The item menu (못 한 일 · 수정 · 삭제) opens
  * from ⋯ or a long press.
@@ -11,11 +11,10 @@
 import type { App } from "obsidian";
 import { addDays } from "../parser.ts";
 import { tip } from "../ui/tip.ts";
-import { actionSheet, enableTouchMenus, menuEventAt, pickTarget, type SheetAction, tabBar } from "../ui/mobile.ts";
+import { actionSheet, enableTouchMenus, menuEventAt, pickTarget, type SheetAction } from "../ui/mobile.ts";
 import { type DeskItem, type MonthData, weekdayMon0 } from "./model.ts";
 import { type DaySlot, dayInMonth, dayLabel, defaultDay, type DeskDragKind, type DeskTarget, deskMoveTargets, type WeekSlot } from "./mobile-targets.ts";
 
-export type DeskMobileTab = "day" | "week" | "month";
 
 export interface DeskMobileHost {
 	app: App;
@@ -40,30 +39,31 @@ export interface DeskMobileHost {
 	move(t: DeskTarget, it: DeskItem): Promise<unknown>;
 	register(cb: () => void): void;
 	renderMilestones(parent: HTMLElement, from: string, to: string): void;
+	/** Dates (ISO) that carry a project milestone ◆. */
+	milestoneDays(): Set<string>;
 }
 
 interface State {
-	tab: DeskMobileTab;
 	day: string;
 	installed: boolean;
 }
 
 const states = new WeakMap<HTMLElement, State>();
 
-const TABS: { id: DeskMobileTab; label: string }[] = [
-	{ id: "day", label: "하루" },
-	{ id: "week", label: "이번 주 할 일" },
-	{ id: "month", label: "이달 중" },
-];
-
 /** Inline targets in the tap sheet up to this many; more go behind 「이동…」. */
 const INLINE_TARGETS = 7;
 
+/**
+ * Phone layout that still reads as a desk calendar: the month grid on top (each day shows dots for
+ * its items, ◆ for milestones, today and the chosen day marked), then the chosen day's cell, its
+ * week's 이번 주 할 일, and the month's 초점 · 이달 중 folded at the bottom. Tapping an item opens
+ * where it can go (the desktop drop zones), as before.
+ */
 export function renderDeskMobile(h: DeskMobileHost): void {
 	const { cur, today } = h.begin();
 	let s = states.get(h.rootEl);
 	if (!s) {
-		s = { tab: "day", day: defaultDay(h.month, today), installed: false };
+		s = { day: defaultDay(h.month, today), installed: false };
 		states.set(h.rootEl, s);
 	}
 	if (!s.installed) {
@@ -80,58 +80,60 @@ export function renderDeskMobile(h: DeskMobileHost): void {
 		h.renderEmpty(root);
 		return;
 	}
-	tip(
-		tabBar(root, TABS, s.tab, (t) => {
-			st.tab = t;
-			renderDeskMobile(h);
-		}),
-		"항목을 누르면 보낼 곳을 골라요 · 길게 누르면 자세한 내용과 못 한 일 처리·수정·삭제",
-	);
+	monthGrid(h, root, st, today);
 
-	if (s.tab === "month") {
-		h.renderBands(root);
-		wire(h, root.querySelector<HTMLElement>(".dc-during ul"), cur.during, "during");
-	} else {
-		dayNav(h, root, s, today);
-		const row = root.createDiv({ cls: `dc-m-cell dc-m-${s.tab}` });
-		if (s.tab === "day") {
-			h.renderDayCell(row, s.day);
-			wire(h, row.querySelector<HTMLElement>(".dc-items"), h.dayItems(s.day), "day");
-		} else {
-			const monday = addDays(s.day, -weekdayMon0(s.day));
-			h.renderMilestones(row, monday, addDays(monday, 6));
-			h.renderAllocCell(row, monday);
-			wire(h, row.querySelector<HTMLElement>(".dc-items"), h.allocItems(monday), "alloc");
-		}
-	}
+	const monday = addDays(st.day, -weekdayMon0(st.day));
+	const dayBox = root.createDiv({ cls: "dc-m-cell dc-m-day" });
+	h.renderDayCell(dayBox, st.day);
+	wire(h, dayBox.querySelector<HTMLElement>(".dc-items"), h.dayItems(st.day), "day");
+
+	const weekBox = root.createDiv({ cls: "dc-m-cell dc-m-week" });
+	h.renderMilestones(weekBox, monday, addDays(monday, 6));
+	h.renderAllocCell(weekBox, monday);
+	wire(h, weekBox.querySelector<HTMLElement>(".dc-items"), h.allocItems(monday), "alloc");
+
+	const month = root.createEl("details", { cls: "dc-m-month" });
+	const sum = month.createEl("summary");
+	sum.createSpan({ text: "이달의 초점 · 이달 중" });
+	if (cur.during.length) sum.createSpan({ cls: "dc-m-count", text: String(cur.during.length) });
+	h.renderBands(month);
+	wire(h, month.querySelector<HTMLElement>(".dc-during ul"), cur.during, "during");
+	tip(sum, "항목을 누르면 보낼 곳을 골라요 · 길게 누르면 자세한 내용과 못 한 일 처리·수정·삭제");
 	h.contentEl.scrollTop = scrollTop;
 }
 
-/** ◀ day ▶ (or week in the week tab) + 오늘; crossing a month boundary loads that month. */
-function dayNav(h: DeskMobileHost, root: HTMLElement, s: State, today: string): void {
-	const nav = root.createDiv({ cls: "dc-m-nav" });
-	const step = s.tab === "week" ? 7 : 1;
-	const go = (iso: string) => {
-		s.day = iso;
-		const m = iso.slice(0, 7);
-		if (m !== h.month) void h.goTo(m);
-		else renderDeskMobile(h);
-	};
-	const btn = (text: string, aria: string, fn: () => void) => {
-		const b = nav.createEl("button", { cls: "dc-btn", text, attr: { type: "button", "aria-label": aria } });
-		b.addEventListener("click", fn);
-		return b;
-	};
-	btn("◀", step === 7 ? "이전 주" : "이전 날", () => go(addDays(s.day, -step)));
-	const label = nav.createDiv({ cls: "dc-m-nav-label" });
-	if (s.tab === "week") {
-		const monday = addDays(s.day, -weekdayMon0(s.day));
-		label.setText(`${dayLabel(monday)} 주`);
-	} else label.setText(dayLabel(s.day));
-	if (s.day === today) label.addClass("is-today");
-	btn("▶", step === 7 ? "다음 주" : "다음 날", () => go(addDays(s.day, step)));
-	const t = btn("오늘", "오늘로", () => go(today));
-	t.toggleClass("is-active", s.day === today);
+/** 월~일 grid of the month; tap a day to show it (and its week) below. */
+function monthGrid(h: DeskMobileHost, root: HTMLElement, s: State, today: string): void {
+	const grid = root.createDiv({ cls: "dc-m-grid", attr: { role: "grid", "aria-label": `${h.month} 달력` } });
+	for (const w of ["월", "화", "수", "목", "금", "토", "일"]) grid.createDiv({ cls: "dc-m-wd", text: w });
+	const ms = h.milestoneDays();
+	const first = `${h.month}-01`;
+	let d = addDays(first, -weekdayMon0(first));
+	const selMonday = addDays(s.day, -weekdayMon0(s.day));
+	while (d.slice(0, 7) <= h.month) {
+		const monday = d;
+		for (let i = 0; i < 7; i++, d = addDays(d, 1)) {
+			const iso = d;
+			const inMonth = iso.slice(0, 7) === h.month;
+			const c = grid.createEl("button", { cls: "dc-m-day-btn", attr: { type: "button", "aria-label": dayLabel(iso) } });
+			if (!inMonth) c.addClass("is-out");
+			if (iso === today) c.addClass("is-today");
+			if (iso === s.day) c.addClass("is-selected");
+			if (monday === selMonday) c.addClass("is-week");
+			c.createSpan({ cls: "dc-m-num", text: String(+iso.slice(8, 10)) });
+			const dots = c.createSpan({ cls: "dc-m-dots" });
+			const items = inMonth ? h.dayItems(iso) : [];
+			for (const it of items.slice(0, 4)) dots.createSpan({ cls: `dc-m-dot k-${it.item.kind ?? "note"} s-${it.item.status}` });
+			if (items.length > 4) dots.createSpan({ cls: "dc-m-more", text: "+" });
+			if (inMonth && ms.has(iso)) c.createSpan({ cls: "dc-m-ms", text: "◆" });
+			c.addEventListener("click", () => {
+				s.day = iso;
+				if (!inMonth) void h.goTo(iso.slice(0, 7));
+				else renderDeskMobile(h);
+			});
+		}
+		if (d.slice(0, 7) > h.month) break;
+	}
 }
 
 /** Tap an item → where it can go (the desktop drop zones that accept it) + the item menu. */

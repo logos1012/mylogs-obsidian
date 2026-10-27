@@ -920,25 +920,32 @@ export class PinboardView extends ItemView {
 		}
 
 		// side: what the goal is about. Settings and record details fold away under 「세부 설정」.
-		const dl = side.createEl("dl", { cls: "pb-d-props" });
 		const prop = (into: HTMLElement, k: string, fill: (dd: HTMLElement) => void) => {
 			into.createEl("dt", { text: k });
 			fill(into.createEl("dd"));
 		};
-		if (main) prop(dl, "기간", (x) => this.inlineField(x, g, "period"));
-		else
+		if (main) {
+			// 기간·영역 rarely change and say little at a glance: folded away.
+			const more = side.createEl("details", { cls: "pb-d-more" });
+			more.createEl("summary", { text: "세부 설정" });
+			const dlm = more.createEl("dl", { cls: "pb-d-props" });
+			prop(dlm, "기간", (x) => this.inlineField(x, g, "period"));
+			prop(dlm, "영역", (x) => this.inlineField(x, g, "area"));
+		}
+		const dl = main ? null : side.createEl("dl", { cls: "pb-d-props" });
+		if (dl)
 			prop(dl, "기한", (x) => {
 				this.inlineField(x, g, "due", { type: "date" });
 				if (!g.due) return;
 				const dd = dday(g.due, today);
 				if (!isEnded(g.status)) x.createSpan({ cls: `pb-dd${dd.cls ? ` is-${dd.cls}` : ""}`, text: ` ${dd.big}` });
 			});
-		if (!main && parent)
+		if (dl && parent)
 			prop(dl, "상위 목표", (x) => {
 				const a = x.createEl("button", { cls: "pb-linkish", text: parent.title, attr: { type: "button" } });
 				a.addEventListener("click", () => this.openGoal(parent.id));
 			});
-		prop(dl, "영역", (x) => this.inlineField(x, g, "area"));
+		if (dl) prop(dl, "영역", (x) => this.inlineField(x, g, "area"));
 		if (!main) {
 			const more = side.createEl("details", { cls: "pb-d-more" });
 			more.createEl("summary", { text: "세부 설정" });
