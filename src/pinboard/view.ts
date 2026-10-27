@@ -1,3 +1,5 @@
+import { loadProjectProgress, saveProgressSettings } from "./project-rollup.ts";
+import { applyProjectProgress, contributions, projectWeight, type ProjectProgress } from "./project-progress.ts";
 import {
 	debounce,
 	ItemView,
@@ -123,6 +125,7 @@ interface Loaded {
 	texts: Map<string, string>;
 	board: Board;
 	projects: ProjectRef[];
+	projectProgress: ProjectProgress[];
 	/** 관련 업무 by goal id (a Main's includes its Sub Goals' projects and habits). */
 	related: Map<string, RelatedItem[]>;
 	/** 진척 기록 by goal path, in file order. */
@@ -345,6 +348,8 @@ export class PinboardView extends ItemView {
 				);
 			}
 		}
+		const projectProgress = await loadProjectProgress(this.plugin);
+		applyProjectProgress(goals, projectProgress);
 		const board = buildBoard(goals);
 		const projects = this.loadProjects();
 		const habits = await this.loadHabits();
@@ -362,7 +367,7 @@ export class PinboardView extends ItemView {
 			);
 		}
 		const missing = missingFields(board, secsOf);
-		return { year, years, goals, files, sections, texts, board, projects, related, logs, missing };
+		return { year, years, goals, files, sections, texts, board, projects, projectProgress, related, logs, missing };
 	}
 
 	private beginEdit(): void {
@@ -655,7 +660,7 @@ export class PinboardView extends ItemView {
 				target: s.target,
 				unit: s.unit,
 				due: s.due,
-				related: (d.related.get(s.id) ?? []).map((r) => ({ kind: r.kind, label: r.label, path: r.path, oneSided: r.oneSided || r.broken || undefined })),
+				related: (d.related.get(s.id) ?? []).map((r) => ({ kind: r.kind, contributes: s.progressSource === "projects" && r.kind === "project" && !!r.id && s.projectIds.includes(r.id) && projectWeight(s, r.id) > 0, label: r.label, path: r.path, oneSided: r.oneSided || r.broken || undefined })),
 			};
 		};
 		return {
@@ -842,8 +847,9 @@ export class PinboardView extends ItemView {
 				today,
 			);
 		if(!main){
+			this.progressSettings(pc, g);
 			const form=pc.createDiv();
-			this.smallBtn(pc,g.measure==="milestone"?"달성 확인":"결과값 갱신","실제 결과를 기록해요",async()=>{
+			this.smallBtn(pc,g.measure==="milestone"?"실제 달성 확인":"실제 성과 기록","실제 결과를 기록해요",async()=>{
 				if(g.measure==="milestone"){
 					const ok=await askForm(this.app,{title:"하위 목표 달성 확인",desc:`「${g.target||g.title}」 조건을 실제로 달성했나요? 연결된 프로젝트 완료와는 별도로 기록해요.`,fields:[],cta:"달성으로 기록"});
 					if(ok)await this.writeGoal(g,{status:"achieved",log:{date:todayIso(),text:"사용자가 달성 조건 충족을 확인",verify:"보고됨",evidence:"MyLogs 플러그인, 사용자 확인"}});
@@ -1041,8 +1047,10 @@ export class PinboardView extends ItemView {
 
 	private subProgress(pc: HTMLElement, s: Goal, lines: ProgressLine[], today: string): void {
 		const p = displaySubProgress(s);
+		if (s.progressSource === "projects") pc.createDiv({ cls: "pb-d-label", text: "프로젝트 가중 진척 · 자동" });
 		const top = pc.createDiv({ cls: "pb-bignum" });
 		top.createEl("b", { text: p === null ? "미정" : `${Math.round(p)}%` });
+		if (s.progressSource === "projects") pc.createDiv({ cls: "pb-d-label", text: "실제 성과 (진척과 별도)" });
 		const path = pc.createDiv({ cls: "pb-inline-metrics" });
 		const metric = (field: InlineGoalField, label: string) => {
 			const box = path.createDiv({ cls: "pb-inline-metric" });
@@ -1061,6 +1069,46 @@ export class PinboardView extends ItemView {
 		}
 		if (s.measure === "metric") this.chart(pc, s, lines, today);
 	}
+
+ private progressSettings(parent: HTMLElement, g: Goal): void {
+  const box = parent.createDiv({ cls: "pb-rollup" });
+  box.createDiv({ cls: "pb-note", text: g.progressSource === "projects" ? "프로젝트 마일스톤 가중 자동 집계 · 실제 결과와 달성 확정은 별도" : "실제 결과값으로 진척 계산" });
+  const rows = contributions(g, this.data?.projectProgress ?? []);
+  for (const row of rows) box.createDiv({ cls: "pb-rollup-row", text: `${row.title} · ${row.done}/${row.total} · ${Math.round(row.progress)}% × 비중 ${Math.round(row.share * 10) / 10}%${row.issue ? ` · ⚠ ${row.issue}` : ""}` });
+  if (g.progressSource === "projects" && !rows.length) box.createDiv({ cls: "pb-note", text: "연결된 프로젝트가 없어 0%예요. 아래에서 프로젝트를 연결해 주세요." });
+  this.smallBtn(box, "집계 방식·비중 수정", "기본은 동일 비중, 중요할수록 큰 숫자를 입력해요", async () => {
+   if (!this.canNavigate()) return;
+   this.beginEdit(); box.empty();
+   const form = box.createEl("form", { cls: "pb-inline-editor" });
+   const select = form.createEl("select", { attr: { "aria-label": "진척 집계 방식" } });
+   select.createEl("option", { attr: { value: "projects" }, text: "프로젝트 마일스톤 자동 집계" });
+   select.createEl("option", { attr: { value: "manual" }, text: "실제 결과값으로 계산" });
+   select.value = g.progressSource ?? "manual";
+   form.createDiv({ cls: "pb-note", text: "비중: 모두 1이면 동일 비중. 3과 1이면 75%와 25%. 0은 기여 제외." });
+   const inputs = rows.map(row => {
+    const label = form.createEl("label", { cls: "pb-rollup-weight" }); label.createSpan({ text: row.title });
+    const input = label.createEl("input", { attr: { type: "number", value: String(row.weight), min: "0", step: "any", inputmode: "decimal", "aria-label": `${row.title} 비중` } });
+    return { id: row.id, input };
+   });
+   const error = form.createDiv({ cls: "pb-inline-error", attr: { role: "alert" } });
+   const save = form.createEl("button", { text: "저장", attr: { type: "submit" } });
+   const cancel = form.createEl("button", { text: "취소", attr: { type: "button" } });
+   let saving = false;
+   const close = () => { if (saving) return; this.endEdit(); void this.refresh(); };
+   cancel.onclick = close;
+   form.onkeydown = e => { if (e.key === "Escape") { e.preventDefault(); close(); } };
+   form.onsubmit = async e => {
+    e.preventDefault(); if (saving) return;
+    saving = true; save.disabled = true; cancel.disabled = true;
+    try {
+     if (inputs.some(x => !x.input.value.trim())) throw new Error("비중을 입력해 주세요.");
+     await saveProgressSettings(this.plugin, g, this.data!.texts.get(g.path)!, select.value, inputs.map(x => `${x.id}=${x.input.value}`), todayIso());
+     saving = false; this.endEdit(); await this.refresh();
+    } catch (e) { error.setText(String(e)); saving = false; save.disabled = false; cancel.disabled = false; }
+   };
+   select.focus();
+  });
+ }
 
 	private canNavigate(): boolean {
 		if (this.editing === 0) return true;

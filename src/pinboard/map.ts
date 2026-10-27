@@ -14,6 +14,7 @@
 // ───────────────────────── input ─────────────────────────
 
 export interface MapRelated {
+	contributes?: boolean;
 	kind: "project" | "habit" | "memo";
 	label: string;
 	path?: string;
@@ -143,7 +144,7 @@ function buildForest(input: MapInput): TreeNode[] {
 			kind: "sub",
 			edge,
 			sub: s,
-			children: s.related.map((r, i) => ({ key: `${key}/r${i}`, kind: "related" as const, edge: "dashed" as const, related: r, children: [] })),
+			children: s.related.map((r, i) => ({ key: `${key}/r${i}`, kind: "related" as const, edge: r.contributes ? "solid" as const : "dashed" as const, related: r, children: [] })),
 		};
 	};
 	const forest: TreeNode[] = [];
@@ -449,7 +450,7 @@ export function renderStrategyMap(parent: HTMLElement, input: MapInput, cb: MapC
 		row.appendChild(svg);
 		row.createSpan({ text });
 	};
-	legendLine("pbm-edge-solid", "실선 · 진행률에 반영 (하위 목표)");
+	legendLine("pbm-edge-solid", "실선 · 진행률에 반영 (하위 목표·프로젝트)");
 	legendLine("pbm-edge-dashed", "점선 · 관련 업무 (진행률과 별개)");
 	const hRow = legend.createDiv({ cls: "pbm-legend-row pbm-legend-health" });
 	for (const h of ["on-track", "at-risk", "off-track"]) {

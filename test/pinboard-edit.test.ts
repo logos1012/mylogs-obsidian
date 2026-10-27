@@ -27,7 +27,7 @@ import { goalLinkTexts, hubGoalsLinked } from "../src/projects/edit.ts";
 
 // Fixtures: the fictional 김하루's 2026 goals.
 const here = dirname(fileURLToPath(import.meta.url));
-const fx = (p: string) => readFileSync(join(here, "fixtures/pinboard", p), "utf8");
+const fx = (p: string) => readFileSync(join(here, "fixtures/pinboard", p), "utf8").replace("type: sub-goal", "type: sub-goal\nprogress_source: manual");
 const MAIN = fx("2026/G-2026-01 사이드 프로젝트로 첫 매출 내기.md");
 const SUB_M = fx("2026/G-2026-01.1 첫 유료 고객 1명.md");
 const SUB_REV = fx("2026/G-2026-01.2 월 매출 100만원.md");

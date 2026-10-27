@@ -1,3 +1,4 @@
+import { withProjectRollup } from "./project-rollup.ts";
 import { TFile, normalizePath } from "obsidian";
 import type { ProjectsHost } from "../projects/actions.ts";
 import { cleanFolder } from "../settings.ts";
@@ -47,7 +48,7 @@ export async function saveInlineGoal(host: ProjectsHost, displayed: Goal, field:
 		if (rename) idx = renameLinks(idx, oldBase, newBase);
 		idx = setFmValue(prependChangeLog(idx, today, `${next.id} ${INLINE_LABELS[field]} 수정 (화면에서 직접 편집)`), "updated", today);
 		writes.set(ip, { path: ip, before: index, after: idx });
-		const batch = [...writes.values()];
+		const batch = await withProjectRollup(host, [...writes.values()], today);
 		await commitBatch(io, batch);
 		if (rename) {
 			try { await host.app.fileManager.renameFile(file, target); }

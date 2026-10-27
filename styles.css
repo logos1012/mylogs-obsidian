@@ -9614,3 +9614,12 @@ body.is-mobile button.ml-milestone-marker { min-height: 44px; }
 .pf-schedule-chosen{font-size:12px;padding:4px 10px 10px;color:var(--text-accent)}
 .pf-schedule{container-type:inline-size}
 @container (max-width:600px){.pf-schedule-layout{grid-template-columns:1fr}.pf-schedule-list{display:block}.pf-schedule-day{min-height:90px}.pf-schedule-day button{white-space:normal;overflow-wrap:anywhere;text-align:left}.pf-schedule-list>.pf-schedule-milestone{display:inline-block;width:auto;max-width:100%;margin-right:4px}}
+
+/* Project contribution settings: compact and touch-friendly. */
+.pb-rollup { margin-block: 12px; min-width: 0; }
+.pb-rollup-row { padding: 5px 0; overflow-wrap: anywhere; font-size: var(--font-ui-small); }
+.pb-rollup-weight { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding-block: 4px; }
+.pb-rollup-weight span { min-width: 0; overflow-wrap: anywhere; }
+.pb-rollup-weight input { width: 80px; min-height: 44px; flex-shrink: 0; }
+.pb-rollup select { max-width: 100%; min-height: 44px; }
+.pb-rollup button { min-height: 44px; }
