@@ -1,5 +1,6 @@
 import { ItemView, Keymap, Menu, moment, normalizePath, Notice, Platform, setIcon, type TAbstractFile, TFile, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
+import { loadMilestoneCalendar, renderMilestoneMarkers, renderMilestoneIssues, watchesMilestoneProjects, type MilestoneCalendar } from "../projects/milestone-calendar-ui.ts";
 import { addDays } from "../parser.ts";
 import {
 	allocFileOf,
@@ -105,6 +106,7 @@ export class DeskCalendarView extends ItemView {
 	private pendingReload = false;
 	private reloadTimer: number | null = null;
 	private loadSeq = 0;
+	private milestones: MilestoneCalendar = { markers: [], issues: [] };
 
 	constructor(leaf: WorkspaceLeaf, plugin: MyLogsPlugin) {
 		super(leaf);
@@ -165,7 +167,7 @@ export class DeskCalendarView extends ItemView {
 		this.rootEl = this.contentEl.createDiv({ cls: "mylogs-desk-calendar" });
 		const onFile = (f: TAbstractFile, old?: string) => {
 			const paths = this.watchedPaths();
-			if (paths.includes(f.path) || (old && paths.includes(old))) this.scheduleReload();
+			if (paths.includes(f.path) || (old && paths.includes(old)) || watchesMilestoneProjects(this.plugin, f.path) || (old && watchesMilestoneProjects(this.plugin, old))) this.scheduleReload();
 		};
 		this.registerEvent(this.app.vault.on("modify", (f) => onFile(f)));
 		this.registerEvent(this.app.vault.on("create", (f) => onFile(f)));
@@ -209,7 +211,9 @@ export class DeskCalendarView extends ItemView {
 			const ym = parseMonthKey(key)!;
 			loaded.set(key, parseMonthFile(text, ym.year, ym.month));
 		}
+		const milestones = await loadMilestoneCalendar(this.plugin);
 		if (seq !== this.loadSeq) return;
+		this.milestones = milestones;
 		this.months = loaded;
 		this.render();
 	}
@@ -298,6 +302,7 @@ export class DeskCalendarView extends ItemView {
 					moveToDay: (x, iso) => this.moveToDay(x, iso),
 				}),
 			register: (cb) => this.register(cb),
+			renderMilestones: (parent, from, to) => this.renderMilestoneRange(parent, from, to, true),
 		};
 	}
 
@@ -328,6 +333,7 @@ export class DeskCalendarView extends ItemView {
 		now.toggleClass("is-active", this.month === ctx.today.slice(0, 7));
 		btn("▶", "다음 달", () => void this.goTo(shiftMonth(this.month, 1)));
 		btn("", "마크다운 파일 열기", (e) => void this.openAt(this.month, 0, e), "file-text");
+		renderMilestoneIssues(root, this.milestones.issues, path => void this.plugin.openProjectAt(path));
 	}
 
 	private renderLegend(root: HTMLElement): void {
@@ -344,6 +350,7 @@ export class DeskCalendarView extends ItemView {
 		lg.createSpan({ cls: "dc-sep" });
 		sym("dc-k-event", "행사");
 		sym("dc-k-note", "메모");
+		lg.createSpan({ cls: "ml-milestone-legend", text: "◆ 마일스톤 · 프로젝트의 목표일" });
 		lg.createSpan({ cls: "dc-sep" });
 		const a = lg.createSpan();
 		a.createEl("b", { text: "→" });
@@ -357,6 +364,11 @@ export class DeskCalendarView extends ItemView {
 		card.createEl("code", { text: this.monthPath(this.month) });
 		const b = card.createEl("button", { cls: "dc-btn dc-btn-primary", text: `${this.month} 새 달 만들기`, attr: { type: "button" } });
 		b.addEventListener("click", () => void createDeskMonth(this.plugin, this.month));
+		this.renderMilestoneRange(card, `${this.month}-01`, `${this.month}-31`, true);
+	}
+
+	private renderMilestoneRange(parent: HTMLElement, from: string, to: string, showDate = false): void {
+		renderMilestoneMarkers(parent, this.milestones.markers.filter(m => m.date >= from && m.date <= to), todayIsoLocal(), path => void this.plugin.openProjectAt(path), showDate);
 	}
 
 	private renderBands(root: HTMLElement, cur: MonthData, ctx: Ctx): void {
@@ -382,6 +394,12 @@ export class DeskCalendarView extends ItemView {
 		const ul = during.createEl("ul");
 		if (!cur.during.length) ul.createEl("li", { cls: "dc-it dc-none", text: "없음" });
 		for (const it of cur.during) this.renderDuringItem(ul, it, ctx);
+		const markers = this.milestones.markers.filter(m => m.date.startsWith(this.month + "-"));
+		if (markers.length) {
+			const list = root.createEl("details", { cls: "dc-milestone-month" });
+			list.createEl("summary", { text: `◆ 이달의 마일스톤 ${markers.length}` });
+			renderMilestoneMarkers(list, markers, ctx.today, path => void this.plugin.openProjectAt(path), true);
+		}
 	}
 
 	private renderCalendar(root: HTMLElement, cur: MonthData, ctx: Ctx): void {
@@ -458,12 +476,13 @@ export class DeskCalendarView extends ItemView {
 		if (!inMonth) cell.addClass("dc-out");
 		if (iso === ctx.today) cell.addClass("dc-today");
 		else if (iso < ctx.today) cell.addClass("dc-past");
-		if (!items.length) cell.addClass("dc-blank");
+		if (!items.length && !this.milestones.markers.some(m => m.date === iso)) cell.addClass("dc-blank");
 		const head = cell.createDiv({ cls: "dc-dhead" });
 		const m = moment(iso, "YYYY-MM-DD");
 		head.createSpan({ cls: "dc-dnum", text: String(m.date()) });
 		head.createSpan({ cls: "dc-dwd", text: m.format("dd") });
 		if (iso === ctx.today) head.createSpan({ cls: "dc-todaytag", text: "오늘" });
+		this.renderMilestoneRange(cell, iso, iso);
 		if (items.length) {
 			const ul = cell.createEl("ul", { cls: "dc-items" });
 			for (const it of items) this.renderDayItem(ul, it, ctx);

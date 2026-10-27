@@ -14,7 +14,8 @@ export async function saveMilestone(host: ProjectsHost, displayed: Project, expe
 		if (edited === text) return;
 		const old = readMilestones(text).items.find(i => change.kind !== "add" && i.line === change.line);
 		const verb = change.kind === "add" ? "추가" : change.kind === "edit" ? "수정" : change.kind === "remove" ? "삭제" : change.done ? "달성 확인" : "달성 취소";
-		const description = change.kind === "add" ? change.text.trim() : change.kind === "edit" ? `${old?.text} → ${change.text.trim()}` : old?.text ?? "";
+		const dateChange = (change.kind === "add" || change.kind === "edit") && change.due !== undefined ? ` · 목표일 ${old?.due || (old?.dueIssue ? "형식 오류" : "미정")} → ${change.due || "미정"}` : "";
+		const description = (change.kind === "add" ? change.text.trim() : change.kind === "edit" ? `${old?.text} → ${change.text.trim()}` : old?.text ?? "") + dateChange;
 		const summary = milestoneSummary(readMilestones(edited).items);
 		const title = `마일스톤 ${verb}`, detail = `${title}: ${description}`;
 		const after = applyHubChange(edited, { today, decision: `${detail} (사용자 확인)` });

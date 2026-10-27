@@ -6,7 +6,7 @@ export interface MilestoneUIState {
 	open: boolean;
 	busy?: boolean;
 	error?: string;
-	editor?: { line: number | null; text: string; source: string };
+	editor?: { line: number | null; text: string; source: string; due?: string; dateDirty?: boolean; dueIssue?: string };
 	removing?: { line: number; text: string; source: string };
 }
 
@@ -48,12 +48,23 @@ export function renderMilestones(parent: HTMLElement, p: Project, state: Milesto
 			check.checked = item.done; check.disabled = p.archived || locked;
 			label.createSpan({ text: item.text });
 			check.addEventListener("change", () => void commit({ kind: "check", line: item.line, done: check.checked }, source));
+			const editItem = (dateFocus = false) => {
+				state.editor = { line: item.line, text: item.text, source, due: item.due, dueIssue: item.dueIssue }; state.error = ""; paint(true);
+				if (dateFocus) host.querySelector<HTMLInputElement>('input[type="date"]')?.focus();
+			};
+			const dateText = item.dueIssue ? "날짜 확인" : item.due ? item.due.slice(2).replace(/-/g, "/") : "날짜";
+			if (p.archived) { if (item.due || item.dueIssue) row.createSpan({ cls: "pf-ms-date", text: dateText }); }
+			else {
+				const date = button(row, dateText, () => editItem(true), locked);
+				date.addClass("pf-ms-date"); date.setAttr("aria-label", `${item.text} 목표일 ${item.due || "미정"} 수정`);
+				date.setAttr("title", item.dueIssue || `목표일: ${item.due || "미정"}`);
+			}
 			if (!p.archived) {
 				const more = button(row, "⋯", () => {}, locked);
 				more.addClass("pf-ms-more"); more.setAttr("aria-label", `${item.text} 메뉴`); more.setAttr("aria-haspopup", "menu");
 				more.addEventListener("click", e => {
 					const menu = new Menu();
-					menu.addItem(i => i.setTitle("수정").setIcon("pencil").onClick(() => { state.editor = { line: item.line, text: item.text, source }; state.error = ""; paint(true); }));
+					menu.addItem(i => i.setTitle("수정").setIcon("pencil").onClick(() => editItem()));
 					menu.addItem(i => i.setTitle("삭제").setIcon("trash-2").setWarning(true).onClick(() => { state.removing = { ...item, source }; state.error = ""; paint(); host.querySelector<HTMLButtonElement>(".pf-ms-remove button")?.focus(); }));
 					menu.showAtMouseEvent(e);
 				});
@@ -67,12 +78,19 @@ export function renderMilestones(parent: HTMLElement, p: Project, state: Milesto
 			input.value = editor.text; input.disabled = !!state.busy;
 			input.addEventListener("input", () => { editor.text = input.value; });
 			input.addEventListener("focus", () => form.scrollIntoView({ block: "nearest" }));
+			const dateLabel = form.createEl("label", { cls: "pf-ms-date-field", text: "목표일 (선택)" });
+			const date = dateLabel.createEl("input", { attr: { type: "date", min: "1900-01-01", max: "2999-12-31", "aria-label": "마일스톤 목표일" } });
+			date.value = editor.due ?? ""; date.disabled = !!state.busy;
+			date.addEventListener("input", () => { editor.due = date.value; editor.dateDirty = true; });
+			button(dateLabel, "날짜 지우기", () => { editor.due = ""; editor.dateDirty = true; date.value = ""; }, !!state.busy);
+			if (editor.dueIssue) form.createDiv({ cls: "pf-ms-error", text: `${editor.dueIssue} 새 날짜를 고르거나 날짜 지우기를 누르세요.` });
+			form.createDiv({ cls: "pf-ms-hint", text: "달력에 ◆ 마일스톤으로 표시됩니다. 할 일로 추가되지는 않아요." });
 			const actions = form.createDiv({ cls: "pf-ms-editor-actions" });
 			const submit = actions.createEl("button", { text: state.busy ? "저장 중…" : "저장", attr: { type: "submit" } }); submit.disabled = !!state.busy;
 			const cancel = () => { state.editor = undefined; state.error = ""; paint(); void refresh(); };
 			button(actions, "취소", cancel, !!state.busy);
 			input.addEventListener("keydown", e => { if (e.key === "Escape" && !state.busy) { e.preventDefault(); cancel(); } });
-			form.addEventListener("submit", e => { e.preventDefault(); void commit(editor.line === null ? { kind: "add", text: editor.text } : { kind: "edit", line: editor.line, text: editor.text }, editor.source); });
+			form.addEventListener("submit", e => { e.preventDefault(); const due = editor.dateDirty ? editor.due ?? "" : undefined; void commit(editor.line === null ? { kind: "add", text: editor.text, due } : { kind: "edit", line: editor.line, text: editor.text, due }, editor.source); });
 			if (focus) input.focus();
 		} else if (state.removing && !p.archived) {
 			const removing = state.removing, box = body.createDiv({ cls: "pf-ms-remove", attr: { role: "group", "aria-label": "마일스톤 삭제 확인" } });

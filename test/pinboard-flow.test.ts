@@ -87,6 +87,20 @@ test("milestone stale source, archived hub and write failure are safe",async()=>
 	await assert.rejects(api.saveMilestone(v.host,{...p,path:archivePath},readMilestones(v.data.get(path)!).source,{kind:"add",text:"검수"},TODAY),/보관/);
 });
 
+test("milestone dates update project records only, never generate calendar tasks or complete a goal", async()=>{
+	const v=await start(),path=v.sub.projects[0].slice(2,-2)+".md",{p}=await api.readProject(v.host,path);
+	v.put("02 Wall Calendar/2026.md","# 미래\n"); v.put("03 Desk Calendar/2026/2026-01.md","# 이달\n"); v.put("04 Daily Pad/2026/2026-01-09.md","# 오늘\n");
+	const before=new Map(v.data);
+	await api.saveMilestone(v.host,p,"",{kind:"add",text:"창간호 검수",due:"2026-01-15"},TODAY);
+	const m=readMilestones(v.data.get(path)!);
+	await api.saveMilestone(v.host,p,m.source,{kind:"edit",line:m.items[0].line,text:"창간호 검수",due:"2026-02-01"},TODAY);
+	assert.equal(readMilestones(v.data.get(path)!).items[0].due,"2026-02-01");
+	assert.equal(readMilestones(v.data.get(path)!).items[0].done,false);
+	for(const [name,text]of before)if(!name.startsWith("05 Project Folders/"))assert.equal(v.data.get(name),text);
+	assert.match(v.data.get(`${p.folder}/99 작업실/로그/${p.name} 로그 2026-01.md`)!,/목표일 2026-01-15 → 2026-02-01/);
+	assert.match(v.data.get("05 Project Folders/99 작업실/Project Folders Index.md")!,/목표일 2026-01-15 → 2026-02-01/);
+});
+
 test("storage flow: Main → Sub + template project saves all originals and registries",async()=>{const v=await start();const hub=v.sub.projects[0].slice(2,-2)+".md";assert.ok(v.data.has(hub));assert.deepEqual(getFmList(v.data.get(hub)!,"goals"),[v.sub.id]);assert.equal(readGoal(v.data.get(v.main.path)!,v.main.path).subTotal,1);assert.match(v.data.get(`${ROOT}/Pinboard Index.md`)!,/뉴스레터 창간/);assert.equal(v.trash.length,0);});
 test("storage flow: missing real project template creates neither Sub nor project",async()=>{const v=vault(),m=await api.createGoalFlow(v.host,{input:INPUT},2026,undefined,TODAY);const path="05 Project Folders/99 작업실/템플릿/허브.md";v.nodes.delete(path);v.data.delete(path);const before=[...v.data];await assert.rejects(api.createGoalFlow(v.host,{input:{...INPUT,title:"첫 발행"},execution:{mode:"new",project:PROJECT}},2026,m.id,TODAY),/필수 파일/);assert.deepEqual([...v.data],before);});
 test("storage flow: existing project choice creates no duplicate folder and records both links",async()=>{const v=await start(),hub=v.sub.projects[0].slice(2,-2)+".md",count=v.nodes.size;const second=await api.createGoalFlow(v.host,{input:{...INPUT,title:"뉴스레터 구독자",baseline:"0",current:"10",target:"100"},execution:{mode:"project",path:hub}},2026,v.main.id,TODAY);assert.equal(v.nodes.size,count+1);assert.deepEqual(getFmList(v.data.get(hub)!,"goals"),[v.sub.id,second.id]);assert.ok(parseRegistry(v.data.get("05 Project Folders/99 작업실/Project Folders Index.md")!).active[0].goals.includes(second.id));});

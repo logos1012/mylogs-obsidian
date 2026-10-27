@@ -14,6 +14,7 @@ import {
 	WorkspaceLeaf,
 } from "obsidian";
 import type MyLogsPlugin from "./main.ts";
+import { loadMilestoneCalendar, renderMilestoneMarkers, renderMilestoneIssues, watchesMilestoneProjects } from "./projects/milestone-calendar-ui.ts";
 import {
 	addDays,
 	findDaySection,
@@ -561,6 +562,8 @@ export class DailyPadView extends ItemView {
 	private headerEl!: HTMLElement;
 	private emptyEl!: HTMLElement;
 	private deskEl!: HTMLElement;
+	private milestoneEl!: HTMLElement;
+	private milestoneSeq = 0;
 	private pendingEl!: HTMLElement;
 	private gridEl!: HTMLElement;
 	private panels: SectionPanel[] = [];
@@ -670,6 +673,7 @@ export class DailyPadView extends ItemView {
 		this.panels = [];
 		this.headerEl = this.rootEl.createDiv({ cls: "ml-top" });
 		this.emptyEl = this.rootEl.createDiv({ cls: "ml-empty-state" });
+		this.milestoneEl = this.rootEl.createDiv({ cls: "ml-panel ml-day-milestones" });
 		this.deskEl = this.rootEl.createDiv({ cls: "ml-panel ml-desk" });
 		this.pendingEl = this.rootEl.createDiv({ cls: "ml-panel ml-pending" });
 		this.gridEl = this.rootEl.createDiv({ cls: "ml-grid" });
@@ -707,6 +711,7 @@ export class DailyPadView extends ItemView {
 		const padText = await this.readPad();
 		const deskText = await this.readDesk();
 		const week = await this.readFlywheelWeek(padText);
+		await this.refreshMilestones();
 		if (seq !== this.loadSeq) return;
 		this.flywheelWeek = week;
 		this.renderHeader();
@@ -727,6 +732,7 @@ export class DailyPadView extends ItemView {
 		const pad = this.padPath();
 		const desk = this.deskPath();
 		const paths = [f.path, oldPath].filter(Boolean);
+		if (paths.some(path => path && watchesMilestoneProjects(this.plugin, path))) void this.refreshMilestones();
 		if (paths.includes(desk)) void this.readDesk().then((t) => this.renderDesk(t));
 		if (paths.includes(pad)) void this.onPadChanged();
 	}
@@ -745,6 +751,21 @@ export class DailyPadView extends ItemView {
 		this.flywheelWeek = await this.readFlywheelWeek(text);
 		this.renderPending(text);
 		this.panels.forEach((p) => p.sync(text));
+	}
+
+	private async refreshMilestones(): Promise<void> {
+		const seq = ++this.milestoneSeq, date = this.date;
+		const result = await loadMilestoneCalendar(this.plugin);
+		if (seq !== this.milestoneSeq || date !== this.date || !this.milestoneEl) return;
+		const markers = result.markers.filter(m => m.date === date), el = this.milestoneEl;
+		el.empty(); el.toggle(!!(markers.length || result.issues.length));
+		if (markers.length) {
+			el.createDiv({ cls: "ml-panel-head" }).createEl("h3", { cls: "ml-panel-title", text: date === todayIso() ? "오늘의 마일스톤" : "이날의 마일스톤" });
+			const body = el.createDiv({ cls: "ml-panel-body" });
+			renderMilestoneMarkers(body, markers, todayIso(), path => void this.plugin.openProjectAt(path));
+			body.createDiv({ cls: "ml-panel-hint", text: "프로젝트의 목표일 · 할 일 체크와는 별개예요" });
+		}
+		renderMilestoneIssues(el, result.issues, path => void this.plugin.openProjectAt(path));
 	}
 
 	// ── header ──

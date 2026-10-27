@@ -1,7 +1,22 @@
 /** Milestones live only in the hub's level-two section; never count next actions. */
-export interface Milestone { line: number; text: string; done: boolean }
+export interface Milestone { line: number; text: string; done: boolean; due?: string; dueIssue?: string }
 export interface Milestones { source: string; items: Milestone[]; start: number; end: number }
-export type MilestoneChange = { kind: "add"; text: string } | { kind: "edit"; line: number; text: string } | { kind: "check"; line: number; done: boolean } | { kind: "remove"; line: number };
+export type MilestoneChange = { kind: "add"; text: string; due?: string } | { kind: "edit"; line: number; text: string; due?: string } | { kind: "check"; line: number; done: boolean } | { kind: "remove"; line: number };
+
+export function validMilestoneDate(date: string): boolean {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < "1900-01-01" || date > "2999-12-31") return false;
+	const d = new Date(`${date}T12:00:00Z`);
+	return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === date;
+}
+const duePattern = () => /\(due::\s*([^)]*)\)/g;
+function milestoneContent(raw: string): Pick<Milestone, "text" | "due" | "dueIssue"> {
+	const fields = [...raw.matchAll(duePattern())];
+	const text = raw.replace(duePattern(), "").trim();
+	if (!fields.length) return { text };
+	const due = fields[0][1].trim();
+	if (fields.length !== 1 || !validMilestoneDate(due)) return { text, dueIssue: "목표일 형식을 확인해 주세요. YYYY-MM-DD 날짜 하나만 쓸 수 있어요." };
+	return { text, due };
+}
 
 function lines(text: string): string[] { return text.match(/[^\n]*\n|[^\n]+$/g) ?? []; }
 function visibleLines(text: string): { raw: string; index: number; offset: number }[] {
@@ -28,7 +43,10 @@ export function readMilestones(text: string): Milestones {
 	const items: Milestone[] = [];
 	for (const l of visibleLines(source)) {
 		const m = /^- \[([ xX])\][ \t]+(.+?)[ \t]*\r?\n?$/.exec(l.raw);
-		if (m && m[2].trim()) items.push({ line: l.index, done: m[1].toLowerCase() === "x", text: m[2].trim() });
+		if (m && m[2].trim()) {
+			const content = milestoneContent(m[2].trim());
+			if (content.text) items.push({ line: l.index, done: m[1].toLowerCase() === "x", ...content });
+		}
 	}
 	return { source, items, start: head.offset, end };
 }
@@ -44,9 +62,11 @@ export function changeMilestones(text: string, expected: string, change: Milesto
 	const eol = text.includes("\r\n") ? "\r\n" : "\n";
 	if (change.kind === "add" || change.kind === "edit") {
 		if (!change.text.trim() || /[\r\n]/.test(change.text)) throw new Error("도달할 상태를 한 줄로 적어 주세요.");
+		if (change.due !== undefined && change.due !== "" && !validMilestoneDate(change.due)) throw new Error("목표일은 실제 날짜를 YYYY-MM-DD로 골라 주세요 (1900–2999).");
+		if (/\(due::/.test(change.text)) throw new Error("목표일은 내용이 아닌 날짜 칸에 입력해 주세요.");
 	}
 	if (change.kind === "add") {
-		const row = `- [ ] ${change.text.trim()}${eol}`;
+		const row = `- [ ] ${change.text.trim()}${change.due ? ` (due:: ${change.due})` : ""}${eol}`;
 		if (!current.source) {
 			const at = visibleLines(text).find(l => /^## 비목표\s*$/.test(l.raw))?.offset ?? text.length;
 			const before = text.slice(0, at);
@@ -60,6 +80,10 @@ export function changeMilestones(text: string, expected: string, change: Milesto
 	const rows = lines(current.source), old = rows[item.line], ending = old.endsWith("\r\n") ? "\r\n" : old.endsWith("\n") ? "\n" : "";
 	if (change.kind === "remove") rows.splice(item.line, 1);
 	else if (change.kind === "check") rows[item.line] = old.replace(/^- \[[ xX]\]/, `- [${change.done ? "x" : " "}]`);
-	else rows[item.line] = `- [${item.done ? "x" : " "}] ${change.text.trim()}${ending}`;
+	else {
+		// An older caller editing only the title must preserve even malformed date metadata.
+		const fields = change.due === undefined ? [...old.matchAll(duePattern())].map(m => m[0]).join(" ") : change.due ? `(due:: ${change.due})` : "";
+		rows[item.line] = `- [${item.done ? "x" : " "}] ${change.text.trim()}${fields ? " " + fields : ""}${ending}`;
+	}
 	return text.slice(0, current.start) + rows.join("") + text.slice(current.end);
 }
