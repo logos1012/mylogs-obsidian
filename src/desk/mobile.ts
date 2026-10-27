@@ -88,7 +88,7 @@ export function renderDeskMobile(h: DeskMobileHost): void {
 	wire(h, dayBox.querySelector<HTMLElement>(".dc-items"), h.dayItems(st.day), "day");
 
 	const weekBox = root.createDiv({ cls: "dc-m-cell dc-m-week" });
-	h.renderMilestones(weekBox, monday, addDays(monday, 6));
+	// The chosen day's ◆ are in its cell; the rest of the week shows ◆ on the grid (no second list).
 	h.renderAllocCell(weekBox, monday);
 	wire(h, weekBox.querySelector<HTMLElement>(".dc-items"), h.allocItems(monday), "alloc");
 
@@ -97,6 +97,8 @@ export function renderDeskMobile(h: DeskMobileHost): void {
 	sum.createSpan({ text: "이달의 초점 · 이달 중" });
 	if (cur.during.length) sum.createSpan({ cls: "dc-m-count", text: String(cur.during.length) });
 	h.renderBands(month);
+	// On a phone the grid already marks every ◆ day and the chosen day lists its own: no month list.
+	month.querySelector(".dc-milestone-month")?.remove();
 	wire(h, month.querySelector<HTMLElement>(".dc-during ul"), cur.during, "during");
 	// Wall Calendar lines waiting to come into this month: keep them in sight.
 	if (month.querySelector(".dc-wallin")) month.open = true;
