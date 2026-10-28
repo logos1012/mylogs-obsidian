@@ -53,7 +53,9 @@ export function renderProjectSchedule(parent:HTMLElement,host:ProjectsHost,p:Pro
    const cell=grid.createDiv({cls:`pf-schedule-day${date===todayIsoLocal()?" is-today":""}`,attr:{tabindex:"0",role:"button","aria-label":`${date}에 배정`,"data-date":date}});cell.createSpan({cls:"pf-schedule-daynum",text:String(+date.slice(8))});
    if(!p.archived&&!state.busy)scheduleTarget(cell,host,{kind:"day",date},refresh);
    const entries=[...ms.filter(m=>m.kind==="milestone"&&m.date===date),...tasks.filter(t=>t.date===date).map(ti)];
-   for(const item of entries){const b=button(cell,`${item.kind==="milestone"?"◆":item.task.state==="done"?"✓":"□"} ${item.title}`,()=>{ if(chosen&&!p.archived)void run(()=>applySchedule(host,chosen,{kind:"day",date}));else if(item.kind==="milestone"||item.task.state==="scheduled")state.select?.(item); },item.kind==="milestone"?"pf-schedule-milestone":"pf-schedule-task");b.setAttr("title",item.title);if(!p.archived&&!state.busy&&(item.kind==="milestone"||item.task.state==="scheduled"))scheduleSource(b,host,item);}
+   // The calendar is for placing dates: each item is a small mark (name on hover), not its text.
+   const marks=entries.length?cell.createDiv({cls:"pf-schedule-marks"}):null;
+   for(const item of entries){const b=button(marks!,item.kind==="milestone"?"◆":item.task.state==="done"?"✓":"□",()=>{ if(chosen&&!p.archived)void run(()=>applySchedule(host,chosen,{kind:"day",date}));else if(item.kind==="milestone"||item.task.state==="scheduled")state.select?.(item); },`pf-schedule-mark ${item.kind==="milestone"?"is-milestone":item.task.state==="done"?"is-done":"is-task"}`);b.setAttr("title",item.title);b.setAttr("aria-label",item.title);if(!p.archived&&!state.busy&&(item.kind==="milestone"||item.task.state==="scheduled"))scheduleSource(b,host,item);}
   }
   if(state.error)root.createDiv({cls:"pf-ms-error",text:state.error,attr:{role:"alert"}});
  };
