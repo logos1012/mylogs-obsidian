@@ -1,9 +1,12 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type MyLogsPlugin from "./main.ts";
+import { asSideMode, type SideMode } from "./side.ts";
 
 export interface SectionNames {
 	pending: string;
 	today: string;
+	/** Daily Pad 「회사 할 일」 (2026-10-28; `today` is 「개인 할 일」). */
+	work: string;
 	memo: string;
 	log: string;
 	scribble: string;
@@ -38,6 +41,8 @@ export interface MyLogsSettings {
 	/** Flywheel folder: `<folder>/Flywheel.md` (read only; its `status:: 사용` elements open each new Daily Pad). */
 	flywheelPath: string;
 	sections: SectionNames;
+	/** 개인 / 회사 / 전체: what Pinboard · Wall · Desk · Projects show, and the side of new lines (set by hand, remembered). */
+	sideMode: SideMode;
 	/** Show `#test` markers on test data. */
 	showTestMarkers: boolean;
 	/** Desk Calendar: hide 완료 · 옮김 · 놓아줌 lines (screen only; remembered). */
@@ -75,12 +80,14 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	flywheelPath: "12 Flywheel",
 	sections: {
 		pending: "결정 대기",
-		today: "오늘 할 일",
+		today: "개인 할 일",
+		work: "회사 할 일",
 		memo: "메모",
 		log: "로그",
 		scribble: "끼적임",
 		refs: "자료",
 	},
+	sideMode: "전체",
 	showTestMarkers: true,
 	deskHideClosed: false,
 	deskShowTasks: false,
@@ -99,13 +106,22 @@ export function mergeSettings(saved: unknown): MyLogsSettings {
 	return {
 		...DEFAULT_SETTINGS,
 		...s,
-		sections: { ...DEFAULT_SETTINGS.sections, ...(s.sections ?? {}) },
+		sections: migrateSections({ ...DEFAULT_SETTINGS.sections, ...(s.sections ?? {}) }),
+		sideMode: asSideMode(s.sideMode),
 		myLifeCollapsed: { ...(s.myLifeCollapsed ?? {}) },
 	};
 }
 
-/** The five fixed section keys, in display and skeleton order. */
-export const MAIN_SECTION_KEYS = ["today", "memo", "log", "scribble", "refs"] as const;
+/** Saved settings from before 2026-10-28 still name the task section 「오늘 할 일」. */
+function migrateSections(x: SectionNames): SectionNames {
+	return x.today === LEGACY_TODAY ? { ...x, today: DEFAULT_SETTINGS.sections.today } : x;
+}
+
+/** The task section of Daily Pads written before 2026-10-28, read as 「개인 할 일」. */
+export const LEGACY_TODAY = "오늘 할 일";
+
+/** The fixed section keys, in display and skeleton order. */
+export const MAIN_SECTION_KEYS = ["today", "work", "memo", "log", "scribble", "refs"] as const;
 export type MainSectionKey = (typeof MAIN_SECTION_KEYS)[number];
 
 export function cleanFolder(p: string): string {
@@ -265,7 +281,8 @@ export class MyLogsSettingTab extends PluginSettingTab {
 			);
 			if (desc) st.setDesc(desc);
 		};
-		section("오늘 할 일", "today");
+		section("개인 할 일", "today");
+		section("회사 할 일", "work");
 		section("메모", "memo");
 		section("로그", "log");
 		section("끼적임", "scribble");

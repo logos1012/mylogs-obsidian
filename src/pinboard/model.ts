@@ -54,6 +54,8 @@ export interface Goal {
 	title: string;
 	parent: string;
 	period: string;
+	/** 개인 / 회사 (frontmatter `scope`, 2026-10-28). Empty = 개인. */
+	scope: string;
 	area: string;
 	status: string;
 	/** `on-track` / `at-risk` / `off-track` / `""` (판단 없음). */
@@ -134,6 +136,7 @@ export function parseGoal(fm: Record<string, unknown> | null | undefined, path: 
 		title: s("title") || base,
 		parent: s("parent"),
 		period: s("period"),
+		scope: s("scope"),
 		area: s("area"),
 		status: s("status") || "active",
 		health: normalizeHealth(s("health")),

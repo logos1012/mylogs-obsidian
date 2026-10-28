@@ -8,6 +8,7 @@
  * Pure module (no Obsidian imports) so it can be unit-tested with `node --test`.
  */
 
+import { setSide, type Side } from "../side.ts";
 import { replaceContent, setFields, spliceLine } from "../line-edit.ts";
 import { findDaySection, LIST_LINE_RE, pad2, splitLinesKeepEol, stripEol, TASK_LINE_RE } from "../parser.ts";
 import { detectEol, findSection, sectionLineRange, setFrontmatterScalar } from "../writer.ts";
@@ -309,6 +310,13 @@ export function editWallItem(text: string, year: number, t: WallTarget, c: WallC
 	const line = `${l.indent}${l.marker} ${moved}`;
 	const rest = spliceLine(l.lines, l.idx);
 	return insertIntoMonth(rest, year, toMonth, line);
+}
+
+/** 개인 ↔ 회사: add or drop `#회사` (`../side.ts`). */
+export function setWallSide(text: string, year: number, t: WallTarget, side: Side): EditResult {
+	const l = locate(text, year, t);
+	if ("reason" in l) return { ok: false, reason: l.reason };
+	return replaceLine(l, setSide(l.body, side));
 }
 
 /** 삭제: remove the line (no record kept). */

@@ -12,6 +12,8 @@ import { refreshToolbox, registerToolbox } from "./toolbox/register.ts";
 import { activateDiary, refreshDiaries, registerDiary } from "./diary/register.ts";
 import { refreshFlywheel, registerFlywheel } from "./flywheel/register.ts";
 import { LumiController } from "./lumi/controller.ts";
+import type { SideMode } from "./side.ts";
+import { syncSideSwitches } from "./ui/nav.ts";
 import { registerLumi } from "./lumi/register.ts";
 
 /*
@@ -163,6 +165,14 @@ export default class MyLogsPlugin extends Plugin {
 
 	async loadSettings(): Promise<void> {
 		this.settings = mergeSettings(await this.loadData());
+	}
+
+	/** 개인 / 회사 / 전체 (by hand only): every open view's switch and band follow, the views reload. */
+	async setSideMode(m: SideMode): Promise<void> {
+		if (this.settings.sideMode === m) return;
+		this.settings.sideMode = m;
+		syncSideSwitches(m);
+		await this.saveSettings();
 	}
 
 	async saveSettings(): Promise<void> {

@@ -5,6 +5,9 @@ import { hubLocation, parseProject } from "../projects/model.ts";
 import { parseFrontmatterText } from "../pinboard/model.ts";
 import { readProject, vaultIO } from "../pinboard/create-actions.ts";
 import { isFlywheelLine } from "../flywheel/model.ts";
+import { asSide, projectRef, shows } from "../side.ts";
+import { filterMonth, type SideCounts } from "./side-filter.ts";
+import { renderSideCount } from "./side-ui.ts";
 import { appendPadTasks, type BacklogGroup, monthLevel, type PadTask } from "./mobile-week.ts";
 import { mountAppNav } from "../ui/nav.ts";
 import { parseWallYear, type WallLine } from "../wall/parse.ts";
@@ -61,6 +64,7 @@ import {
 	planFuture,
 	planLetGo,
 	planMoveDay,
+	planSetSide,
 	planSplit,
 	planToggle,
 	planUnassign,
@@ -137,6 +141,8 @@ export class DeskCalendarView extends ItemView {
 	private reloadTimer: number | null = null;
 	private loadSeq = 0;
 	private milestones: MilestoneCalendar = { markers: [], issues: [] };
+	/** Per day: open tasks and events of each side before the 개인 / 회사 filter. */
+	private sideCounts = new Map<string, SideCounts>();
 
 	constructor(leaf: WorkspaceLeaf, plugin: MyLogsPlugin) {
 		super(leaf);
@@ -257,7 +263,15 @@ export class DeskCalendarView extends ItemView {
 		const wf = this.fileAt(this.wallPath(+this.month.slice(0, 4)));
 		const wallText = wf ? await this.app.vault.read(wf) : null;
 		if (seq !== this.loadSeq) return;
-		this.milestones = milestones;
+		const mode = this.plugin.settings.sideMode;
+		const counts = new Map<string, SideCounts>();
+		for (const [k, md] of loaded) {
+			const f = filterMonth(md, mode, milestones.scopeOf);
+			loaded.set(k, f.data);
+			for (const [d, c] of f.counts) counts.set(d, c);
+		}
+		this.sideCounts = counts;
+		this.milestones = { ...milestones, markers: milestones.markers.filter((m) => shows(asSide(m.scope), mode)) };
 		this.months = loaded;
 		this.pads = pads;
 		this.wallText = wallText;
@@ -615,6 +629,7 @@ export class DeskCalendarView extends ItemView {
 		head.createSpan({ cls: "dc-dnum", text: String(m.date()) });
 		head.createSpan({ cls: "dc-dwd", text: m.format("dd") });
 		if (iso === ctx.today) head.createSpan({ cls: "dc-todaytag", text: "오늘" });
+		renderSideCount(head, this.sideCounts.get(iso), this.plugin.settings.sideMode);
 		this.renderMilestoneRange(cell, iso, iso);
 		if (items.length) {
 			const ul = cell.createEl("ul", { cls: "dc-items" });
@@ -644,6 +659,7 @@ export class DeskCalendarView extends ItemView {
 		const kind = it.item.kind ?? "note";
 		const li = ul.createEl("li", { cls: `dc-it dc-k-${kind} dc-s-${stateCls}${extra}` });
 		if (it.item.kind === null) li.addClass("dc-raw");
+		if (it.side === "회사") li.addClass("is-work");
 		li.createSpan({ cls: "dc-sym", attr: { "aria-hidden": "true" } });
 		const body = li.createSpan({ cls: "dc-body" });
 		const meta = createSpan({ cls: "dc-meta" });
@@ -966,6 +982,10 @@ export class DeskCalendarView extends ItemView {
 			menu.addItem((i) => i.setTitle("행사 취소 (취소선)").setIcon("x").onClick(() => void this.exec(planCancelEvent(it, ctx.today))));
 		}
 		menu.addSeparator();
+		if (it.item.kind !== null && !projectRef(it.item.raw)) {
+			const other = it.side === "회사" ? "개인" : "회사";
+			menu.addItem((i) => i.setTitle(`${other} 일로`).setIcon("arrow-left-right").setHint(other === "회사" ? "줄 끝에 #회사를 붙여요" : "#회사를 떼요").onClick(() => void this.exec(planSetSide(it, other, pairedCopies(it, ctx.months), ctx.today))));
+		}
 		menu.addItem((i) => i.setTitle("수정…").setIcon("pencil").onClick(() => void this.editItem(it)));
 		menu.addItem((i) =>
 			i
@@ -1192,19 +1212,23 @@ export class DeskCalendarView extends ItemView {
 		return normalizePath(`${this.plugin.settings.dailyPadFolder}/${iso.slice(0, 4)}/${iso}.md`);
 	}
 
-	/** That day's Daily Pad 「오늘 할 일」 checkboxes (주 보기). */
+	/** That day's Daily Pad 「개인 할 일」 · 「회사 할 일」 checkboxes (주 보기), the shown side(s) only. */
 	private async padTasks(iso: string): Promise<PadTask[]> {
 		const f = this.fileAt(this.padPathOf(iso));
 		if (!f) return [];
 		const text = await this.app.vault.cachedRead(f);
-		const r = findSection(text, this.plugin.settings.sections.today);
-		if (!r) return [];
-		const range = sectionLineRange(text, r);
+		const s = this.plugin.settings;
 		const out: PadTask[] = [];
-		for (const sl of parseBodyLines(splitLinesKeepEol(text), range.start, range.end)) {
-			const m = TASK_LINE_RE.exec(sl.line);
-			if (!m || sl.indent > 0 || isFlywheelLine(sl.line)) continue;
-			out.push({ index: sl.index, line: sl.line, text: sl.item?.text ?? m[3].slice(1).trim(), done: m[2] !== " " });
+		for (const [section, side] of [[s.sections.today, "개인"], [s.sections.work, "회사"]] as const) {
+			if (!shows(side, s.sideMode)) continue;
+			const r = findSection(text, section);
+			if (!r) continue;
+			const range = sectionLineRange(text, r);
+			for (const sl of parseBodyLines(splitLinesKeepEol(text), range.start, range.end)) {
+				const m = TASK_LINE_RE.exec(sl.line);
+				if (!m || sl.indent > 0 || isFlywheelLine(sl.line)) continue;
+				out.push({ index: sl.index, line: sl.line, text: sl.item?.text ?? m[3].slice(1).trim(), done: m[2] !== " ", section, side });
+			}
 		}
 		return out;
 	}
@@ -1214,7 +1238,7 @@ export class DeskCalendarView extends ItemView {
 		if (!f) return;
 		let ok = false;
 		await this.app.vault.process(f, (data) => {
-			const r = findSection(data, this.plugin.settings.sections.today);
+			const r = findSection(data, pt.section);
 			const res = toggleCheckbox(data, { index: pt.index, line: pt.line, scope: r ? sectionLineRange(data, r) : undefined });
 			if (!res.ok) return data;
 			ok = true;
@@ -1233,7 +1257,7 @@ export class DeskCalendarView extends ItemView {
 			const text = await this.app.vault.cachedRead(f);
 			const fm = parseFrontmatterText(text);
 			const p = parseProject(fm.data, fm.body, loc, f.path);
-			if (!p || !["진행", "대기"].includes(p.status)) continue;
+			if (!p || !["진행", "대기"].includes(p.status) || !shows(asSide(p.scope), host.settings.sideMode)) continue;
 			try {
 				const tasks = (await loadProjectTasks(host, p, text)).filter((t) => t.kind === "hub" && t.state === "scheduled" && !t.date && !t.month);
 				if (tasks.length) out.push({ project: p.title, tasks });

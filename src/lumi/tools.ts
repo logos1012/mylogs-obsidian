@@ -56,8 +56,8 @@ export interface LumiTool {
 	run: (ctx: ToolCtx, args: Record<string, unknown>) => Promise<string>;
 }
 
-const PAD_SECTIONS = ["오늘 할 일", "결정 대기", "메모", "로그"] as const;
-const SECTION_KEY: Record<(typeof PAD_SECTIONS)[number], "today" | "pending" | "memo" | "log"> = { "오늘 할 일": "today", "결정 대기": "pending", 메모: "memo", 로그: "log" };
+const PAD_SECTIONS = ["개인 할 일", "회사 할 일", "결정 대기", "메모", "로그"] as const;
+const SECTION_KEY: Record<(typeof PAD_SECTIONS)[number], "today" | "work" | "pending" | "memo" | "log"> = { "개인 할 일": "today", "회사 할 일": "work", "결정 대기": "pending", 메모: "memo", 로그: "log" };
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD");
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
@@ -158,7 +158,7 @@ function projectPath(p: Project, rel: string): string {
 export const LUMI_TOOLS: LumiTool[] = [
 	{
 		name: "pad_add",
-		description: "Daily Pad에 한 줄 넣기. 오늘 할 일·결정 대기는 체크박스 할 일로, 메모는 한 줄로, 로그는 시각과 함께 들어간다. 날짜를 비우면 오늘. 그날 Daily Pad가 없으면 만든다.",
+		description: "Daily Pad에 한 줄 넣기. 할 일은 개인 할 일 / 회사 할 일 중 하나(회사 일이 분명할 때만 회사, 애매하면 개인. 회사 칸 줄에는 #회사를 붙이지 않는다). 할 일·결정 대기는 체크박스 할 일로, 메모는 한 줄로, 로그는 시각과 함께 들어간다. 날짜를 비우면 오늘. 그날 Daily Pad가 없으면 만든다.",
 		shape: { section: z.enum(PAD_SECTIONS), text: z.string().min(1).describe("넣을 내용 한 줄 (태그 #회사 등 포함 가능)"), date: isoDate.optional() },
 		async run(ctx, a) {
 			const date = (a.date as string) || ctx.today;
@@ -166,7 +166,7 @@ export const LUMI_TOOLS: LumiTool[] = [
 			const name = ctx.host.settings.sections[SECTION_KEY[section]];
 			let text = oneLine(String(a.text)).replace(/^[-*+]\s+(\[.\]\s+)?/, "");
 			if (section === "로그" && !/^\d{1,2}:\d{2}/.test(text)) text = `${moment().format("HH:mm")} ${text}`;
-			const line = section === "오늘 할 일" || section === "결정 대기" ? `- [ ] ${text}` : `- ${text}`;
+			const line = section === "개인 할 일" || section === "회사 할 일" || section === "결정 대기" ? `- [ ] ${text}` : `- ${text}`;
 			const f = await ensurePad(ctx, date);
 			await ctx.host.app.vault.process(f, (t) => setFrontmatterScalar(appendToSection(t, name, line), "updated", ctx.today));
 			return `${date === ctx.today ? "" : `${date} `}${section}에 넣었어요: 「${short(text)}」`;
@@ -174,7 +174,7 @@ export const LUMI_TOOLS: LumiTool[] = [
 	},
 	{
 		name: "pad_check",
-		description: "그날 Daily Pad의 할 일(오늘 할 일·결정 대기)이나 Desk Calendar에서 온 그날 일을 완료로 체크하거나 체크를 푼다. text는 할 일 문구의 일부. 여러 줄이 맞으면 후보를 돌려주니 더 구체적으로 다시 부른다.",
+		description: "그날 Daily Pad의 할 일(개인 할 일·회사 할 일·결정 대기)이나 Desk Calendar에서 온 그날 일을 완료로 체크하거나 체크를 푼다. text는 할 일 문구의 일부. 여러 줄이 맞으면 후보를 돌려주니 더 구체적으로 다시 부른다.",
 		shape: { text: z.string().min(1), done: z.boolean().default(true), date: isoDate.optional() },
 		async run(ctx, a) {
 			const date = (a.date as string) || ctx.today;
@@ -198,7 +198,7 @@ export const LUMI_TOOLS: LumiTool[] = [
 			const pad = fileAt(ctx, padPath(ctx, date));
 			if (pad) {
 				const t = await ctx.host.app.vault.read(pad);
-				for (const [where, name] of [["pad", s.sections.today], ["pending", s.sections.pending]] as const) {
+				for (const [where, name] of [["pad", s.sections.today], ["pad", s.sections.work], ["pending", s.sections.pending]] as const) {
 					const r = findSection(t, name);
 					if (r) scan(where, pad.path, t, sectionLineRange(t, r));
 				}

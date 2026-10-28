@@ -70,7 +70,8 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const SECTION_HINT: Record<MainSectionKey, string> = {
-	today: "오늘 새로 생긴 일",
+	today: "오늘 새로 생긴 개인 일",
+	work: "오늘 새로 생긴 회사 일 · 칸이 곧 구분이라 #회사는 붙이지 않아요",
 	memo: "짧게 떠오른 것",
 	log: "그날의 기록",
 	scribble: "긴 생각, 자유 형식",
@@ -79,6 +80,7 @@ const SECTION_HINT: Record<MainSectionKey, string> = {
 
 const SECTION_PLACEHOLDER: Record<MainSectionKey, string> = {
 	today: "- [ ] 할 일",
+	work: "- [ ] 회사 할 일",
 	memo: "- 떠오른 것",
 	log: "- 09:00 있었던 일",
 	scribble: "생각나는 대로 적어요",
@@ -272,7 +274,7 @@ class SectionPanel {
 		this.barEl.hide();
 		this.bodyEl = this.el.createDiv({ cls: "ml-panel-body" });
 		this.bodyEl.addEventListener("click", (e) => this.onBodyClick(e));
-		if (this.key === "today") this.mountQuickAdd();
+		if (this.key === "today" || this.key === "work") this.mountQuickAdd();
 	}
 
 	private mountQuickAdd(): void {

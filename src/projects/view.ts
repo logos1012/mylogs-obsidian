@@ -80,7 +80,10 @@ export class ProjectFoldersView extends ItemView {
 	mode: ProjectsMode = "kanban";
 	/** Mode to go back to from the timeline. */
 	private boardMode: "kanban" | "list" = "kanban";
-	filter: ScopeFilter = "전체";
+	/** 개인 / 회사 / 전체 = the shared mode (`../side.ts`), not a per-view choice. */
+	get filter(): ScopeFilter {
+		return this.plugin.settings.sideMode;
+	}
 	/** Timeline year; null = the latest year with a completed project (else this year). */
 	year: number | null = null;
 
@@ -115,7 +118,7 @@ export class ProjectFoldersView extends ItemView {
 	}
 
 	getState(): Record<string, unknown> {
-		return { ...super.getState(), mode: this.mode, filter: this.filter, year: this.year, projectId: this.selectedId };
+		return { ...super.getState(), mode: this.mode, year: this.year, projectId: this.selectedId };
 	}
 
 	async setState(state: unknown, result: ViewStateResult): Promise<void> {
@@ -125,7 +128,6 @@ export class ProjectFoldersView extends ItemView {
 		else if (s.projectId === null) this.selectedId = null;
 		if (s.mode === "kanban" || s.mode === "list" || s.mode === "timeline") this.mode = s.mode;
 		if (this.mode !== "timeline") this.boardMode = this.mode;
-		if (typeof s.filter === "string" && (FILTERS as string[]).includes(s.filter)) this.filter = s.filter as ScopeFilter;
 		if (typeof s.year === "number") this.year = s.year;
 		await super.setState(state, result);
 		this.render();
@@ -503,9 +505,7 @@ export class ProjectFoldersView extends ItemView {
 				f,
 				() => {
 					if (!this.canNavigate()) return;
-					this.filter = f;
-					this.render();
-					this.app.workspace.requestSaveLayout();
+					void this.plugin.setSideMode(f);
 				},
 				{ active: this.filter === f },
 			);
