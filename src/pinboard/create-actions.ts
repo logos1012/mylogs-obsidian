@@ -1,4 +1,5 @@
 import { isGoalNotePath } from "./model.ts";
+import type { Side } from "../side.ts";
 import { withProjectRollup } from "./project-rollup.ts";
 import { TFile, TFolder, normalizePath, type App } from "obsidian";
 import { cleanFolder } from "../settings.ts";
@@ -125,3 +126,20 @@ export async function refreshRelatedIndex(host:ProjectsHost,ids:string[],today:s
 	for(const x of (await readGoals(host)).filter(x=>ids.includes(x.goal.id)))after=upsertGoalRows(after,Number(x.goal.id.slice(2,6)),[x.goal],new Map([[x.goal.id,relatedText(x.goal,x.text,wheel)]]));
 	if(after!==before)await commitBatch(io,[{path,before,after:setFmValue(after,"updated",today)}]);
 }
+
+/**
+ * 개인 / 회사 of a goal: the Main Goal and all its Sub Goals together (a Sub is always on its
+ * Main's board, `01 Pinboard/AGENTS.md` 「scope」). Given a Sub, its Main's group changes.
+ */
+export async function saveGoalScope(host:ProjectsHost,id:string,scope:Side,today:string):Promise<Goal>{return exclusive(host,async()=>{
+	const io=vaultIO(host.app),all=await readGoals(host),hit=all.find(x=>x.goal.id===id);
+	if(!hit)throw new Error(`목표를 찾지 못했어요: ${id}`);
+	const main=hit.goal.type==="sub-goal"?all.find(x=>x.goal.id===hit.goal.parent&&x.goal.type==="main-goal")??hit:hit;
+	const group=[main,...all.filter(x=>x.goal.type==="sub-goal"&&x.goal.parent===main.goal.id)];
+	const writes:Write[]=group.map(x=>({path:x.goal.path,before:x.text,after:setFmValue(setFmValue(x.text,"scope",scope),"updated",today)})).filter(w=>w.after!==w.before);
+	if(!writes.length)return main.goal;
+	const ip=`${cleanFolder(host.settings.pinboardFolder)}/${INDEX_FILE}`,index=await required(io,ip);
+	writes.push({path:ip,before:index,after:setFmValue(prependChangeLog(index,today,`${main.goal.id} ${scope} 목표로 (하위 ${group.length-1}개 포함, 플러그인)`),"updated",today)});
+	await commitBatch(io,writes);
+	return readGoal(writes[0].after,writes[0].path);
+});}

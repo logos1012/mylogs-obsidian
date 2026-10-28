@@ -284,13 +284,6 @@ export class WallCalendarView extends ItemView {
 			}
 		}
 		this.renderLegend(sheet);
-		const foot = sheet.createDiv({ cls: "wc-foot" });
-		const link = foot.createEl("a", { text: `원본: ${this.yearPath()}`, attr: { href: "#" } });
-		link.addEventListener("click", (e) => {
-			e.preventDefault();
-			const f = this.file(this.yearPath());
-			if (f) void this.app.workspace.getLeaf(Keymap.isModEvent(e)).openFile(f);
-		});
 		this.contentEl.scrollTop = scroll;
 		if (this.scrollToNow) {
 			const now = sheet.querySelector<HTMLElement>(".wc-month.is-now");

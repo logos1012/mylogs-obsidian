@@ -1,5 +1,5 @@
 import { goalIdYear, isGoalNotePath } from "./model.ts";
-import { asSide, inputSide, shows, type SideMode } from "../side.ts";
+import { asSide, inputSide, shows, type Side, type SideMode } from "../side.ts";
 import { loadProjectProgress, saveProgressSettings } from "./project-rollup.ts";
 import { mountAppNav } from "../ui/nav.ts";
 import { tip } from "../ui/tip.ts";
@@ -97,7 +97,7 @@ import {
 } from "./model.ts";
 import { type MapInput, type MapSub, renderStrategyMap } from "./map.ts";
 import { askCreateGoal, askDeleteGoals } from "./create-modal.ts";
-import { createGoalFlow, connectFlywheel, connectProject, createProjectForGoal, unlinkDeletedFlywheel, readProject, readGoals, refreshRelatedIndex } from "./create-actions.ts";
+import { saveGoalScope, createGoalFlow, connectFlywheel, connectProject, createProjectForGoal, unlinkDeletedFlywheel, readProject, readGoals, refreshRelatedIndex } from "./create-actions.ts";
 import { parseFrontmatterText } from "./model.ts";
 import { INLINE_LABELS, inlineToken, inlineValue, type InlineGoalField } from "./inline-edit.ts";
 import { saveInlineGoal } from "./inline-actions.ts";
@@ -880,6 +880,23 @@ export class PinboardView extends ItemView {
 		}
 		const retro = bulletItems(findSectionText(secs, "종료 회고")).filter((x) => !/^[^:]+:\s*$/.test(x));
 		if (retro.length || isEnded(g.status)) descPart("retro", "종료 회고");
+
+		// 개인 / 회사 (Main and its Subs together): the goal moves to the other board.
+		if (main) {
+			const now = asSide(g.scope);
+			const to: Side = now === "회사" ? "개인" : "회사";
+			const sw = this.card(body, `${now} 목표`);
+			this.smallBtn(sw, `${to} 목표로 바꾸기`, `하위 목표도 함께 ${to} 핀보드로 옮겨요`, async () => {
+				if (!this.canNavigate()) return;
+				try {
+					await saveGoalScope(this.plugin, g.id, to, todayIso());
+					new Notice(`「${g.title}」을(를) ${to} 목표로 바꿨어요.`);
+					await this.refresh();
+				} catch (e) {
+					new Notice(e instanceof Error ? e.message : String(e));
+				}
+			}, "arrow-left-right");
+		}
 
 		// Sub list
 		if (main) {

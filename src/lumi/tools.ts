@@ -16,13 +16,16 @@ import { MAIN_SECTION_KEYS } from "../settings.ts";
 import { findDaySection, parseBodyLines, splitLinesKeepEol, TASK_LINE_RE, toIsoDate } from "../parser.ts";
 import { appendToSection, dailyPadSkeleton, findSection, sectionLineRange, setFrontmatterScalar, toggleCheckbox } from "../writer.ts";
 import { togglePending } from "../pending/actions.ts";
-import { changeProjectTask, loadProjectTasks, newTaskId, toggleLinkedProjectTask } from "../projects/task-actions.ts";
+import { changeProjectTask, loadProjectTasks, newTaskId, type ScheduleTarget, targetLabel, toggleLinkedProjectTask } from "../projects/task-actions.ts";
 import { deskMonthPath, logDeskChange } from "../desk/actions.ts";
 import { prependChangeLog, wallYearSkeleton } from "../desk/ops.ts";
 import { addIndexChange, formatNewLine, insertIntoDesk, insertIntoMonth } from "../wall/edit.ts";
 import { putIntoDrawer } from "../drawer/actions.ts";
 import { DRAWER_SECTIONS, type DrawerSection } from "../drawer/model.ts";
-import { createGoalFlow, readGoals, readProject } from "../pinboard/create-actions.ts";
+import { createGoalFlow, readGoals, readProject, saveGoalScope } from "../pinboard/create-actions.ts";
+import { inputSide, setSide, type Side } from "../side.ts";
+import { hubOutline, hubRows, type ProjectTask } from "../projects/tasks.ts";
+import { applySchedule } from "../projects/schedule-dnd.ts";
 import { inputProblems, type GoalInput } from "../pinboard/create.ts";
 import { saveInlineGoal } from "../pinboard/inline-actions.ts";
 import { INLINE_LABELS, inlineToken, type InlineGoalField } from "../pinboard/inline-edit.ts";
@@ -99,6 +102,30 @@ function normalizeForMatch(s: string): string {
 		.replace(/\s+/g, " ")
 		.trim()
 		.toLowerCase();
+}
+
+/** A project task by id or (part of) its name; several matches → the names, to ask again. */
+function findTask(tasks: ProjectTask[], want: string, ok: (t: ProjectTask) => boolean = () => true): ProjectTask {
+	const w = want.trim();
+	const pool = tasks.filter(ok);
+	const exact = pool.filter((t) => t.id === w || t.title === w);
+	if (exact.length === 1) return exact[0];
+	const part = pool.filter((t) => normalizeForMatch(t.title).includes(normalizeForMatch(w)));
+	if (part.length === 1) return part[0];
+	if (!part.length) throw new Error(`할 일을 찾지 못했어요: ${w}. project_tasks로 이름을 확인해 주세요.`);
+	throw new Error(`여러 할 일이 맞아요: ${part.map((t) => `「${t.title}」`).join(", ")}. 더 구체적으로 불러 주세요.`);
+}
+
+/** date / week (Monday) / month → one assignment target. */
+function targetOf(a: Record<string, unknown>): ScheduleTarget | null {
+	if (a.date) return { kind: "day", date: String(a.date) };
+	if (a.week) return { kind: "week", monday: String(a.week) };
+	if (a.month) return { kind: "month", month: String(a.month) };
+	return null;
+}
+
+function tasksParent(text: string, id: string): string | undefined {
+	return hubOutline(text).parentOf.get(id)?.id;
 }
 
 async function findProject(ctx: ToolCtx, id: string): Promise<{ p: Project; text: string }> {
@@ -234,12 +261,13 @@ export const LUMI_TOOLS: LumiTool[] = [
 	{
 		name: "schedule_add",
 		description:
-			"일정 넣기. date(YYYY-MM-DD)가 있으면 그날, month(YYYY-MM)만 있으면 그달 '이달 중'. 그달 Desk Calendar 파일이 있으면 Desk Calendar에, 없으면 Wall Calendar의 그달에 넣는다. kind: task(할 일) | event(행사·약속). time은 HH:MM.",
-		shape: { text: z.string().min(1), kind: z.enum(["task", "event"]).default("task"), date: isoDate.optional(), month: z.string().regex(/^\d{4}-\d{2}$/).optional(), time: z.string().regex(/^\d{1,2}:\d{2}(~\d{1,2}:\d{2})?$/).optional() },
+			"일정 넣기(프로젝트와 상관없는 일). date(YYYY-MM-DD)가 있으면 그날, month(YYYY-MM)만 있으면 그달 인박스. 그달 Desk Calendar 파일이 있으면 Desk Calendar에, 없으면 Wall Calendar의 그달에 넣는다. kind: task(할 일) | event(행사·약속). time은 HH:MM. scope: 개인 | 회사(비우면 지금 모드, 전체면 개인) — 회사면 줄 끝에 #회사가 붙는다.",
+		shape: { text: z.string().min(1), scope: z.enum(SCOPES).optional(), kind: z.enum(["task", "event"]).default("task"), date: isoDate.optional(), month: z.string().regex(/^\d{4}-\d{2}$/).optional(), time: z.string().regex(/^\d{1,2}:\d{2}(~\d{1,2}:\d{2})?$/).optional() },
 		async run(ctx, a) {
 			const date = a.date as string | undefined;
 			const ym = date?.slice(0, 7) ?? (a.month as string | undefined) ?? ctx.today.slice(0, 7);
-			const text = oneLine(String(a.text)).replace(/^[-*+]\s+(\[.\]\s+)?/, "");
+			const side: Side = a.scope ? (String(a.scope) as Side) : inputSide(ctx.host.settings.sideMode);
+			const text = setSide(oneLine(String(a.text)).replace(/^[-*+]\s+(\[.\]\s+)?/, ""), side);
 			const kind = a.kind === "event" ? "event" : "task";
 			const time = (a.time as string | undefined) ?? "";
 			const deskPath = deskMonthPath(ctx.host, ym);
@@ -310,6 +338,7 @@ export const LUMI_TOOLS: LumiTool[] = [
 			unit: z.string().default(""),
 			due: isoDate,
 			parent: z.string().optional().describe("상위 Main Goal id, 예: G-2026-01"),
+			scope: z.enum(SCOPES).optional().describe("개인 | 회사. 회사 일·회사 프로젝트의 목표면 회사. 비우면 지금 모드(전체면 개인). Sub Goal은 상위 Main을 따른다"),
 			link_project: z.string().optional(),
 			link_flywheel: z.string().optional(),
 		},
@@ -327,7 +356,7 @@ export const LUMI_TOOLS: LumiTool[] = [
 			const measure = i.measure === "metric" ? `${i.baseline || "?"} → ${i.target}${i.unit ? ` ${i.unit}` : ""}` : i.target;
 			return {
 				title: `${sub ? "Sub Goal" : "Main Goal"} 만들기: ${i.title}`,
-				lines: [`영역 · ${i.area}`, `왜 · ${i.why}`, `기준 · ${measure}`, `기한 · ${i.due}`, ...(parent ? [`상위 · ${parent.goal.title}`] : []), ...(project ? [`실행 · 프로젝트 「${project}」`] : []), ...(element ? [`실행 · Flywheel 「${element}」`] : [])],
+				lines: [`${parent ? parent.goal.scope || "개인" : a.scope ? String(a.scope) : inputSide(ctx.host.settings.sideMode)} 목표 · 영역 ${i.area}`, `왜 · ${i.why}`, `기준 · ${measure}`, `기한 · ${i.due}`, ...(parent ? [`상위 · ${parent.goal.title}`] : []), ...(project ? [`실행 · 프로젝트 「${project}」`] : []), ...(element ? [`실행 · Flywheel 「${element}」`] : [])],
 			};
 		},
 		async run(ctx, a) {
@@ -338,8 +367,9 @@ export const LUMI_TOOLS: LumiTool[] = [
 				const e = findElement((await readWheel(ctx)).elements, String(a.link_flywheel));
 				execution = { mode: "flywheel" as const, id: e.id, previous: e.fields.goal ?? "" };
 			}
+			if (!a.parent) i.scope = a.scope ? String(a.scope) : inputSide(ctx.host.settings.sideMode);
 			const g = await createGoalFlow(ctx.host, { input: i, execution }, Number(ctx.today.slice(0, 4)), a.parent ? String(a.parent) : undefined, ctx.today);
-			return `목표를 만들었어요: ${g.id} 「${g.title}」`;
+			return `목표를 만들었어요: ${g.id} 「${g.title}」 (${g.scope || "개인"})`;
 		},
 	},
 	{
@@ -354,6 +384,15 @@ export const LUMI_TOOLS: LumiTool[] = [
 			const field = a.field as InlineGoalField;
 			const g = await saveInlineGoal(ctx.host, found.goal, field, inlineToken(found.text, field), String(a.value), ctx.today);
 			return `${g.id} 「${g.title}」 ${INLINE_LABELS[field]}을(를) 고쳤어요: ${short(oneLine(String(a.value)))}`;
+		},
+	},
+	{
+		name: "goal_scope",
+		description: "목표를 개인 / 회사로 바꾸기. Main Goal과 그 Sub Goal이 함께 바뀐다(Sub Goal id를 줘도 그 Main 묶음 전체). 영역(area)과는 다르다.",
+		shape: { goal_id: z.string(), scope: z.enum(SCOPES) },
+		async run(ctx, a) {
+			const g = await saveGoalScope(ctx.host, String(a.goal_id).trim(), a.scope as Side, ctx.today);
+			return `${g.id} 「${g.title}」을(를) ${String(a.scope)} 목표로 바꿨어요 (하위 목표 포함).`;
 		},
 	},
 	{
@@ -392,20 +431,101 @@ export const LUMI_TOOLS: LumiTool[] = [
 	{
 		name: "project_task_add",
 		description:
-			"프로젝트에 할 일 추가. date(YYYY-MM-DD)를 주면 그날로 배정되어 Desk Calendar 그날 칸(주 보기)에 들어가고, 없으면 프로젝트 허브의 「할 일」에 날짜 없이 남는다(주 보기의 '배정 안 된 일').",
-		shape: { project: z.string().describe("프로젝트 id 또는 이름"), text: z.string().min(1), date: isoDate.optional() },
+			"프로젝트에 할 일 추가. parent(묶음 이름 또는 id)를 주면 그 아래 하위 할 일(두 단계까지). 배정은 하나만: date(YYYY-MM-DD) = 그날, week(그 주 월요일 YYYY-MM-DD) = 이번 주 할 일, month(YYYY-MM) = 그달 인박스. 셋 다 없으면 프로젝트 「할 일」에 남고 Wall 인박스에 보인다. 묶음 자체는 날짜·주에 배정하지 않는다.",
+		shape: { project: z.string().describe("프로젝트 id 또는 이름"), text: z.string().min(1), parent: z.string().optional(), date: isoDate.optional(), week: isoDate.optional(), month: z.string().regex(/^\d{4}-\d{2}$/).optional() },
 		async run(ctx, a) {
-			const { p } = await findProject(ctx, String(a.project));
+			const { p, text: hub } = await findProject(ctx, String(a.project));
 			if (p.archived) throw new Error("보관된 프로젝트예요.");
 			const text = oneLine(String(a.text)).replace(/^[-*+]\s+(\[.\]\s+)?/, "");
 			const id = newTaskId();
-			await changeProjectTask(ctx.host, p, { kind: "add", text, id }, ctx.today);
-			if (!a.date) return `「${p.title}」 할 일에 넣었어요(날짜 없음): 「${short(text)}」`;
+			let parentTitle = "";
+			if (a.parent) {
+				const top = findTask(await loadProjectTasks(ctx.host, p, hub), String(a.parent), (t) => t.kind === "hub" && !t.parentId);
+				parentTitle = top.title;
+				await changeProjectTask(ctx.host, p, { kind: "add", text, id, parentId: top.id }, ctx.today);
+			} else await changeProjectTask(ctx.host, p, { kind: "add", text, id }, ctx.today);
+			const target = targetOf(a);
+			const where = parentTitle ? `「${parentTitle}」 아래 ` : "";
+			if (!target) return `「${p.title}」 ${where}할 일에 넣었어요(배정 전): 「${short(text)}」`;
 			const fresh = await readProject(ctx.host, p.path);
 			const task = (await loadProjectTasks(ctx.host, fresh.p, fresh.text)).find((t) => t.id === id);
 			if (!task) throw new Error("방금 넣은 할 일을 찾지 못했어요.");
-			await changeProjectTask(ctx.host, fresh.p, { kind: "schedule", task, target: { kind: "day", date: String(a.date) } }, ctx.today);
-			return `「${p.title}」 할 일을 ${String(a.date).slice(5).replace("-", "/")}에 넣었어요: 「${short(text)}」`;
+			await changeProjectTask(ctx.host, fresh.p, { kind: "schedule", task, target }, ctx.today);
+			return `「${p.title}」 ${where}할 일을 ${targetLabel(target)}에 넣었어요: 「${short(text)}」`;
+		},
+	},
+	{
+		name: "project_tasks",
+		description: "프로젝트의 할 일 목록 보기(위계 · 상태 · 배정). 할 일을 고치거나 배정하기 전에 이름을 확인할 때 쓴다.",
+		shape: { project: z.string().describe("프로젝트 id 또는 이름") },
+		async run(ctx, a) {
+			const { p, text } = await findProject(ctx, String(a.project));
+			const tasks = await loadProjectTasks(ctx.host, p, text);
+			const lines = hubRows(text).flatMap((r) => {
+				const t = tasks.find((x) => x.id === r.id);
+				if (!t) return [];
+				const box = t.state === "done" ? "[x]" : t.state === "cancelled" ? "[-]" : "[ ]";
+				const kids = t.group ? tasks.filter((x) => x.parentId === t.id) : [];
+				const where = t.group ? `묶음 · 하위 ${kids.filter((k) => k.state === "done").length}/${kids.length}` : t.date ?? (t.desk?.section === "alloc" ? `${t.desk.monday} 주` : t.month ? `${t.month} 인박스` : "배정 전");
+				return [`${r.depth ? "    " : ""}- ${box} ${t.title} — ${where}`];
+			});
+			return lines.length ? `「${p.title}」 (${p.scope}) 할 일:\n${lines.join("\n")}` : `「${p.title}」에는 할 일이 없어요.`;
+		},
+	},
+	{
+		name: "project_task_change",
+		description:
+			"프로젝트 할 일 하나 고치기. task는 할 일 이름(일부도 됨) 또는 id. action: done(완료) | undone(완료 취소) | rename(value = 새 이름) | schedule(date / week(월요일) / month 중 하나로 배정 · 다른 주로 옮기기. 묶음은 month만 — 하위 할 일이 모두 그달로) | under(value = 묶음 이름: 그 아래로) | out(위 단계로) | delete(지우기, 확인 카드. 달력에 배정한 줄도 함께).",
+		shape: {
+			project: z.string(),
+			task: z.string(),
+			action: z.enum(["done", "undone", "rename", "schedule", "under", "out", "delete"]),
+			value: z.string().optional(),
+			date: isoDate.optional(),
+			week: isoDate.optional(),
+			month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+		},
+		big: (a) => a.action === "delete",
+		async preview(ctx, a) {
+			const { p, text } = await findProject(ctx, String(a.project));
+			const t = findTask(await loadProjectTasks(ctx.host, p, text), String(a.task));
+			if (t.group && hubRows(text).some((r) => tasksParent(text, r.id) === t.id)) throw new Error("하위 할 일이 있는 묶음이에요. 하위 할 일을 먼저 옮기거나 지워 주세요.");
+			return { title: `할 일 지우기: ${t.title}`, lines: [`프로젝트 · ${p.title}`, t.date || t.month ? "달력에 배정한 줄도 함께 지워요" : "아직 배정 전이에요"] };
+		},
+		async run(ctx, a) {
+			const { p, text } = await findProject(ctx, String(a.project));
+			if (p.archived) throw new Error("보관된 프로젝트예요.");
+			const tasks = await loadProjectTasks(ctx.host, p, text);
+			const t = findTask(tasks, String(a.task));
+			const action = String(a.action);
+			if (action === "done" || action === "undone") {
+				if ((t.state === "done") === (action === "done")) return `「${t.title}」은(는) 이미 ${action === "done" ? "완료" : "열린 상태"}예요.`;
+				await changeProjectTask(ctx.host, p, { kind: "toggle", task: t }, ctx.today);
+				return `「${t.title}」 ${action === "done" ? "완료" : "완료 취소"}했어요.`;
+			}
+			if (action === "rename") {
+				if (!a.value) throw new Error("value에 새 이름을 주세요.");
+				await changeProjectTask(ctx.host, p, { kind: "edit", task: t, text: oneLine(String(a.value)) }, ctx.today);
+				return `「${t.title}」 → 「${oneLine(String(a.value))}」로 바꿨어요.`;
+			}
+			if (action === "schedule") {
+				const target = targetOf(a);
+				if (!target) throw new Error("date, week, month 중 하나를 주세요.");
+				await applySchedule(ctx.host, { kind: "task", projectPath: p.path, projectId: p.id, title: t.title, task: t }, target);
+				return `「${t.title}」을(를) ${targetLabel(target)}에 배정했어요.`;
+			}
+			if (action === "under") {
+				if (!a.value) throw new Error("value에 묶음(위 단계 할 일) 이름을 주세요.");
+				const top = findTask(tasks, String(a.value), (x) => x.kind === "hub" && !x.parentId && x.id !== t.id);
+				await changeProjectTask(ctx.host, p, { kind: "level", id: t.id, parentId: top.id }, ctx.today);
+				return `「${t.title}」을(를) 「${top.title}」 아래로 넣었어요.`;
+			}
+			if (action === "out") {
+				await changeProjectTask(ctx.host, p, { kind: "level", id: t.id, parentId: null }, ctx.today);
+				return `「${t.title}」을(를) 위 단계로 뺐어요.`;
+			}
+			await changeProjectTask(ctx.host, p, { kind: "delete", id: t.id }, ctx.today);
+			return `「${t.title}」을(를) 지웠어요.`;
 		},
 	},
 	{
