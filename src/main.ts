@@ -14,6 +14,7 @@ import { refreshFlywheel, registerFlywheel } from "./flywheel/register.ts";
 import { refreshShelf, registerShelf } from "./shelf/register.ts";
 import { refreshVisionBoard, registerVisionBoard } from "./vision/register.ts";
 import { LumiController } from "./lumi/controller.ts";
+import { registerQuickMemo } from "./memo.ts";
 import { addDays as addDaysIso } from "./parser.ts";
 import type { SideMode } from "./side.ts";
 import { syncSideSwitches } from "./ui/nav.ts";
@@ -84,6 +85,7 @@ export default class MyLogsPlugin extends Plugin {
 		await this.loadSettings();
 		this.lumi = new LumiController(this);
 		registerProjectRollup(this);
+		registerQuickMemo(this);
 
 		this.registerView(VIEW_TYPE_DAILY_PAD, (leaf: WorkspaceLeaf) => new DailyPadView(leaf, this));
 

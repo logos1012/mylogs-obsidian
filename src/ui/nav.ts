@@ -1,6 +1,7 @@
 import { type ItemView, setIcon } from "obsidian";
 import { tip } from "./tip.ts";
 import { mountLumiButton } from "../lumi/register.ts";
+import { mountMemoButton } from "../memo.ts";
 import type MyLogsPlugin from "../main.ts";
 import { SIDE_MODES, type SideMode } from "../side.ts";
 
@@ -48,6 +49,7 @@ export function mountAppNav(view: ItemView): void {
 	// Keep the current tab visible when the bar scrolls (phone width).
 	window.requestAnimationFrame(() => list.querySelector<HTMLElement>(".is-active")?.scrollIntoView({ block: "nearest", inline: "center" }));
 	mountLumiButton(view, plugin);
+	mountMemoButton(view, plugin);
 }
 
 const SIDE_TIP: Record<SideMode, string> = {
