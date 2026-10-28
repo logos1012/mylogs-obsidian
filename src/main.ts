@@ -14,6 +14,7 @@ import { refreshFlywheel, registerFlywheel } from "./flywheel/register.ts";
 import { refreshShelf, registerShelf } from "./shelf/register.ts";
 import { refreshVisionBoard, registerVisionBoard } from "./vision/register.ts";
 import { LumiController } from "./lumi/controller.ts";
+import { addDays as addDaysIso } from "./parser.ts";
 import type { SideMode } from "./side.ts";
 import { syncSideSwitches } from "./ui/nav.ts";
 import { registerLumi } from "./lumi/register.ts";
@@ -150,6 +151,13 @@ export default class MyLogsPlugin extends Plugin {
 
 	async openDeskMonth(month: string): Promise<void> {
 		await activateDeskCalendar(this, month);
+	}
+
+	/** Desk 주 보기 at the week of `monday`. */
+	async openDeskWeek(monday: string): Promise<void> {
+		await activateDeskCalendar(this, addDaysIso(monday, 3).slice(0, 7));
+		const v = this.app.workspace.getLeavesOfType("mylogs-desk-calendar")[0]?.view as { openWeekAt?: (m: string) => void } | undefined;
+		v?.openWeekAt?.(monday);
 	}
 
 	async openProjectAt(idOrPath: string): Promise<void> {

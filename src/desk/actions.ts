@@ -7,7 +7,7 @@ import { setFrontmatterScalar } from "../writer.ts";
 import { type App, normalizePath, Notice, TFile } from "obsidian";
 import type { MyLogsSettings } from "../settings.ts";
 import { newMonthSkeleton, parseMonthKey, todayIsoLocal } from "./model.ts";
-import { prependChangeLog } from "./ops.ts";
+import { prependChangeLog, runPlan, type Plan } from "./ops.ts";
 
 export const DESK_INDEX_FILE = "Desk Calendar Index.md";
 
@@ -67,4 +67,42 @@ export async function createDeskMonth(host: DeskHost, key: string): Promise<bool
   }
   await commitBatch(io,writes);new Notice(`${key} Desk Calendar를 만들었어요.${titles.length?`\nWall에서 ${titles.length}개 이전: ${titles.join(", ")}`:""}`);return true;
  }); }catch(e){new Notice(e instanceof Error?e.message:String(e));return false;}
+}
+
+/**
+ * Run a Desk plan outside the Desk view (Wall's Desk rows, 루미): every file dry-run first, then
+ * written, then the change log — what the Desk view's `exec` does. Throws with a Korean reason.
+ */
+export async function runDeskPlan(host: DeskHost, plan: Plan, by = "플러그인"): Promise<void> {
+	const app = host.app;
+	const pathOf = (file: string, month: boolean) => (month ? deskMonthPath(host, file) : normalizePath(file));
+	const texts: Record<string, string | undefined> = {};
+	for (const e of plan.edits) {
+		const f = app.vault.getAbstractFileByPath(pathOf(e.file, e.month));
+		if (f instanceof TFile) texts[e.file] = await app.vault.read(f);
+		else if (e.month) throw new Error(`${e.file} Desk Calendar 파일이 없어요.`);
+	}
+	const dry = runPlan(plan, texts);
+	if (!dry.ok) throw new Error(dry.reason === "assigned-days" ? "날짜에 배정한 일이에요. 날짜에서 먼저 이번 주 할 일로 되돌려 주세요." : `Desk Calendar가 바뀌었거나 그 줄을 찾지 못했어요 (${dry.reason}).`);
+	for (const e of plan.edits) {
+		const path = pathOf(e.file, e.month);
+		const f = app.vault.getAbstractFileByPath(path);
+		if (!(f instanceof TFile)) {
+			const r = e.apply(e.create!());
+			if (!r.ok) throw new Error(r.reason);
+			await app.vault.create(path, r.text);
+			continue;
+		}
+		let failed = "";
+		await app.vault.process(f, (t) => {
+			const r = e.apply(t);
+			if (!r.ok) {
+				failed = r.reason;
+				return t;
+			}
+			return r.text;
+		});
+		if (failed) throw new Error(`Desk Calendar 저장 중 원본이 바뀌었어요 (${failed}).`);
+	}
+	await logDeskChange(host, by === "플러그인" ? plan.what : `${by}: ${plan.what}`);
 }

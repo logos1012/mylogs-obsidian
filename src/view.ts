@@ -2,8 +2,8 @@ import { toggleLinkedProjectTask } from "./projects/task-actions.ts";
 import { mountAppNav } from "./ui/nav.ts";
 import { tip } from "./ui/tip.ts";
 import { ItemPopover } from "./ui/popover.ts";
-import { choosePending, togglePending } from "./pending/actions.ts";
-import type { PendingChoice } from "./pending/ops.ts";
+import { choosePending, chooseToday, pendingSide, togglePending } from "./pending/actions.ts";
+import { type PendingChoice, sourceDateOf } from "./pending/ops.ts";
 import { extractCandidates } from "./drawer/candidates.ts";
 import { acceptCandidate, removeCandidateLine } from "./drawer/actions.ts";
 import { askWhen } from "./drawer/modals.ts";
@@ -69,6 +69,8 @@ const STATUS_LABEL: Record<string, string> = {
 	moved: "옮김",
 	cancelled: "놓아줌",
 };
+
+const PENDING_MIME = "application/x-mylogs-pending";
 
 const SECTION_HINT: Record<MainSectionKey, string> = {
 	today: "오늘 새로 생긴 개인 일",
@@ -594,6 +596,8 @@ export class DailyPadView extends ItemView {
 	private deskEl!: HTMLElement;
 	private milestoneEl!: HTMLElement;
 	private milestoneSeq = 0;
+	/** The 결정 대기 line being dragged onto 개인 / 회사 할 일. */
+	private draggingPending: SourceLine | null = null;
 	/** Project id → 개인 / 회사, for project-linked Desk lines (from the milestone load). */
 	private scopeOf: ScopeLookup | undefined;
 	private pendingEl!: HTMLElement;
@@ -719,7 +723,29 @@ export class DailyPadView extends ItemView {
 			const p = new SectionPanel(this, key);
 			p.mount(this.gridEl);
 			this.panels.push(p);
+			if (key === "today" || key === "work") this.pendingDropZone(p.el, key === "work" ? "회사" : "개인");
 		}
+	}
+
+	/** 개인 / 회사 할 일 take a 결정 대기 line dropped on them (desktop drag). */
+	private pendingDropZone(el: HTMLElement, side: "개인" | "회사"): void {
+		const ok = (e: DragEvent) => !!this.draggingPending && !!e.dataTransfer?.types.includes(PENDING_MIME);
+		el.addEventListener("dragover", (e) => {
+			if (!ok(e)) return;
+			e.preventDefault();
+			el.addClass("is-drop-target");
+		});
+		el.addEventListener("dragleave", (e) => {
+			if (!el.contains(e.relatedTarget as Node | null)) el.removeClass("is-drop-target");
+		});
+		el.addEventListener("drop", (e) => {
+			if (!ok(e)) return;
+			e.preventDefault();
+			el.removeClass("is-drop-target");
+			const sl = this.draggingPending!;
+			this.draggingPending = null;
+			void this.decideToday(this.date, sl, side);
+		});
 	}
 
 	/** Re-render everything (settings changed). */
@@ -1077,6 +1103,10 @@ export class DailyPadView extends ItemView {
 		const body = el.createDiv({ cls: "ml-panel-body" });
 		const candidates = new Map(extractCandidates(padText, name).map((c) => [c.index, c]));
 		const date = this.date;
+		const missedOn = (sl: SourceLine) => {
+			const d = sourceDateOf(sl.line);
+			return d ? `${+d.slice(5, 7)}/${+d.slice(8, 10)}에 못 한 일` : "지난날 못 한 일";
+		};
 		const decidable = (sl: SourceLine) => sl.indent === 0 && sl.item?.kind === "task" && sl.item.status === "scheduled" && !isFlywheelLine(sl.line);
 		const addChoices = (sl: SourceLine, pop: ItemPopover) => {
 			if (!decidable(sl)) return;
@@ -1092,11 +1122,14 @@ export class DailyPadView extends ItemView {
 			}
 			const choose = (kind: PendingChoice["kind"]) => void this.decide(date, sl, kind);
 			pop.addSeparator();
-			pop.addItem((i) => i.setTitle("다른 날…").setIcon("calendar").setHint("할 날을 다시 정해요 (Desk Calendar)").onClick(() => choose("day")));
-			pop.addItem((i) => i.setTitle("미래로…").setIcon("calendar-clock").setHint("아직 Desk Calendar가 없는 먼 달로 보내요 (Wall Calendar)").onClick(() => choose("future")));
-			pop.addItem((i) => i.setTitle("서랍에…").setIcon("archive").setHint("하기로 했지만 지금은 아니에요. 다시 꺼낼 조건을 붙여 Drawer에 둬요").onClick(() => choose("drawer")));
-			pop.addItem((i) => i.setTitle("쪼개기…").setIcon("scissors").setHint("너무 커서 못 했다면 작은 다음 행동으로 나눠 오늘 할 일에 넣어요").onClick(() => choose("split")));
-			pop.addItem((i) => i.setTitle("놓아주기…").setIcon("circle-slash").setHint("하지 않기로 해요. 이유를 한 줄 남겨요").onClick(() => choose("letgo")));
+			pop.addItem((i) => i.setTitle("오늘 · 개인 할 일").setIcon("sun").onClick(() => void this.decideToday(date, sl, "개인")));
+			pop.addItem((i) => i.setTitle("오늘 · 회사 할 일").setIcon("briefcase").onClick(() => void this.decideToday(date, sl, "회사")));
+			pop.addSeparator();
+			pop.addItem((i) => i.setTitle("다른 날…").setIcon("calendar").onClick(() => choose("day")));
+			pop.addItem((i) => i.setTitle("먼 달로…").setIcon("calendar-clock").onClick(() => choose("future")));
+			pop.addItem((i) => i.setTitle("서랍에…").setIcon("archive").onClick(() => choose("drawer")));
+			pop.addItem((i) => i.setTitle("쪼개기…").setIcon("scissors").onClick(() => choose("split")));
+			pop.addItem((i) => i.setTitle("놓아주기…").setIcon("circle-slash").onClick(() => choose("letgo")));
 		};
 		renderItemList(body, lines, {
 			showTest: this.plugin.settings.showTestMarkers,
@@ -1104,19 +1137,43 @@ export class DailyPadView extends ItemView {
 			openGoal: (id) => void this.plugin.openPinboardGoal(id),
 			openProject: (id) => void this.plugin.openProjectAt(id),
 			menu: (sl, pop) => {
-				pop.sub = decidable(sl) ? "갈 곳을 골라 주세요" : "";
+				pop.sub = decidable(sl) ? missedOn(sl) : "";
 				addChoices(sl, pop);
 			},
 			decorate: (sl, li) => {
 				if (isDone(sl) && !this.showDonePending) li.addClass("ml-hidden-done");
 				if (!decidable(sl)) return;
-				const b = li.createEl("button", { cls: "ml-btn ml-decide", text: "갈 곳 정하기", attr: { type: "button" } });
+				// One tap: today, into the 할 일 section it came from. ⋯ for the rest. Or drag it onto 개인 / 회사 할 일.
+				const acts = li.createSpan({ cls: "ml-decide-acts" });
+				if (!candidates.get(sl.index)) {
+					const t = acts.createEl("button", { cls: "ml-btn ml-decide ml-decide-today", text: "오늘로", attr: { type: "button" } });
+					tip(t, "오늘 할 일로 옮겨요 (원래 있던 개인 / 회사 칸으로). 끌어서 개인 · 회사 할 일 칸에 놓아도 돼요");
+					t.addEventListener("click", (e) => {
+						e.preventDefault();
+						e.stopPropagation();
+						t.disabled = true;
+						void pendingSide(this.plugin, date, sl).then((side) => this.decideToday(date, sl, side));
+					});
+					li.draggable = true;
+					li.addClass("ml-pending-draggable");
+					li.addEventListener("dragstart", (e) => {
+						this.draggingPending = sl;
+						e.dataTransfer?.setData(PENDING_MIME, "1");
+						if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+						this.rootEl.addClass("is-dragging-pending");
+					});
+					li.addEventListener("dragend", () => {
+						this.rootEl.removeClass("is-dragging-pending");
+						window.setTimeout(() => (this.draggingPending = null), 0);
+					});
+				}
+				const b = acts.createEl("button", { cls: "ml-btn ml-btn-ghost ml-decide-more", text: "⋯", attr: { type: "button", "aria-label": "다른 곳으로" } });
 				b.addEventListener("click", (e) => {
 					e.preventDefault();
 					e.stopPropagation();
 					const pop = new ItemPopover();
 					pop.title = sl.item!.text;
-					pop.sub = "갈 곳을 골라 주세요";
+					pop.sub = missedOn(sl);
 					addChoices(sl, pop);
 					pop.show(b);
 				});
@@ -1154,6 +1211,13 @@ export class DailyPadView extends ItemView {
 				if (s !== "open") new Notice("되돌리지 못했어요. 결정 대기의 「완료 · 보기」에서 체크를 풀어 주세요.");
 			});
 		});
+	}
+
+	/** 결정 대기 → today's 개인 / 회사 할 일 (the 「오늘로」 button, ⋯, or a drop on that section). */
+	async decideToday(date: string, sl: SourceLine, side: "개인" | "회사"): Promise<void> {
+		await this.flushAll();
+		const ok = await chooseToday(this.plugin, date, sl, side, todayIso());
+		if (!ok) this.renderPending(await this.readPad());
 	}
 
 	private async decide(date: string, sl: SourceLine, kind: PendingChoice["kind"]): Promise<void> {
