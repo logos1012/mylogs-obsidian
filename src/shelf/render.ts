@@ -91,7 +91,9 @@ export function renderShelf(root: HTMLElement, wikis: ShelfWiki[], state: ShelfS
 			sp.style.height = `${look.height}%`;
 			sp.style.setProperty("--mls-bg", `var(--mls-t${look.tone})`);
 			sp.toggleClass("is-open", isOpen);
-			sp.toggleClass("is-long", b.label.length > 16 || (look.style === "caps" && b.label.length > 12));
+			const ko = /[가-힣]/.test(b.label);
+			sp.toggleClass("is-ko", ko);
+			sp.toggleClass("is-long", ko ? b.label.length > 8 : b.label.length > 16 || (look.style === "caps" && b.label.length > 12));
 			sp.toggleClass("is-dim", !!q && !match);
 			sp.toggleClass("is-hit", !!q && match);
 			if (isFresh(b.updated, today)) {
