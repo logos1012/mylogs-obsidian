@@ -265,7 +265,8 @@ export class WallCalendarView extends ItemView {
 			const side = sec.lines.filter((l) => shows(this.sides.get(l.index)!, mode));
 			// The folded count is the other side's lines only (not what 보기 turned off).
 			this.hidden.set(sec.month, sec.lines.filter((l) => l.item.status === "scheduled").length - side.filter((l) => l.item.status === "scheduled").length);
-			const shown = side.filter((l) => (l.item.kind === "event" ? show.event : l.item.kind === "task" ? show.task : true));
+			const hideDone = this.plugin.settings.wallHideDone;
+			const shown = side.filter((l) => (l.item.kind === "event" ? show.event : l.item.kind === "task" ? show.task : true) && !(hideDone && l.item.status === "done"));
 			this.renderMonth(grid, sec.month, shown, sec.headingIndex !== -1);
 			drawn++;
 		}
@@ -349,6 +350,7 @@ export class WallCalendarView extends ItemView {
 		toggle("task", "□ 할 일", "할 일. Desk가 있는 달은 Desk의 인박스 · 이번 주 · 날짜 할 일도 보여요");
 		box.createSpan({ cls: "wc-show-sep" });
 		button(!s.wallHidePast, "지난 달", "지난 달을 보이거나 숨겨요", () => (s.wallHidePast = !s.wallHidePast));
+		button(!s.wallHideDone, "✓ 완료", "끝낸 할 일 · 달성한 마일스톤을 보이거나 숨겨요", () => (s.wallHideDone = !s.wallHideDone));
 	}
 
 	/** The month's tasks kept in its Desk file (read only here; open Desk to plan them). */
@@ -499,8 +501,8 @@ export class WallCalendarView extends ItemView {
 		this.renderMini(head, month, lines);
 
 		const body = cell.createDiv({ cls: "wc-mbody" });
-		const milestones = this.plugin.settings.wallShow.milestone ? this.milestones.markers.filter(m => m.date.startsWith(`${this.year}-${pad2(month)}-`)) : [];
-		const desk = this.plugin.settings.wallShow.task ? (this.deskTasks.get(month) ?? []) : [];
+		const milestones = this.plugin.settings.wallShow.milestone ? this.milestones.markers.filter(m => m.date.startsWith(`${this.year}-${pad2(month)}-`) && !(this.plugin.settings.wallHideDone && m.done)) : [];
+		const desk = this.plugin.settings.wallShow.task ? (this.deskTasks.get(month) ?? []).filter((it) => !(this.plugin.settings.wallHideDone && it.item.status === "done")) : [];
 		renderMilestoneMarkers(body, milestones, todayIso(), path => void this.plugin.openProjectAt(path), true, this.plugin);
 		if (this.addOpen === month) this.renderAddForm(body, month);
 		const dated = lines.filter((l) => l.item.start !== null && l.item.ok).sort((a, b) => (itemSortKey(a.item) < itemSortKey(b.item) ? -1 : itemSortKey(a.item) > itemSortKey(b.item) ? 1 : a.index - b.index));
