@@ -9,7 +9,6 @@ export interface SectionNames {
 	work: string;
 	memo: string;
 	log: string;
-	scribble: string;
 	refs: string;
 }
 
@@ -84,7 +83,6 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 		work: "회사 할 일",
 		memo: "메모",
 		log: "로그",
-		scribble: "끼적임",
 		refs: "자료",
 	},
 	sideMode: "전체",
@@ -121,7 +119,7 @@ function migrateSections(x: SectionNames): SectionNames {
 export const LEGACY_TODAY = "오늘 할 일";
 
 /** The fixed section keys, in display and skeleton order. */
-export const MAIN_SECTION_KEYS = ["today", "work", "memo", "log", "scribble", "refs"] as const;
+export const MAIN_SECTION_KEYS = ["today", "work", "memo", "log", "refs"] as const;
 export type MainSectionKey = (typeof MAIN_SECTION_KEYS)[number];
 
 export function cleanFolder(p: string): string {
@@ -285,7 +283,6 @@ export class MyLogsSettingTab extends PluginSettingTab {
 		section("회사 할 일", "work");
 		section("메모", "memo");
 		section("로그", "log");
-		section("끼적임", "scribble");
 		section("자료", "refs");
 		section("결정 대기", "pending", "이 섹션이 파일에 있을 때만 화면 맨 위에 보입니다.");
 
