@@ -10,7 +10,7 @@ import type MyLogsPlugin from "../main.ts";
 import { mountAppNav } from "../ui/nav.ts";
 import { tip } from "../ui/tip.ts";
 import { articlePlace, articleTitle, bookLabel, countInbox, isoDate, KIND_LABEL, nameList, parseShelfMap, readerBody, readingOrder, type ShelfArticle, type ShelfBook, type ShelfWiki, summaryOf, tagList } from "./model.ts";
-import { renderReader, type RefGroup } from "./reader.ts";
+import { type ReaderControl, type ReaderPrefs, type ReaderTheme, renderReader, type RefGroup } from "./reader.ts";
 import { renderShelf, type ShelfState } from "./render.ts";
 
 export const VIEW_TYPE_SHELF = "mylogs-shelf";
@@ -32,8 +32,9 @@ export class ShelfView extends ItemView {
 	private reading: string | null = null;
 	/** The book the reader came from (a link to a note outside it keeps this 목차). */
 	private readingBook: ShelfBook | null = null;
-	private tocOpen = false;
+	private startAt: "first" | "last" = "first";
 	private md: Component | null = null;
+	private reader: ReaderControl | null = null;
 	private seq = 0;
 
 	constructor(leaf: WorkspaceLeaf, plugin: MyLogsPlugin) {
@@ -74,12 +75,24 @@ export class ShelfView extends ItemView {
 		this.registerEvent(this.app.vault.on("create", (f) => watch(f)));
 		this.registerEvent(this.app.vault.on("delete", (f) => watch(f)));
 		this.registerEvent(this.app.vault.on("rename", (f, old) => watch(f, old)));
+		// 쪽 넘기기: arrows / PageUp PageDown / Space while this view is the active one.
+		this.registerDomEvent(window, "keydown", (e) => {
+			if (!this.reader || this.app.workspace.getActiveViewOfType(ShelfView) !== this) return;
+			const t = e.target as HTMLElement | null;
+			if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+			if (this.reader.key(e)) e.preventDefault();
+		});
+		// 자동 테마 follows Obsidian's light / dark.
+		this.registerEvent(this.app.workspace.on("css-change", () => {
+			if (this.reading && this.prefs().theme === "auto") void this.drawReader();
+		}));
 		await this.refresh();
 		// Frontmatter is not indexed yet on a cold start.
 		this.app.workspace.onLayoutReady(() => later());
 	}
 
 	async onClose(): Promise<void> {
+		this.stopReader();
 		this.contentEl.empty();
 	}
 
@@ -154,8 +167,9 @@ export class ShelfView extends ItemView {
 			void this.drawReader();
 			return;
 		}
-		this.md?.unload();
-		this.md = null;
+		this.stopReader();
+		this.contentEl.removeClass("is-reading");
+		this.rootEl.removeClass("is-reading");
 		const focused = document.activeElement?.classList.contains("mls-search") ?? false;
 		renderShelf(this.rootEl, this.wikis, this.state, moment().format("YYYY-MM-DD"), {
 			read: (p) => void this.read(p),
@@ -199,12 +213,35 @@ export class ShelfView extends ItemView {
 		return i >= 0 ? { wiki: this.wikis[i], index: i } : null;
 	}
 
-	async read(path: string): Promise<void> {
+	private stopReader(): void {
+		this.reader?.destroy();
+		this.reader = null;
+		this.md?.unload();
+		this.md = null;
+	}
+
+	private prefs(): ReaderPrefs {
+		const st = this.plugin.settings;
+		const theme: ReaderTheme = st.shelfReaderTheme === "paper" || st.shelfReaderTheme === "night" ? st.shelfReaderTheme : "auto";
+		return { theme, size: [0, 1, 2].includes(st.shelfReaderSize) ? st.shelfReaderSize : 1, toc: !!st.shelfReaderToc, info: !!st.shelfReaderInfo };
+	}
+
+	private setPrefs(p: Partial<ReaderPrefs>): void {
+		const st = this.plugin.settings;
+		if (p.theme !== undefined) st.shelfReaderTheme = p.theme;
+		if (p.size !== undefined) st.shelfReaderSize = p.size;
+		if (p.toc !== undefined) st.shelfReaderToc = p.toc;
+		if (p.info !== undefined) st.shelfReaderInfo = p.info;
+		void this.plugin.saveSettingsQuiet();
+		void this.drawReader(true);
+	}
+
+	async read(path: string, startAt: "first" | "last" = "first"): Promise<void> {
 		const f = this.app.vault.getAbstractFileByPath(path);
 		if (!(f instanceof TFile) || !this.wikiOf(path)) return void this.openSource(path);
 		this.reading = path;
 		this.readingBook = this.bookOf(path) ?? (this.readingBook && this.wikiOf(this.readingBook.path)?.wiki === this.wikiOf(path)?.wiki ? this.readingBook : null);
-		this.tocOpen = false;
+		this.startAt = startAt;
 		this.plugin.settings.shelfLastRead = path;
 		void this.plugin.saveSettingsQuiet();
 		await this.drawReader();
@@ -217,7 +254,7 @@ export class ShelfView extends ItemView {
 		this.contentEl.scrollTop = 0;
 	}
 
-	private async drawReader(keepScroll = false): Promise<void> {
+	private async drawReader(keepPlace = false): Promise<void> {
 		const path = this.reading;
 		const f = path ? this.app.vault.getAbstractFileByPath(path) : null;
 		const place = path ? this.wikiOf(path) : null;
@@ -233,10 +270,13 @@ export class ShelfView extends ItemView {
 		const rel = path.slice(`${this.folder()}/${place.wiki.name}/`.length);
 		const art = this.findArticle(path);
 		const kicker = book && book.path === path ? "목차" : art ? KIND_LABEL[art.kind] : rel.startsWith("raw/") ? "원본 자료" : "위키";
-		const scroll = this.contentEl.scrollTop;
-		this.md?.unload();
+		const startAt = keepPlace && this.reader ? this.reader.fraction() : this.startAt;
+		this.stopReader();
 		const md = (this.md = this.addChild(new Component()));
-		renderReader(
+		this.contentEl.addClass("is-reading");
+		this.rootEl.addClass("is-reading");
+		this.contentEl.scrollTop = 0;
+		this.reader = renderReader(
 			this.rootEl,
 			{
 				wiki: place.wiki,
@@ -245,16 +285,15 @@ export class ShelfView extends ItemView {
 				order: book ? readingOrder(book) : [],
 				doc: { path, title: title || articleTitle(f.basename, fm.title), kicker, updated: isoDate(fm.updated) || isoDate(fm.created), body },
 				refs: this.refs(place.wiki, fm),
-				tocOpen: this.tocOpen,
+				prefs: this.prefs(),
+				dark: document.body.hasClass("theme-dark"),
+				startAt,
 			},
 			{
-				read: (p) => void this.read(p),
+				read: (p, at) => void this.read(p, at),
 				back: () => this.back(),
 				openSource: (p) => void this.openSource(p),
-				toggleToc: () => {
-					this.tocOpen = !this.tocOpen;
-					this.rootEl.querySelector(".mls-reader")?.toggleClass("is-toc-open", this.tocOpen);
-				},
+				setPrefs: (p) => this.setPrefs(p),
 				follow: (href, from) => {
 					const target = this.resolve(place.wiki, href.split("#")[0], from);
 					if (target) void this.read(target.path);
@@ -263,7 +302,6 @@ export class ShelfView extends ItemView {
 				tip: (el, t) => void tip(el, t),
 			},
 		);
-		this.contentEl.scrollTop = keepScroll ? scroll : 0;
 	}
 
 	/** `wiki/concepts/x/y`, a bare name, or a vault path → the note (this wiki first). */

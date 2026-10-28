@@ -43,6 +43,11 @@ export interface MyLogsSettings {
 	shelfPath: string;
 	/** Shelf 읽기 화면: the note read last (이어 읽기). */
 	shelfLastRead: string;
+	/** Shelf 읽기 화면: 자동 (follows Obsidian) · 종이 · 밤, text size 0–2, 목차 / 정보 panels. */
+	shelfReaderTheme: "auto" | "paper" | "night";
+	shelfReaderSize: number;
+	shelfReaderToc: boolean;
+	shelfReaderInfo: boolean;
 	/** Flywheel folder: `<folder>/Flywheel.md` (read only; its `status:: 사용` elements open each new Daily Pad). */
 	flywheelPath: string;
 	/** Vision Board folder: `<folder>/Vision Board.md` (cards + 확언), images in `<folder>/images/`. */
@@ -91,6 +96,10 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	diaryMaterialCollapsed: false,
 	shelfPath: "07 Shelf",
 	shelfLastRead: "",
+	shelfReaderTheme: "auto",
+	shelfReaderSize: 1,
+	shelfReaderToc: false,
+	shelfReaderInfo: false,
 	flywheelPath: "12 Flywheel",
 	visionBoardPath: "00 Vision Board",
 	sections: {
