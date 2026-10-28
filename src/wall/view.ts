@@ -37,6 +37,9 @@ import { enableTouchMenus } from "../ui/mobile.ts";
 import { contentText, getField } from "../line-edit.ts";
 import { itemSortKey, parseWallYear, splitWallBody, WALL_DATE_RE, type WallItem, type WallLine, wallYearSkeleton } from "./parse.ts";
 
+/** Wall is month planning: 후보 projects' tasks count too (Desk 주 보기: 진행 · 대기). */
+const WALL_BACKLOG = ["후보", "진행", "대기"];
+
 export const VIEW_TYPE_WALL_CALENDAR = "mylogs-wall-calendar";
 export const INDEX_FILE = "Wall Calendar Index.md";
 const DRAG_MIME = "application/x-mylogs-wall-item";
@@ -79,6 +82,9 @@ export class WallCalendarView extends ItemView {
 	private sides = new Map<number, Side>();
 	/** 배정 안 된 프로젝트 할 일 (to put on a month). */
 	private backlog: BacklogGroup[] = [];
+	/** Tasks of the other side's projects (개인 / 회사 mode), shown as a count. */
+	private backlogFolded = 0;
+
 	private hidden = new Map<number, number>();
 	/** Month whose inline add form is open (kept across re-renders). */
 	private addOpen: number | null = null;
@@ -189,11 +195,13 @@ export class WallCalendarView extends ItemView {
 		const f = this.file(this.yearPath());
 		const text = f ? await this.app.vault.read(f) : null;
 		const milestones = await loadMilestoneCalendar(this.plugin);
-		const backlog = await loadProjectBacklog(this.plugin);
+		// Both sides are read; the other side's tasks show as a count.
+		const all = await loadProjectBacklog(this.plugin, WALL_BACKLOG, "전체");
 		if (seq !== this.loadSeq) return;
-		this.backlog = backlog;
-		this.text = text;
 		const mode = this.plugin.settings.sideMode;
+		this.backlog = all.filter((g) => shows(g.scope, mode));
+		this.backlogFolded = all.filter((g) => !this.backlog.includes(g)).reduce((n, g) => n + g.tasks.length, 0);
+		this.text = text;
 		this.milestones = { ...milestones, markers: milestones.markers.filter((m) => shows(asSide(m.scope), mode)) };
 		// Project sync must not erase a calendar task the user is currently typing.
 		if (this.addOpen !== null && this.rootEl.querySelector(".wc-addform")) return;
@@ -334,10 +342,16 @@ export class WallCalendarView extends ItemView {
 	 * month's Desk 「이달 중」 when the Desk file exists, else to this Wall month (`changeProjectTask`).
 	 */
 	private renderBacklog(sheet: HTMLElement): void {
-		if (!this.backlog.length) return;
+		if (!this.backlog.length && !this.backlogFolded) return;
 		const box = sheet.createDiv({ cls: "wc-backlog" });
 		const head = box.createDiv({ cls: "wc-backlog-head" });
-		tip(head.createEl("h3", { text: "배정 안 된 프로젝트 할 일" }), "달 칸으로 끌어 놓거나, 할 일을 누른 뒤 달 칸을 눌러요. 휴대폰은 길게 눌러 끌어요");
+		tip(head.createEl("h3", { text: "배정 안 된 프로젝트 할 일" }), "후보 · 진행 · 대기 프로젝트에서 달도 날짜도 없는 할 일. 달 칸으로 끌어 놓거나, 할 일을 누른 뒤 달 칸을 눌러요. 휴대폰은 길게 눌러 끌어요");
+		const mode = this.plugin.settings.sideMode;
+		if (this.backlogFolded && mode !== "전체") {
+			const other = mode === "개인" ? "회사" : "개인";
+			tip(head.createSpan({ cls: `ml-side-hidden is-${other === "회사" ? "work" : "personal"}`, text: `${other} ${this.backlogFolded}` }), `${other} 프로젝트의 할 일 ${this.backlogFolded}개는 ${mode} 모드에서 접어 두었어요`);
+		}
+		if (!this.backlog.length) box.createDiv({ cls: "wc-backlog-empty", text: `${mode} 프로젝트에는 배정 안 된 할 일이 없어요.` });
 		const chosen = selectedSchedule(this.plugin);
 		if (chosen?.kind === "task") {
 			const bar = head.createDiv({ cls: "wc-backlog-chosen" });
