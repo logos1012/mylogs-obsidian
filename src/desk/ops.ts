@@ -402,6 +402,30 @@ export function planAssignWeek(src: DeskItem, monday: string, weekNo: number, al
 	]);
 }
 
+/**
+ * 이번 주 할 일 → another week (a wrong week fixed). One week per task: the line leaves its old box,
+ * a copy goes to the new one, and the 이달 중 (인박스) parent's `→ W…` changes week. A line already
+ * put on dates is unassigned from them first.
+ */
+export function planMoveWeek(alloc: DeskItem, during: DeskItem | null, monday: string, weekNo: number, allocFile: string, today: string): Plan {
+	if (alloc.assign.length) return finish("", [{ file: alloc.file, month: true, apply: () => fail("assigned-days") }]);
+	const ref = refOf(alloc);
+	const oldNo = alloc.monday ? isoWeekNo(alloc.monday) : 0;
+	const copy = copyTask(alloc.line);
+	const edits: FileEdit[] = [
+		monthEdit(alloc.file, today, (t, y, m) => removeLine(t, y, m, ref)),
+		monthEdit(allocFile, today, (t, y, m) => {
+			if (sectionItems(t, y, m, { kind: "alloc", monday }).some((x) => x.key === alloc.key)) return { ok: true, text: t };
+			return appendLines(t, y, m, { kind: "alloc", monday }, [copy]);
+		}),
+	];
+	if (during) {
+		const dref = refOf(during);
+		edits.push(monthEdit(during.file, today, (t, y, m) => editLine(t, y, m, dref, (l) => addWeekAssign(removeWeekAssign(l, oldNo), weekNo))));
+	}
+	return finish(`「${alloc.item.text}」 W${String(oldNo).padStart(2, "0")} → W${String(weekNo).padStart(2, "0")} 옮김`, edits);
+}
+
 /** DnD 2: 이번 주 할 일 item → a day of the same week. Adds the date and appends a copy to the day. */
 export function planAssignDay(src: DeskItem, date: string, today: string): Plan {
 	const ref = refOf(src);

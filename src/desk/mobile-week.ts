@@ -147,7 +147,7 @@ export function renderWeekScreen(h: DeskMobileHost, root: HTMLElement, w: WeekSt
 	const alloc = h.allocItems(monday).filter((it) => h.isOpenTask(it) && !it.assign.length);
 	group("이번 주 할 일", alloc.map((it) => ({ kind: "alloc" as const, it })), "이번 주에 하기로 한 일 중 날짜를 아직 정하지 않은 일");
 	const during = h.duringItems().filter((it) => h.isOpenTask(it));
-	group("이달 중", during.map((it) => ({ kind: "during" as const, it })), "이달 안에 할 일. 날짜에 놓으면 이번 주 할 일을 거쳐 그날로 배정돼요");
+	group("인박스", during.map((it) => ({ kind: "during" as const, it })), "이달 안에 할 일. 날짜에 놓으면 이번 주 할 일을 거쳐 그날로 배정돼요");
 	const projectsBox = looseBody.createDiv({ cls: "dc-wk-loose-projects" });
 	projectsBox.createDiv({ cls: "dc-m-muted", text: "프로젝트 할 일 불러오는 중…" });
 

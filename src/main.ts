@@ -4,7 +4,7 @@ import { mergeSettings, type MyLogsSettings, MyLogsSettingTab } from "./settings
 import { DailyPadView, VIEW_TYPE_DAILY_PAD } from "./view.ts";
 import { PinboardView, VIEW_TYPE_PINBOARD } from "./pinboard/view.ts";
 import { VIEW_TYPE_WALL_CALENDAR, WallCalendarView } from "./wall/view.ts";
-import { refreshDeskCalendars, registerDeskCalendar } from "./desk/register.ts";
+import { activateDeskCalendar, refreshDeskCalendars, registerDeskCalendar } from "./desk/register.ts";
 import { activateProjectFolders, refreshProjectFolders, registerProjectFolders } from "./projects/register.ts";
 import { refreshDrawers, registerDrawer } from "./drawer/register.ts";
 import { activateMyLife, refreshMyLife, registerMyLife } from "./mylife/register.ts";
@@ -138,6 +138,10 @@ export default class MyLogsPlugin extends Plugin {
 
 	async activatePinboard(): Promise<void> {
 		await this.activateView(VIEW_TYPE_PINBOARD);
+	}
+
+	async openDeskMonth(month: string): Promise<void> {
+		await activateDeskCalendar(this, month);
 	}
 
 	async openProjectAt(idOrPath: string): Promise<void> {

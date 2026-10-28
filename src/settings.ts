@@ -9,7 +9,6 @@ export interface SectionNames {
 	work: string;
 	memo: string;
 	log: string;
-	scribble: string;
 	refs: string;
 }
 
@@ -47,6 +46,8 @@ export interface MyLogsSettings {
 	showTestMarkers: boolean;
 	/** Desk Calendar: hide 완료 · 옮김 · 놓아줌 lines (screen only; remembered). */
 	deskHideClosed: boolean;
+	/** Wall Calendar: which kinds a month shows — milestones ◆, events, tasks (Desk 인박스 · 주 · 날 tasks included). Remembered. */
+	wallShow: { milestone: boolean; event: boolean; task: boolean };
 	/** Desk month level (phone 흐름 · 달력): show every task, not only milestones · events · #마감 (remembered). */
 	deskShowTasks: boolean;
 	/** 루미 (desktop AI): which local agent runs — the user's own Claude Code or Codex login. */
@@ -84,13 +85,13 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 		work: "회사 할 일",
 		memo: "메모",
 		log: "로그",
-		scribble: "끼적임",
 		refs: "자료",
 	},
 	sideMode: "전체",
 	showTestMarkers: true,
 	deskHideClosed: false,
 	deskShowTasks: false,
+	wallShow: { milestone: true, event: true, task: true },
 	lumiEngine: "claude",
 	lumiClaudePath: "",
 	lumiCodexPath: "",
@@ -108,6 +109,7 @@ export function mergeSettings(saved: unknown): MyLogsSettings {
 		...s,
 		sections: migrateSections({ ...DEFAULT_SETTINGS.sections, ...(s.sections ?? {}) }),
 		sideMode: asSideMode(s.sideMode),
+		wallShow: { ...DEFAULT_SETTINGS.wallShow, ...(s.wallShow ?? {}) },
 		myLifeCollapsed: { ...(s.myLifeCollapsed ?? {}) },
 	};
 }
@@ -121,7 +123,7 @@ function migrateSections(x: SectionNames): SectionNames {
 export const LEGACY_TODAY = "오늘 할 일";
 
 /** The fixed section keys, in display and skeleton order. */
-export const MAIN_SECTION_KEYS = ["today", "work", "memo", "log", "scribble", "refs"] as const;
+export const MAIN_SECTION_KEYS = ["today", "work", "memo", "log", "refs"] as const;
 export type MainSectionKey = (typeof MAIN_SECTION_KEYS)[number];
 
 export function cleanFolder(p: string): string {
@@ -285,7 +287,6 @@ export class MyLogsSettingTab extends PluginSettingTab {
 		section("회사 할 일", "work");
 		section("메모", "memo");
 		section("로그", "log");
-		section("끼적임", "scribble");
 		section("자료", "refs");
 		section("결정 대기", "pending", "이 섹션이 파일에 있을 때만 화면 맨 위에 보입니다.");
 

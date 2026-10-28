@@ -44,7 +44,7 @@ const FOLDER_MAP = `MyLogs 폴더 지도 (볼트 루트 기준):
 01 Pinboard — 목표 (Main/Sub Goal 노트, Pinboard Index)
 02 Wall Calendar — 한 해의 달별 일정 ({YYYY}.md)
 03 Desk Calendar — 이번 달의 주·날짜 배정 ({YYYY}/{YYYY-MM}.md)
-04 Daily Pad — 하루 기록 ({YYYY}/{YYYY-MM-DD}.md, 결정 대기·개인 할 일·회사 할 일·메모·로그·끼적임·자료)
+04 Daily Pad — 하루 기록 ({YYYY}/{YYYY-MM-DD}.md, 결정 대기·개인 할 일·회사 할 일·메모·로그·자료)
 05 Project Folders — 프로젝트 (개인|회사/<이름>/ 허브·01 초안·02 산출물·99 작업실)
 06 Drawer — 지금은 아닌 일 (보류·아이디어·프로젝트 후보)
 07 Shelf — 읽을거리·자료 위키

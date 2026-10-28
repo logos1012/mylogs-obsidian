@@ -7,7 +7,7 @@ import { commitBatch, type Write } from "../pinboard/batch.ts";
 import { projectRecordWrites } from "./milestone-actions.ts";
 import { cleanFolder } from "../settings.ts";
 import { setFrontmatterScalar } from "../writer.ts";
-import { appendLines, appendUnderWallMonth, wallYearSkeleton, prependChangeLog, setCheckbox, markMoved, copyTask, movedCount, planAssignDay, planAssignWeek, planMoveDay, type Plan, planEdit, pairedCopies } from "../desk/ops.ts";
+import { appendLines, appendUnderWallMonth, wallYearSkeleton, prependChangeLog, setCheckbox, markMoved, copyTask, movedCount, planAssignDay, planAssignWeek, planMoveWeek, planMoveDay, type Plan, planEdit, pairedCopies } from "../desk/ops.ts";
 import { mondayOf, isoWeekNo, mmdd, parseMonthFile } from "../desk/model.ts";
 import { splitWallBody } from "../wall/parse.ts";
 import { replaceContent, setFields, TIME_LEAD_RE } from "../line-edit.ts";
@@ -28,7 +28,7 @@ export async function loadProjectTasks(host:ProjectsHost,p:Project,text:string, 
 }
 export type TaskChange = {kind:"add";text:string;id:string;/** 하위 할 일 of this 묶음 / top-level task */parentId?:string;/** Insert right after this row (outline Enter); `child` = one level in */after?:string;child?:boolean} | {kind:"delete";id:string} | {kind:"toggle";task:ProjectTask} | {kind:"edit";task:ProjectTask;text:string} | {kind:"schedule";task:ProjectTask;target:ScheduleTarget;reviewed?:string} | {kind:"level";id:string;/** null = out to the top level */parentId:string|null};
 export const newTaskId=():string=>`T-${crypto.randomUUID()}`;
-export function targetLabel(t:ScheduleTarget):string{return t.kind==="day"?t.date:t.kind==="month"?`${t.month} 이달 중`:`${t.monday} 주`}
+export function targetLabel(t:ScheduleTarget):string{return t.kind==="day"?t.date:t.kind==="month"?`${t.month} 인박스`:`${t.monday} 주`}
 /** No goal writes. Scheduling, canonical source and audit records commit or roll back together. */
 export async function changeProjectTask(host:ProjectsHost,displayed:Project,change:TaskChange,today:string):Promise<void> {
  return exclusive(host,async()=>{
@@ -111,7 +111,10 @@ export async function changeProjectTask(host:ProjectsHost,displayed:Project,chan
     // Existing Desk allocation grammar is retained for week/day assignments and day moves.
     let plan:Plan|undefined;
     if(t.desk&&kind==="desk") {
-     if(t.desk.section==="during"&&target.kind==="week")plan=planAssignWeek(t.desk,target.monday,isoWeekNo(key),ym,today);
+     // One week per task: a task already in a week moves there (planMoveWeek), never a second week.
+     const allocOf=(d:typeof t.desk)=>all.find(x=>x.desk?.section==="alloc"&&x.desk.key===d!.key&&x.state!=="moved")?.desk??null;
+     if(t.desk.section==="during"&&target.kind==="week"){const old=t.desk.item.assignWeek.length?allocOf(t.desk):null;plan=old?planMoveWeek(old,t.desk,target.monday,isoWeekNo(key),ym,today):planAssignWeek(t.desk,target.monday,isoWeekNo(key),ym,today);}
+     if(t.desk.section==="alloc"&&target.kind==="week"&&t.desk.monday!==target.monday){if(t.desk.assign.length)throw Error("날짜에 배정한 일이에요. 날짜에서 먼저 이번 주 할 일로 되돌려 주세요.");const parent=all.find(x=>x.desk?.section==="during"&&x.desk.key===t.desk!.key)?.desk??null;plan=planMoveWeek(t.desk,parent,target.monday,isoWeekNo(key),ym,today);}
      if(t.desk.section==="alloc"&&target.kind==="day"&&t.desk.monday===mondayOf(key))plan=planAssignDay(t.desk,key,today);
      if(t.desk.section==="day"&&target.kind==="day") {
       const alloc=all.find(x=>x.desk?.section==="alloc"&&x.desk.key===t.desk?.key&&x.desk.assign.includes(t.date!))?.desk??null;

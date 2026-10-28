@@ -1,6 +1,6 @@
 ---
 type: my-life-daily
-date: {{date:YYYY-MM-DD}}
+date: "{{date:YYYY-MM-DD}}"
 sessions: 0
 sessions_skipped: 0
 items: 0
@@ -51,9 +51,9 @@ status: 초안   # 초안 | 작성됨 | 다시 씀 | 샘플
 
 <!-- Daily Pad `## 로그` 원문 그대로. 없으면 "- Daily Pad 없음" -->
 
-## 끼적임
+## 메모
 
-<!-- Daily Pad `## 끼적임` 원문 그대로. 비어 있으면 섹션을 지운다. -->
+<!-- Daily Pad `## 메모` 가운데 할 일이 아닌 줄 원문 그대로. 비어 있으면 섹션을 지운다. -->
 
 ## Diary
 

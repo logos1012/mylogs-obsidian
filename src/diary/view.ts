@@ -1100,7 +1100,7 @@ export class DiaryView extends ItemView {
 		// ① 오늘 Daily Pad
 		const m = this.material;
 		const pad = this.section(el, "① 오늘 Daily Pad", m?.todayPadPath ?? "", today);
-		if (!m?.todayPad.length) pad.createDiv({ cls: "dy-mat-none", text: "끼적임 · 메모 · 로그가 비어 있다" });
+		if (!m?.todayPad.length) pad.createDiv({ cls: "dy-mat-none", text: "메모 · 로그가 비어 있다" });
 		else for (const s of m.todayPad) this.materialCard(pad, s.section, s.content, s.path, wikilink(s.path, s.section), inFrom(wikilink(s.path, s.section)));
 
 		// ② 어제 My Life Daily

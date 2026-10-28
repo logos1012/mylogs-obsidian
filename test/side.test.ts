@@ -95,3 +95,40 @@ test("Desk: 개인 ↔ 회사 retags the line and its pair", () => {
 	assert.match(text, /- \[ \] 산책 #회사 → 10\/27|- \[ \] 산책 → 10\/27 #회사/);
 	assert.match(text, /### 2026-10-27\n- \[ \] 보고서 #회사\n- \[ \] 산책 #회사\n/);
 });
+
+import { planMoveWeek } from "../src/desk/ops.ts";
+
+const TWO_WEEKS = `---
+type: desk-calendar
+---
+
+## 이달의 초점
+
+## 이달 중
+- [ ] 보고서 → W44
+
+## W44 (10/26~11/01)
+
+### 이번 주
+- [ ] 보고서
+
+## W45 (11/02~11/08)
+
+### 이번 주
+`;
+
+test("Desk: a wrong week is fixed by moving, one week per task", () => {
+	const md = parseMonthFile(TWO_WEEKS, 2026, 10);
+	const alloc = md.weeks.get("2026-10-26")!.alloc![0];
+	const plan = planMoveWeek(alloc, md.during[0], "2026-11-02", 45, "2026-10", "2026-10-28");
+	let text = TWO_WEEKS;
+	for (const e of plan.edits) {
+		const r = e.apply(text);
+		assert.ok(r.ok, (r as { reason?: string }).reason);
+		text = r.text;
+	}
+	assert.match(text, /## 이달 중\n- \[ \] 보고서 → W45\n/);
+	assert.match(text, /### 이번 주\n\n## W45[^\n]*\n\n### 이번 주\n- \[ \] 보고서\n/);
+	const dated = parseMonthFile(TWO_WEEKS.replace("### 이번 주\n- [ ] 보고서", "### 이번 주\n- [ ] 보고서 → 10/27"), 2026, 10).weeks.get("2026-10-26")!.alloc![0];
+	assert.equal(planMoveWeek(dated, null, "2026-11-02", 45, "2026-10", "2026-10-28").edits[0].apply(TWO_WEEKS).ok, false);
+});

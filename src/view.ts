@@ -73,9 +73,8 @@ const STATUS_LABEL: Record<string, string> = {
 const SECTION_HINT: Record<MainSectionKey, string> = {
 	today: "오늘 새로 생긴 개인 일",
 	work: "오늘 새로 생긴 회사 일 · 칸이 곧 구분이라 #회사는 붙이지 않아요",
-	memo: "짧게 떠오른 것",
+	memo: "떠오른 것, 긴 생각도 여기에",
 	log: "그날의 기록",
-	scribble: "긴 생각, 자유 형식",
 	refs: "링크, 파일, 참고 자료",
 };
 
@@ -84,7 +83,6 @@ const SECTION_PLACEHOLDER: Record<MainSectionKey, string> = {
 	work: "- [ ] 회사 할 일",
 	memo: "- 떠오른 것",
 	log: "- 09:00 있었던 일",
-	scribble: "생각나는 대로 적어요",
 	refs: "- [제목](https://…) 한 줄 설명",
 };
 
