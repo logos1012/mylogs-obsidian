@@ -10,14 +10,25 @@ export type ScheduleItem = {kind:"milestone";projectPath:string;projectId:string
 export const MIME="application/x-mylogs-project-schedule";
 export const TOUCH_DROP="mylogs-schedule-drop";
 let active:{app:object;item:ScheduleItem}|null=null;
+/** Several picked at once (Wall 인박스: Shift / ⌘ click, or taps on a phone): one drop assigns them all. */
+let many:{app:object;items:ScheduleItem[]}|null=null;
+const same=(a:ScheduleItem,b:ScheduleItem)=>a.kind==="task"&&b.kind==="task"?a.task.id===b.task.id&&a.task.path===b.task.path&&a.task.index===b.task.index:a===b;
+export const pickedSchedule=(host:ProjectsHost):ScheduleItem[]=>many?.app===host.app?many.items:[];
+/** Add or take out one item of the multi-pick. */
+export function togglePicked(host:ProjectsHost,item:ScheduleItem):void {
+ const cur=pickedSchedule(host),has=cur.some(x=>same(x,item));
+ const items=has?cur.filter(x=>!same(x,item)):[...cur,item];
+ many=items.length?{app:host.app,items}:null;active=items.length?{app:host.app,item:items[items.length-1]}:null;
+}
+export const isPicked=(host:ProjectsHost,item:ScheduleItem):boolean=>pickedSchedule(host).some(x=>same(x,item));
 let saving=false;
 export const selectedSchedule=(host:ProjectsHost):ScheduleItem|null=>active?.app===host.app?active.item:null;
-export function selectSchedule(host:ProjectsHost,item:ScheduleItem|null):void {active=item?{app:host.app,item}:null;}
+export function selectSchedule(host:ProjectsHost,item:ScheduleItem|null):void {active=item?{app:host.app,item}:null;if(!item||!isPicked(host,item))many=null;}
 export function scheduleSource(el:HTMLElement,host:ProjectsHost,item:ScheduleItem):void {
  el.draggable=true;el.addClass("ml-schedule-draggable");
  touchDrag(el,host,item);
- el.addEventListener("dragstart",e=>{e.stopPropagation();selectSchedule(host,item);e.dataTransfer?.setData(MIME,"1");if(e.dataTransfer)e.dataTransfer.effectAllowed="move";el.addClass("is-dragging");});
- el.addEventListener("dragend",()=>{el.removeClass("is-dragging");if(!saving)selectSchedule(host,null);});
+ el.addEventListener("dragstart",e=>{e.stopPropagation();if(isPicked(host,item))active={app:host.app,item};else selectSchedule(host,item);e.dataTransfer?.setData(MIME,"1");if(e.dataTransfer)e.dataTransfer.effectAllowed="move";el.addClass("is-dragging");});
+ el.addEventListener("dragend",()=>{el.removeClass("is-dragging");if(!saving&&!isPicked(host,item))selectSchedule(host,null);});
 }
 export async function applySchedule(host:ProjectsHost,item:ScheduleItem,target:ScheduleTarget|null):Promise<void> {
  const {p}=await readProject(host,item.projectPath);if(p.id!==item.projectId||p.archived)throw Error("프로젝트가 바뀌었거나 보관됐어요.");
@@ -46,7 +57,12 @@ export async function applySchedule(host:ProjectsHost,item:ScheduleItem,target:S
 export function scheduleTarget(el:HTMLElement,host:ProjectsHost,target:ScheduleTarget,refresh:()=>Promise<void>,done?:(item:ScheduleItem)=>void):void {
  el.addClass("ml-schedule-target");
  const accepts=()=>{const i=selectedSchedule(host);return !!i&&(i.kind!=="milestone"||target.kind==="day");};
- const run=async()=>{const item=selectedSchedule(host);if(!item||saving)return;saving=true;el.addClass("is-saving");try{await applySchedule(host,item,target);selectSchedule(host,null);done?.(item);await refresh();}catch(e){new Notice(e instanceof Error?e.message:String(e));}finally{saving=false;el.removeClass("is-saving");}};
+ const run=async()=>{const item=selectedSchedule(host);if(!item||saving)return;
+  // The dragged / chosen item, or every picked one when it is among them.
+  const items=isPicked(host,item)?pickedSchedule(host):[item];
+  saving=true;el.addClass("is-saving");const failed:string[]=[];
+  try{for(const it of items){try{await applySchedule(host,it,target);done?.(it);}catch(e){failed.push(`「${it.title}」: ${e instanceof Error?e.message:String(e)}`);}}selectSchedule(host,null);await refresh();}
+  finally{saving=false;el.removeClass("is-saving");if(failed.length)new Notice(failed.join("\n"));}};
  el.addEventListener("dragover",e=>{if(!e.dataTransfer?.types.includes(MIME)||!accepts())return;e.preventDefault();e.stopPropagation();if(e.dataTransfer)e.dataTransfer.dropEffect="move";el.addClass("ml-schedule-over");});
  el.addEventListener("dragleave",e=>{if(!el.contains(e.relatedTarget as Node|null))el.removeClass("ml-schedule-over");});
  el.addEventListener("drop",e=>{if(!e.dataTransfer?.types.includes(MIME)||!accepts())return;e.preventDefault();e.stopPropagation();el.removeClass("ml-schedule-over");void run();});
@@ -68,8 +84,9 @@ function touchDrag(el:HTMLElement,host:ProjectsHost,item:ScheduleItem):void {
  el.addEventListener("touchstart",e=>{
   if(e.touches.length!==1)return;const p=e.touches[0];sx=p.clientX;sy=p.clientY;
   e.stopPropagation(); // not the view-wide long-press menu: here a long press picks the item up
-  timer=window.setTimeout(()=>{timer=null;selectSchedule(host,item);el.addClass("is-dragging");
-   ghost=el.doc.body.createDiv({cls:"ml-touch-ghost",text:`◆ ${item.title}`});ghost.style.left=`${sx}px`;ghost.style.top=`${sy}px`;
+  timer=window.setTimeout(()=>{timer=null;if(isPicked(host,item))active={app:host.app,item};else selectSchedule(host,item);el.addClass("is-dragging");
+   const n=pickedSchedule(host).length;
+   ghost=el.doc.body.createDiv({cls:"ml-touch-ghost",text:n>1?`${n}개 · ${item.title} 외`:`◆ ${item.title}`});ghost.style.left=`${sx}px`;ghost.style.top=`${sy}px`;
    navigator.vibrate?.(10);},350);
  },{passive:true});
  el.addEventListener("touchmove",e=>{
