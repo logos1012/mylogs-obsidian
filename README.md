@@ -10,6 +10,7 @@
 
 | 화면 | 명령 | 하는 일 |
 |---|---|---|
+| Vision Board | "Vision Board 열기" | `00 Vision Board/Vision Board.md` — 이루고 싶은 모습(미라클 모닝 SAVERS의 V 시각화 + A 확언). 맨 앞 탭. 비전 카드(이미지 + 짧은 문장)가 살짝 겹쳐 쌓인 덱: 앞 카드를 옆으로 밀면 날아가고 뒤 카드가 올라온다(데스크탑: 끌기 · ← → · ‹ › 버튼). 마지막 확언 카드는 끝까지 읽어야 넘어가고, 넘기면 오늘 읽음 → frontmatter `flywheel:` 요소의 그달 수행 표에 `x`, 연속 일수. ⋯: 카드 추가 · 고치기 · 이미지 올리기(`images/`) · 순서 · 지우기, 확언 고치기, Flywheel 잇기 |
 | Daily Pad | "Daily Pad 열기" | 오늘 페이지. Desk Calendar 오늘 칸 연동, 섹션별 편집 |
 | Pinboard | "Pinboard 열기" | 연간 목표. 현재 값 입력 → 진척률 자동 계산, 상태 변경, 진척 기록 추가, 인덱스 자동 갱신 |
 | Wall Calendar | "Wall Calendar 열기" | 12개월 미래 기록. 항목 추가·체크·취소, 다른 달로 드래그, Desk Calendar로 보내기 (지난달은 읽기 전용) |
@@ -77,6 +78,7 @@
 <볼트>/
 ├── AGENTS.md                       줄 형식(체크박스, 행사, 메모, 필드)의 정본
 ├── MyLogs Plugin 계획.md            플러그인 계획
+├── 00 Vision Board/               비전 카드와 확언 (Vision Board.md, images/)
 ├── 01 Pinboard/                    (다음 버전)
 ├── 02 Wall Calendar/               (다음 버전)
 ├── 03 Desk Calendar/
@@ -136,6 +138,7 @@ updated: 2026-10-24
 | My Life 폴더 | `08 My Life` (`01 Daily/<YYYY>/<YYYY-MM>/`, `02 Weekly/<GGGG>/`, `03 Monthly/<YYYY>/`, `04 Yearly/`) |
 | Toolbox 폴더 | `11 Toolbox` (`<이름>.md`, `Toolbox Index.md`, `_Templates/스킬.md`) |
 | Diary 폴더 | `09 Diary` (`<YYYY>/<YYYY-MM>/<YYYY-MM-DD HHMM>.md`, `Diary Index.md`, `_Templates/엔트리.md`, `99 작업실/프롬프트.md`·`첨부/`) |
+| Vision Board 폴더 | `00 Vision Board` (`Vision Board.md`, `images/`) |
 | Flywheel 폴더 | `12 Flywheel` (`Flywheel.md` — 읽기만; `status:: 사용` 요소를 새 Daily Pad 오늘 할 일 맨 위에) |
 | 섹션 이름 | `오늘 할 일`, `메모`, `로그`, `끼적임`, `자료`, `결정 대기` |
 | 자동 저장 지연 | 800 ms |

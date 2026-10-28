@@ -10917,6 +10917,8 @@ button.pb-ended-toggle.is-on {
 	.mylogs-shelf .mls-open-body > .mls-kicker, .mylogs-shelf .mls-open-body > .mls-open-title, .mylogs-shelf .mls-open-body > .mls-open-summary { grid-column: 2; }
 	.mylogs-shelf .mls-open-summary { font-size: 13px; -webkit-line-clamp: 4; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
 	.mylogs-shelf button.mls-item { padding: 12px 2px; }
+}
+
 /* ═════════════════════════ Vision Board (src/vision/) ═════════════════════════
  * A deck of slightly overlapping cards. The front card is thrown sideways; the one behind
  * rises to the front. The last card is the 확언, read to the end before it can be thrown. */
@@ -11037,6 +11039,7 @@ button.vb-card-more.is-inline:hover { opacity: 1; background: color-mix(in srgb,
 .vb-affirm-body::-webkit-scrollbar { display: none; }
 .vb-affirm-text { font-family: var(--vb-serif); font-size: clamp(16px, 4.5cqw, 19px); line-height: 1.95; letter-spacing: -0.005em; word-break: keep-all; }
 .vb-affirm-text p { margin: 0 0 1.05em; }
+.vb-affirm-text > :last-child { margin-bottom: 0; }
 .vb-affirm-text strong { color: var(--vb-accent); font-weight: 700; }
 .vb-affirm-empty { height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 14px; color: color-mix(in srgb, var(--vb-ink) 70%, transparent); font-family: var(--vb-serif); line-height: 1.8; }
 .vb-affirm-empty button { align-self: flex-start; }

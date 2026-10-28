@@ -105,7 +105,12 @@ export class VisionBoardView extends ItemView {
 		this.registerEvent(this.app.vault.on("delete", (f) => watch(f)));
 		this.registerEvent(this.app.vault.on("rename", (f, old) => watch(f, old)));
 		this.registerDomEvent(this.rootEl, "keydown", (e) => this.onKey(e));
+		// Arrow keys work right away; focus comes back to the deck after a click inside it.
+		this.registerDomEvent(this.rootEl, "pointerdown", (e) => {
+			if (!(e.target as HTMLElement).closest("button, input, textarea, a")) this.rootEl.focus({ preventScroll: true });
+		});
 		await this.refresh();
+		this.rootEl.focus({ preventScroll: true });
 	}
 
 	async onClose(): Promise<void> {
@@ -249,7 +254,7 @@ export class VisionBoardView extends ItemView {
 		edit.addEventListener("click", () => void this.editAffirmation());
 		const body = card.createDiv({ cls: "vb-affirm-body" });
 		if (this.board.affirmation) {
-			void MarkdownRenderer.render(this.app, this.board.affirmation, body.createDiv({ cls: "vb-affirm-text" }), this.boardPath(), this);
+			void MarkdownRenderer.render(this.app, this.board.affirmation, body.createDiv({ cls: "vb-affirm-text" }), this.boardPath(), this).then(() => window.requestAnimationFrame(() => this.checkRead()));
 			this.registerDomEvent(body, "scroll", () => this.checkRead());
 		} else {
 			const e = body.createDiv({ cls: "vb-affirm-empty" });
@@ -314,6 +319,8 @@ export class VisionBoardView extends ItemView {
 			this.ambientEl.style.backgroundImage = img ? `url("${img}")` : "";
 			this.ambientEl.toggleClass("is-warm", !img);
 		}
+		// A short 확언 that fits without scrolling is read once it is in front.
+		if (this.index === this.board.cards.length) window.requestAnimationFrame(() => this.checkRead());
 		const finished = this.index >= total;
 		this.rootEl.toggleClass("is-finished", finished);
 		if (finished) this.renderFinish();
