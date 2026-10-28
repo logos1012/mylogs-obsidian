@@ -21,7 +21,7 @@ export type CandidateTarget = { op: "accept"; section: DrawerSection; label: str
 
 const TAKES: { take: DrawerTake; label: string; sub: (ym: string) => string; icon: string }[] = [
 	{ take: "today", label: "꺼내기: 오늘", sub: () => "Daily Pad 오늘 할 일", icon: "sun" },
-	{ take: "month", label: "꺼내기: 이달 Desk", sub: (ym) => `${ym} 이달 중 (Desk 파일이 없으면 Wall)`, icon: "calendar-days" },
+	{ take: "month", label: "꺼내기: 이달 Desk", sub: (ym) => `${ym} 인박스 (Desk 파일이 없으면 Wall)`, icon: "calendar-days" },
 	{ take: "wall", label: "꺼내기: Wall · 달 선택…", sub: () => "미래의 달 (그 달 Desk 파일이 있으면 Desk)", icon: "calendar-range" },
 	{ take: "project", label: "꺼내기: 프로젝트로…", sub: () => "새 프로젝트 창을 이름·출처로 채워 열기", icon: "folder-kanban" },
 ];

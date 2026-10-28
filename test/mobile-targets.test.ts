@@ -65,7 +65,7 @@ test("desk targets: each target runs the call its drop zone makes, with the same
 	const item = { id: "x" };
 	const { api, calls } = recorder<typeof item>();
 	const during = deskMoveTargets(base, weeks, days)[0];
-	const alloc = deskMoveTargets({ ...base, kind: "alloc", monday: "2026-10-12" }, weeks, days)[0];
+	const alloc = deskMoveTargets({ ...base, kind: "alloc", monday: "2026-10-12" }, weeks, days).find((x) => x.op === "assignDay")!;
 	const day = deskMoveTargets({ ...base, kind: "day", monday: "2026-10-12", date: "2026-10-14" }, weeks, days);
 	for (const t of [during, alloc, ...day.filter((x) => x.op === "unassign"), day.find((x) => x.op === "moveDay")!]) await runDeskTarget(t, item, api);
 	assert.deepEqual(calls, [
@@ -74,6 +74,14 @@ test("desk targets: each target runs the call its drop zone makes, with the same
 		["unassign", item, "2026-10-12", "2026-10"],
 		["moveToDay", item, "2026-10-01"],
 	]);
+});
+
+test("desk targets: an 이번 주 할 일 line not on dates can move to another week; one week per 인박스 task", () => {
+	const alloc = deskMoveTargets({ ...base, kind: "alloc", monday: "2026-10-12" }, weeks, days).filter((x) => x.op === "assignWeek");
+	assert.ok(alloc.length > 0 && alloc.every((x) => x.op === "assignWeek" && x.monday !== "2026-10-12" && x.label.endsWith("옮기기")));
+	assert.equal(deskMoveTargets({ ...base, kind: "alloc", monday: "2026-10-12", assign: ["2026-10-13"] }, weeks, days).filter((x) => x.op === "assignWeek").length, 0);
+	const during = deskMoveTargets({ ...base, assignWeek: [41] }, weeks, days).filter((x) => x.op === "assignWeek");
+	assert.ok(during.every((x) => x.op === "assignWeek" && x.no !== 41 && x.label.endsWith("옮기기")));
 });
 
 test("desk day page: default day and clamping into a month", () => {

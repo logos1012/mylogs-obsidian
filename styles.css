@@ -10658,3 +10658,53 @@ button.pf-ol-del {
 	color: var(--text-faint);
 	cursor: text;
 }
+
+/* Desk: a 하위 할 일 on two lines (묶음 above), its checkbox centred on both (0.29.0). */
+.mylogs-desk-calendar .dc-it.dc-nested {
+	align-items: center;
+}
+.mylogs-desk-calendar .dc-it.dc-nested .dc-body {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+.mylogs-desk-calendar .dc-parent {
+	display: block;
+	color: var(--text-faint);
+	font-size: 0.85em;
+	line-height: 1.25;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.mylogs-desk-calendar .dc-m-flow-it.dc-nested .dc-m-flow-t {
+	display: flex;
+	flex-direction: column;
+}
+
+/* Wall 보기: 마일스톤 · 이벤트 · 할 일 (0.29.0). */
+.mylogs-wall-calendar .wc-show {
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-top: 8px;
+}
+.mylogs-wall-calendar button.wc-show-btn {
+	height: 28px;
+	padding: 0 10px;
+	border-radius: 999px;
+	font-size: var(--font-ui-small);
+	color: var(--text-faint);
+	opacity: 0.7;
+}
+.mylogs-wall-calendar button.wc-show-btn.is-on {
+	color: var(--text-normal);
+	opacity: 1;
+	background: var(--background-modifier-hover);
+}
+.is-mobile .mylogs-wall-calendar button.wc-show-btn {
+	height: 40px;
+}
+.mylogs-wall-calendar .wc-desk-tasks .wc-item {
+	cursor: pointer;
+}

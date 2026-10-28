@@ -165,7 +165,7 @@ export function renderDeskMobile(h: DeskMobileHost): void {
 /** 이달: 이달의 초점 · 이달 중 · Wall Calendar에서 — always open. 이달 중 items drag onto week cards. */
 function monthBand(h: DeskMobileHost, root: HTMLElement, cur: MonthData): void {
 	const month = root.createDiv({ cls: "dc-m-month" });
-	tip(month.createDiv({ cls: "dc-m-sec-title", text: "이달" }), "이달 중 항목을 길게 눌러 주차 카드에 놓으면 그 주에 배정돼요. 눌러서 보낼 곳을 골라도 돼요.");
+	tip(month.createDiv({ cls: "dc-m-sec-title", text: "인박스" }), "인박스 항목을 길게 눌러 주차 카드에 놓으면 그 주에 배정돼요. 눌러서 보낼 곳을 골라도 돼요.");
 	h.renderBands(month);
 	// On a phone ◆ are shown per day / per week: no month list.
 	month.querySelector(".dc-milestone-month")?.remove();
@@ -241,7 +241,13 @@ function weekCard(h: DeskMobileHost, root: HTMLElement, s: State, w: WeekSlot, t
 			li.createSpan({ cls: "dc-m-flow-sym" });
 			const t = li.createSpan({ cls: "dc-m-flow-t" });
 			if (it.item.time) t.createSpan({ cls: "dc-m-flow-tm", text: it.item.time });
-			t.appendText(it.item.text);
+			// A 하위 할 일 (`묶음 · 하위`): the 묶음 small above.
+			const cut = /\(\s*project\s*::/.test(it.item.raw) ? it.item.text.indexOf(" · ") : -1;
+			if (cut > 0) {
+				li.addClass("dc-nested");
+				t.createSpan({ cls: "dc-parent", text: it.item.text.slice(0, cut) });
+				t.appendText(it.item.text.slice(cut + 3));
+			} else t.appendText(it.item.text);
 			li.addEventListener("click", () => {
 				s.day = d;
 				s.mode = "grid";

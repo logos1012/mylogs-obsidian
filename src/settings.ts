@@ -46,6 +46,8 @@ export interface MyLogsSettings {
 	showTestMarkers: boolean;
 	/** Desk Calendar: hide 완료 · 옮김 · 놓아줌 lines (screen only; remembered). */
 	deskHideClosed: boolean;
+	/** Wall Calendar: which kinds a month shows — milestones ◆, events, tasks (Desk 인박스 · 주 · 날 tasks included). Remembered. */
+	wallShow: { milestone: boolean; event: boolean; task: boolean };
 	/** Desk month level (phone 흐름 · 달력): show every task, not only milestones · events · #마감 (remembered). */
 	deskShowTasks: boolean;
 	/** 루미 (desktop AI): which local agent runs — the user's own Claude Code or Codex login. */
@@ -89,6 +91,7 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	showTestMarkers: true,
 	deskHideClosed: false,
 	deskShowTasks: false,
+	wallShow: { milestone: true, event: true, task: true },
 	lumiEngine: "claude",
 	lumiClaudePath: "",
 	lumiCodexPath: "",
@@ -106,6 +109,7 @@ export function mergeSettings(saved: unknown): MyLogsSettings {
 		...s,
 		sections: migrateSections({ ...DEFAULT_SETTINGS.sections, ...(s.sections ?? {}) }),
 		sideMode: asSideMode(s.sideMode),
+		wallShow: { ...DEFAULT_SETTINGS.wallShow, ...(s.wallShow ?? {}) },
 		myLifeCollapsed: { ...(s.myLifeCollapsed ?? {}) },
 	};
 }

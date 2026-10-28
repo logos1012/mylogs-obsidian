@@ -62,6 +62,7 @@ import {
 	planFuture,
 	planLetGo,
 	planMoveDay,
+	planMoveWeek,
 	planSetSide,
 	planSplit,
 	planToggle,
@@ -374,7 +375,7 @@ export class DeskCalendarView extends ItemView {
 			// The same calls as the drop zones in renderAllocCell / renderDayCell.
 			move: (t, it) =>
 				runDeskTarget(t, it, {
-					assignWeek: (x, monday, no, fileKey) => this.exec(planAssignWeek(x, monday, no, fileKey, ctx().today)),
+					assignWeek: (x, monday, no, fileKey) => this.exec(this.weekPlan(x, monday, no, fileKey)),
 					unassign: (x, monday, fileKey) => this.exec(planUnassign(x, findPairAlloc(x, ctx().months), monday, fileKey, ctx().today)),
 					assignDay: (x, iso) => this.exec(planAssignDay(x, iso, ctx().today)),
 					moveToDay: (x, iso) => this.moveToDay(x, iso),
@@ -483,7 +484,7 @@ export class DeskCalendarView extends ItemView {
 		const a = lg.createSpan();
 		a.createEl("b", { text: "→" });
 		a.appendText("분배 칸에서 배정한 날짜·주");
-		tip(lg, "끌어다 놓기: 이달 중 → 이번 주 할 일 → 날짜 칸 · 항목을 누르면 자세한 내용과 못 한 일 처리·수정·삭제");
+		tip(lg, "끌어다 놓기: 인박스 → 이번 주 할 일 → 날짜 칸 · 항목을 누르면 자세한 내용과 못 한 일 처리·수정·삭제");
 	}
 
 	private renderEmpty(root: HTMLElement): void {
@@ -518,7 +519,7 @@ export class DeskCalendarView extends ItemView {
 		}
 
 		const during = root.createEl("section", { cls: "dc-band dc-during" });
-		during.createDiv({ cls: "dc-lbl", text: "이달 중" });
+		during.createDiv({ cls: "dc-lbl", text: "인박스" });
 		const ul = during.createEl("ul");
 		if (!cur.during.length) ul.createEl("li", { cls: "dc-it dc-none", text: "없음" });
 		for (const it of cur.during) this.renderDuringItem(ul, it, ctx);
@@ -589,9 +590,11 @@ export class DeskCalendarView extends ItemView {
 		this.addZone(cell, {
 			accepts: (d) =>
 				(d.kind === "during" && isOpenTask(d.item) && !d.item.item.assignWeek.includes(no)) ||
+				// A wrong week fixed: an 이번 주 할 일 line not on dates yet goes to another week.
+				(d.kind === "alloc" && isOpenTask(d.item) && d.item.monday !== monday && !d.item.assign.length) ||
 				(d.kind === "day" && isOpenTask(d.item) && d.item.monday === monday),
 			drop: (d) => {
-				if (d.kind === "during") void this.exec(planAssignWeek(d.item, monday, no, fileKey, ctx.today));
+				if (d.kind === "during" || d.kind === "alloc") void this.exec(this.weekPlan(d.item, monday, no, fileKey));
 				else void this.exec(planUnassign(d.item, findPairAlloc(d.item, ctx.months), monday, fileKey, ctx.today));
 			},
 		});
@@ -607,6 +610,23 @@ export class DeskCalendarView extends ItemView {
 		if (this.levelFilter) return;
 		const ul = cell.createEl("ul", { cls: "dc-items" });
 		for (const it of alloc) this.renderAllocItem(ul, it, ctx);
+	}
+
+	/**
+	 * A task onto a week. One week per task: an 인박스 (이달 중) line already in a week, or an 이번 주
+	 * 할 일 line, moves there (`planMoveWeek`) instead of gaining a second week.
+	 */
+	private weekPlan(it: DeskItem, monday: string, no: number, fileKey: string): Plan {
+		const ctx = this.ctx!;
+		const allocs = ctx.months.flatMap((m) => [...m.weeks.values()].flatMap((w) => w.alloc ?? []));
+		if (it.section === "alloc") {
+			const oldNo = it.monday ? isoWeekNo(it.monday) : 0;
+			const parent = ctx.months.flatMap((m) => m.during).find((x) => x.key === it.key && x.item.assignWeek.includes(oldNo)) ?? null;
+			return planMoveWeek(it, parent, monday, no, fileKey, ctx.today);
+		}
+		const old = it.item.assignWeek.length ? allocs.find((a) => a.key === it.key && a.monday && it.item.assignWeek.includes(isoWeekNo(a.monday))) : undefined;
+		if (old) return planMoveWeek(old, it, monday, no, fileKey, ctx.today);
+		return planAssignWeek(it, monday, no, fileKey, ctx.today);
 	}
 
 	private renderDayCell(row: HTMLElement, iso: string, cur: MonthData, ctx: Ctx): void {
@@ -664,6 +684,21 @@ export class DeskCalendarView extends ItemView {
 		return { li, body, meta };
 	}
 
+	/**
+	 * The line's text. A 하위 할 일 (`묶음 · 하위`, project-linked) takes two lines — the 묶음 small
+	 * above, the task below — with the checkbox centred on both. Hover names the project.
+	 */
+	private itemText(li: HTMLElement, body: HTMLElement, it: DeskItem): void {
+		const ref = projectRef(it.item.raw);
+		const cut = ref ? it.item.text.indexOf(" · ") : -1;
+		if (cut > 0) {
+			li.addClass("dc-nested");
+			body.createSpan({ cls: "dc-parent", text: it.item.text.slice(0, cut) });
+			body.createSpan({ cls: "dc-txt", text: it.item.text.slice(cut + 3) });
+		} else body.createSpan({ cls: "dc-txt", text: it.item.text });
+		if (ref) li.setAttr("title", `프로젝트: ${this.milestones.titleOf?.(ref) ?? ref}`);
+	}
+
 	private finishMeta(body: HTMLElement, meta: HTMLElement, it: DeskItem, warn: string | null): void {
 		for (const t of it.item.tags) meta.createSpan({ cls: "dc-tag", text: `#${t}` });
 		if (it.item.test && this.plugin.settings.showTestMarkers) this.testDot(meta);
@@ -679,7 +714,7 @@ export class DeskCalendarView extends ItemView {
 		if (it.item.kind === null) return this.renderRaw(ul, it);
 		const res = resolveDuring(it, ctx.widx, ctx.didx);
 		const { li, body, meta } = this.itemShell(ul, it, res.state, " dc-ai");
-		body.createSpan({ cls: "dc-txt", text: it.item.text });
+		this.itemText(li, body, it);
 		if (it.item.assignWeek.length) {
 			const to = body.createSpan({ cls: "dc-to", text: "→ " });
 			for (const [no, x] of res.targets) {
@@ -699,7 +734,7 @@ export class DeskCalendarView extends ItemView {
 		if (it.item.kind === null) return this.renderRaw(ul, it);
 		const res = resolveAlloc(it, ctx.didx);
 		const { li, body, meta } = this.itemShell(ul, it, res.state, " dc-ai");
-		body.createSpan({ cls: "dc-txt", text: it.item.text });
+		this.itemText(li, body, it);
 		if (it.assign.length) {
 			const to = body.createSpan({ cls: "dc-to", text: "→ " });
 			for (const [d, x] of res.targets) {
@@ -720,7 +755,7 @@ export class DeskCalendarView extends ItemView {
 		if (it.item.kind === null) return this.renderRaw(ul, it);
 		const { li, body, meta } = this.itemShell(ul, it, it.item.status);
 		if (it.item.time) body.createSpan({ cls: "dc-tm", text: it.item.time });
-		body.createSpan({ cls: "dc-txt", text: it.item.text });
+		this.itemText(li, body, it);
 		this.finishMeta(body, meta, it, it.problems.length ? it.problems.join(" · ") : null);
 
 		const toggleable = it.item.kind === "task" && (it.item.status === "scheduled" || it.item.status === "done");
@@ -795,7 +830,7 @@ export class DeskCalendarView extends ItemView {
 		const lines = this.wallLines();
 		if (!lines.length) return;
 		const box = band.createDiv({ cls: "dc-wallin" });
-		tip(box.createDiv({ cls: "dc-lbl dc-wallin-lbl", text: `Wall Calendar에서 · ${lines.length}` }), Platform.isMobile ? "Wall Calendar에 적은 이달의 일이에요. 누르면 이달 중이나 날짜에 넣어요." : "Wall Calendar에 적은 이달의 일이에요. 날짜 칸이나 이달 중으로 끌어 넣어요.");
+		tip(box.createDiv({ cls: "dc-lbl dc-wallin-lbl", text: `Wall Calendar에서 · ${lines.length}` }), Platform.isMobile ? "Wall Calendar에 적은 이달의 일이에요. 누르면 인박스나 날짜에 넣어요." : "Wall Calendar에 적은 이달의 일이에요. 날짜 칸이나 이달 중으로 끌어 넣어요.");
 		const ul = box.createEl("ul", { cls: "dc-wallin-items" });
 		for (const l of lines) {
 			const li = ul.createEl("li", { cls: `dc-it dc-k-${l.item.kind} dc-s-scheduled dc-wallin-it` });
@@ -850,7 +885,7 @@ export class DeskCalendarView extends ItemView {
 	private async chooseWallTarget(l: WallLine): Promise<void> {
 		const first = `${this.month}-01`;
 		await actionSheet(this.app, l.item.text, [
-			{ label: "이달 중에 넣기", icon: "inbox", run: () => this.takeFromWall(l, null) },
+			{ label: "인박스에 넣기", icon: "inbox", run: () => this.takeFromWall(l, null) },
 			{
 				label: "날짜 고르기…",
 				icon: "calendar",
@@ -885,7 +920,7 @@ export class DeskCalendarView extends ItemView {
 				{ path: wallPath, before: wall, after: setFrontmatterScalar(sent.text, "updated", today) },
 			]);
 			await logDeskChange(this.plugin, `Wall Calendar에서 「${l.item.text}」 → ${iso ?? "이달 중"}`);
-			new Notice(`「${l.item.text}」을(를) ${iso ? `${+iso.slice(5, 7)}월 ${+iso.slice(8, 10)}일` : "이달 중"}에 넣었어요.`);
+			new Notice(`「${l.item.text}」을(를) ${iso ? `${+iso.slice(5, 7)}월 ${+iso.slice(8, 10)}일` : "인박스"}에 넣었어요.`);
 		} catch (err) {
 			new Notice(err instanceof Error ? err.message : String(err));
 		} finally {
@@ -951,7 +986,7 @@ export class DeskCalendarView extends ItemView {
 		const st = it.item.status === "cancelled" && it.item.kind === "task" ? "놓아줌" : STATUS_LABEL[it.item.status];
 		menu.title = it.item.text || it.line.trim();
 		menu.badge = `${KIND_LABEL[it.item.kind ?? "note"]} · ${st}`;
-		menu.row("자리", it.section === "day" ? `${it.date}${it.item.time ? ` ${it.item.time}` : ""}` : it.section === "alloc" ? `W${String(isoWeekNo(it.monday!)).padStart(2, "0")} 이번 주 할 일` : "이달 중");
+		menu.row("자리", it.section === "day" ? `${it.date}${it.item.time ? ` ${it.item.time}` : ""}` : it.section === "alloc" ? `W${String(isoWeekNo(it.monday!)).padStart(2, "0")} 이번 주 할 일` : "인박스");
 		if (it.item.movedTo) menu.row("보낸 곳", it.item.movedTo);
 		if (it.item.goal) menu.row("목표", it.item.goal, () => this.openGoal(it.item.goal));
 		for (const [k, v] of it.item.fields) {
@@ -1000,7 +1035,7 @@ export class DeskCalendarView extends ItemView {
 	// ── 수정 / 삭제 ──
 
 	private sectionLabel(it: DeskItem): string {
-		if (it.section === "during") return "이달 중";
+		if (it.section === "during") return "인박스";
 		if (it.section === "alloc") return "이번 주 할 일";
 		return it.date ?? "";
 	}
@@ -1063,7 +1098,7 @@ export class DeskCalendarView extends ItemView {
 			if (this.fileAt(pad)) notes.push(`${it.date} Daily Pad가 이 날짜 칸을 embed로 보여 줘요. 거기서도 사라져요.`);
 		} else if (it.section === "alloc") {
 			const parents = copies.filter((x) => x.section === "during");
-			if (parents.length) notes.push(`이달 중 「${parents[0].item.text}」의 → W${String(isoWeekNo(it.monday!)).padStart(2, "0")} 배정도 지워요.`);
+			if (parents.length) notes.push(`인박스 「${parents[0].item.text}」의 → W${String(isoWeekNo(it.monday!)).padStart(2, "0")} 배정도 지워요.`);
 			const days = copies.filter((x) => x.section === "day");
 			if (days.length) notes.push(`날짜 칸에 옮겨 적은 줄 ${days.length}개(${days.map((x) => x.date).join(", ")})는 지우지 않고 남겨요.`);
 		} else {
@@ -1150,7 +1185,7 @@ export class DeskCalendarView extends ItemView {
 		}
 		const during = cur.during.filter((it) => isOpenTask(it));
 		if (during.length) {
-			const ul = group(`이달 중 ${during.length}`, "이달 안에 할 일. 날짜에 놓으면 이번 주 할 일을 거쳐 그날로 배정돼요");
+			const ul = group(`인박스 ${during.length}`, "이달 안에 할 일. 날짜에 놓으면 이번 주 할 일을 거쳐 그날로 배정돼요");
 			for (const it of during) this.renderDuringItem(ul, it, ctx);
 		}
 		const projects = loose.createDiv({ cls: "dc-wkv-projects" });
@@ -1199,7 +1234,7 @@ export class DeskCalendarView extends ItemView {
 			new Notice("그 주의 「이번 주 할 일」 칸이 없어요. Desk Calendar 파일을 확인해 주세요.");
 			return;
 		}
-		if (!(await this.exec(planAssignWeek(it, monday, isoWeekNo(monday), allocFileOf(monday), this.ctx!.today)))) return;
+		if (!(await this.exec(this.weekPlan(it, monday, isoWeekNo(monday), allocFileOf(monday))))) return;
 		await this.reload();
 		const a = allocWeek(this.ctx!, monday)?.alloc?.find((x) => isOpenTask(x) && !x.assign.length && x.item.text === it.item.text);
 		if (a) await this.exec(planAssignDay(a, iso, this.ctx!.today));

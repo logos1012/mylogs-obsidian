@@ -73,8 +73,13 @@ export function deskMoveTargets(it: DeskMoveItem, weeks: WeekSlot[], days: DaySl
 	for (const w of weeks) {
 		// renderAllocCell: during → week (not already assigned to it); day → its own week (배정 취소).
 		if (w.hasAlloc) {
+			// One week per task: a task already in a week moves (no second week).
 			if (it.kind === "during" && !it.assignWeek.includes(w.no)) {
-				out.push({ op: "assignWeek", monday: w.monday, no: w.no, fileKey: w.fileKey, label: `${wk(w.no)} 이번 주 할 일`, sub: weekRange(w.monday), icon: "calendar-range" });
+				const moving = it.assignWeek.length > 0;
+				out.push({ op: "assignWeek", monday: w.monday, no: w.no, fileKey: w.fileKey, label: `${wk(w.no)} 이번 주 할 일${moving ? "로 옮기기" : ""}`, sub: weekRange(w.monday), icon: "calendar-range" });
+			}
+			if (it.kind === "alloc" && it.monday !== w.monday && !it.assign.length) {
+				out.push({ op: "assignWeek", monday: w.monday, no: w.no, fileKey: w.fileKey, label: `${wk(w.no)} 이번 주 할 일로 옮기기`, sub: weekRange(w.monday), icon: "calendar-range" });
 			}
 			if (it.kind === "day" && it.monday === w.monday) {
 				out.push({ op: "unassign", monday: w.monday, fileKey: w.fileKey, label: `${wk(w.no)} 이번 주 할 일로 (배정 취소)`, sub: weekRange(w.monday), icon: "undo-2" });
