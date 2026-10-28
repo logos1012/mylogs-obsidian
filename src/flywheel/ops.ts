@@ -189,10 +189,13 @@ export function padMark(padText: string | null, id: string): "x" | "-" | null {
 export function dayMark(e: FlywheelElement, iso: string, padText: string | null, cell: string | undefined, resting = false): DayMark {
 	const since = e.fields["since"] ?? "";
 	if (/^\d{4}-\d{2}-\d{2}$/.test(since) && iso < since) return "out";
+	// The 수행 표 is where the Flywheel view checks (since 2026-10-28); older days may only have
+	// Daily Pad lines. A table 했음/쉼 wins, then the line, then the table's 못 함.
+	const c = (cell ?? "").trim();
+	if (c === "x" || c === "쉼") return c;
 	const p = padMark(padText, e.id);
 	if (p) return p;
-	const c = (cell ?? "").trim();
-	if (c === "x" || c === "-" || c === "쉼") return c;
+	if (c === "-") return c;
 	// A resting element is left out of new Daily Pads (「4-2」 1): a pad without its line is a 쉼 day.
 	if (resting && padText !== null) return "쉼";
 	return "";
@@ -218,3 +221,66 @@ export function togglePadLine(padText: string, id: string): string | null {
 	return null;
 }
 
+
+// ───────────────────────── 수행 표 쓰기 (「4-2」 2026-10-28: 체크는 Flywheel 화면 → 수행 표) ─────────────────────────
+
+/** A new `99 작업실/수행/{YYYY-MM}.md` with one column per element. */
+export function logTableSkeleton(month: string, ids: string[]): string {
+	return `---\ntype: flywheel-log\nmonth: ${month}\n---\n| 날짜 | ${ids.join(" | ")} | 합 |\n|${"---|".repeat(ids.length + 2)}\n`;
+}
+
+function cellsOf(row: string): string[] {
+	return row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+}
+function rowOf(cells: string[]): string {
+	return `| ${cells.join(" | ")} |`;
+}
+
+/**
+ * Set one day's cell for `id` (`x` 했음, `""` 아직) in a month's 수행 표, adding the day row (in
+ * date order) or the element column (before 합) when missing, and recomputing 합 (했음 / 쉼 아닌 칸).
+ * Text outside the table (frontmatter, notes) is kept.
+ */
+export function setLogCell(text: string | null, month: string, day: string, id: string, value: string, ids: string[]): string {
+	const src = text ?? logTableSkeleton(month, ids);
+	const eol = src.includes("\r\n") ? "\r\n" : "\n";
+	const lines = src.split(/\r?\n/);
+	let h = lines.findIndex((l) => l.trim().startsWith("|") && cellsOf(l)[0] === "날짜");
+	if (h === -1) {
+		const at = lines.findIndex((l, i) => i > 0 && l === "---") + 1 || lines.length;
+		const sk = logTableSkeleton(month, ids).split("\n").slice(4, 6);
+		lines.splice(at, 0, ...sk);
+		h = at;
+	}
+	let header = cellsOf(lines[h]);
+	if (!header.includes(id)) {
+		const at = header.indexOf("합") === -1 ? header.length : header.indexOf("합");
+		for (let i = h; i < lines.length && lines[i].trim().startsWith("|"); i++) {
+			const c = cellsOf(lines[i]);
+			c.splice(at, 0, i === h ? id : i === h + 1 ? "---" : "");
+			lines[i] = i === h + 1 ? `|${c.map(() => "---").join("|")}|` : rowOf(c);
+		}
+		header = cellsOf(lines[h]);
+	}
+	let end = h + 2;
+	while (end < lines.length && lines[end].trim().startsWith("|")) end++;
+	const dd = day.padStart(2, "0");
+	let r = -1;
+	for (let i = h + 2; i < end; i++) if (cellsOf(lines[i])[0].padStart(2, "0") === dd) r = i;
+	if (r === -1) {
+		r = end;
+		for (let i = h + 2; i < end; i++) if (cellsOf(lines[i])[0].padStart(2, "0") > dd) { r = i; break; }
+		lines.splice(r, 0, rowOf(header.map((c, i) => (i === 0 ? dd : ""))));
+	}
+	const cells = cellsOf(lines[r]);
+	while (cells.length < header.length) cells.push("");
+	cells[header.indexOf(id)] = value;
+	const sum = header.indexOf("합");
+	if (sum !== -1) {
+		const own = header.map((c, i) => (/^F-\d+$/.test(c) ? cells[i] : null)).filter((c): c is string => c !== null);
+		const live = own.filter((c) => c !== "쉼");
+		cells[sum] = own.some((c) => c) ? `${live.filter((c) => c === "x").length}/${live.length}` : cells[sum];
+	}
+	lines[r] = rowOf(cells);
+	return lines.join(eol);
+}

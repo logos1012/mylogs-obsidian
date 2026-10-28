@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseFlywheel } from "../src/flywheel/model.ts";
-import { addElement, countActive, dayMark, isPlaceholder, nextId, parseLogTable, purposeOf, renameElement, replacementsThisQuarter, setElementField, setPurpose, togglePadLine, weekRate } from "../src/flywheel/ops.ts";
+import { setLogCell, addElement, countActive, dayMark, isPlaceholder, nextId, parseLogTable, purposeOf, renameElement, replacementsThisQuarter, setElementField, setPurpose, togglePadLine, weekRate } from "../src/flywheel/ops.ts";
 
 // Flywheel view edits (계획 「10-1」). Fictional data only (김하루).
 const WHEEL = `---\ntype: flywheel\nelements: 2\nupdated: 2026-10-01\n---\n# Flywheel\n\n(한 문장 — 채우기)\n\n## F-1 몸 만들기\n- 정체성:: 나는 매일 몸을 쓰는 사람이다\n- 최소:: 걷기 15분\n- 보통:: (채우기)\n- 다음:: → F-2 체력이 있어야 글이 써진다\n- status:: 사용\n- since:: 2026-10-05\n\n## F-3 글쓰기\n- 최소:: 한 문장\n- status:: 폐기\n\n## 변경 기록\n- 2026-10-05: 바퀴 세움\n`;
@@ -38,7 +38,8 @@ test("day marks: Daily Pad line, then 수행 표, 쉼, 기록 없음, before sin
 	const pad = (c: string) => `## 오늘 할 일\n- [${c}] F-1 몸 만들기 — 걷기 15분 (flywheel:: F-1)\n`;
 	assert.equal(dayMark(e, "2026-10-01", pad("x"), undefined), "out");
 	assert.equal(dayMark(e, "2026-10-06", pad("x"), undefined), "x");
-	assert.equal(dayMark(e, "2026-10-06", pad(" "), "x"), "-");
+	assert.equal(dayMark(e, "2026-10-06", pad(" "), "x"), "x", "the 수행 표 (Flywheel view check) wins");
+	assert.equal(dayMark(e, "2026-10-06", pad("x"), "-"), "x", "an older Daily Pad line still counts");
 	assert.equal(dayMark(e, "2026-10-06", null, "쉼"), "쉼");
 	assert.equal(dayMark(e, "2026-10-06", null, undefined), "");
 	assert.equal(dayMark(e, "2026-10-06", "## 오늘 할 일\n", undefined, true), "쉼");
@@ -49,4 +50,19 @@ test("day marks: Daily Pad line, then 수행 표, 쉼, 기록 없음, before sin
 	assert.equal(togglePadLine(pad(" "), "F-1"), pad("x"));
 	assert.equal(togglePadLine(pad("x"), "F-1"), pad(" "));
 	assert.equal(togglePadLine(pad("x"), "F-2"), null);
+});
+
+test("수행 표: today's check writes one cell; new rows in date order; missing column added; 합 recomputed", () => {
+	const fresh = setLogCell(null, "2026-11", "05", "F-1", "x", ["F-1", "F-2"]);
+	assert.equal(fresh, "---\ntype: flywheel-log\nmonth: 2026-11\n---\n| 날짜 | F-1 | F-2 | 합 |\n|---|---|---|---|\n| 05 | x |  | 1/2 |\n");
+	const LOG = "---\ntype: flywheel-log\nmonth: 2026-10\n---\n| 날짜 | F-1 | F-2 | 합 |\n|---|---|---|---|\n| 26 | x | - | 1/2 |\n| 28 |  | 쉼 |  |\n\n메모 한 줄은 그대로.\n";
+	const a = setLogCell(LOG, "2026-10", "27", "F-2", "x", ["F-1", "F-2"]);
+	assert.ok(a.includes("| 26 | x | - | 1/2 |\n| 27 |  | x | 1/2 |\n| 28 |"));
+	assert.ok(a.endsWith("\n메모 한 줄은 그대로.\n"));
+	const b = setLogCell(LOG, "2026-10", "28", "F-1", "x", ["F-1", "F-2"]);
+	assert.ok(b.includes("| 28 | x | 쉼 | 1/1 |"));
+	const c = setLogCell(LOG, "2026-10", "28", "F-3", "x", ["F-1", "F-2", "F-3"]);
+	assert.ok(c.includes("| 날짜 | F-1 | F-2 | F-3 | 합 |\n|---|---|---|---|---|\n| 26 | x | - |  | 1/2 |"));
+	assert.ok(c.includes("| 28 |  | 쉼 | x | 1/2 |"));
+	assert.ok(setLogCell(b, "2026-10", "28", "F-1", "", ["F-1", "F-2"]).includes("| 28 |  | 쉼 | 0/1 |"));
 });

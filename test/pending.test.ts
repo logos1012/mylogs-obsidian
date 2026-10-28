@@ -136,3 +136,15 @@ test("서랍에 creates the Drawer line with when:: and from::; a changed line c
 	await assert.rejects(api.applyPending(b.host, "2026-11-05", { ...sl(LINE_INDEX), line: "- [ ] 다른 줄" }, { kind: "letgo", why: "x" }, TODAY));
 	assert.deepEqual(b.data, before);
 });
+
+test("checking a 결정 대기 line finishes the original on its day; unchecking reopens it", async () => {
+	const { host, data } = setup({ "04 Daily Pad/2026/2026-11-04.md": pad("2026-11-04", "", "- [ ] 독서 모임 장소 예약하기\n") });
+	assert.equal(await api.togglePending(host, "2026-11-05", sl(LINE_INDEX), TODAY), "done");
+	assert.match(data.get("04 Daily Pad/2026/2026-11-05.md")!, /- \[x\] 독서 모임 장소 예약하기 \(from:: Daily Pad 2026-11-04\)/);
+	assert.match(data.get("03 Desk Calendar/2026/2026-11.md")!, /### 2026-11-04\n- \[x\] 독서 모임 장소 예약하기 \(from:: Daily Pad\)/);
+	assert.match(data.get("04 Daily Pad/2026/2026-11-04.md")!, /## 오늘 할 일\n- \[x\] 독서 모임 장소 예약하기/);
+	assert.ok(!data.get("04 Daily Pad/Daily Pad Index.md")!.includes("| 독서 모임"));
+	const doneLine = { ...sl(LINE_INDEX), line: "- [x] 독서 모임 장소 예약하기 (from:: Daily Pad 2026-11-04)" };
+	assert.equal(await api.togglePending(host, "2026-11-05", doneLine, TODAY), "open");
+	assert.match(data.get("03 Desk Calendar/2026/2026-11.md")!, /### 2026-11-04\n- \[ \] 독서 모임 장소 예약하기/);
+});

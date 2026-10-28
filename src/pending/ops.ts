@@ -156,3 +156,33 @@ export function describeChoice(text: string, c: PendingChoice, moved: number): s
 	}
 }
 
+
+/**
+ * Set the checkbox of every task line with the same text inside `[start, end)` from `from` to `to`
+ * (`" "` ↔ `"x"`): a 결정 대기 line checked done finishes the original too. Other states
+ * (`[>]`, `[-]`) are left alone.
+ */
+export function setCheckInRange(text: string, range: { start: number; end: number }, key: string, from: string, to: string): { text: string; count: number } {
+	const lines = splitLinesKeepEol(text);
+	let count = 0;
+	for (let i = range.start; i < range.end && i < lines.length; i++) {
+		const raw = stripEol(lines[i]);
+		const m = TASK_LINE_RE.exec(raw);
+		if (!m || m[2].toLowerCase() !== from || taskKey(raw) !== key) continue;
+		lines[i] = m[1] + to + m[3] + lines[i].slice(raw.length);
+		count++;
+	}
+	return { text: lines.join(""), count };
+}
+
+/** `setCheckInRange` on a Desk Calendar day cell. */
+export function checkInDeskDay(text: string, date: string, key: string, from: string, to: string): { text: string; count: number } {
+	const sec = findDaySection(text, date);
+	return sec.found ? setCheckInRange(text, { start: sec.start, end: sec.end }, key, from, to) : { text, count: 0 };
+}
+
+/** `setCheckInRange` on a Daily Pad section. */
+export function checkInPadSection(text: string, section: string, key: string, from: string, to: string): { text: string; count: number } {
+	const r = findSection(text, section);
+	return r ? setCheckInRange(text, sectionLineRange(text, r), key, from, to) : { text, count: 0 };
+}
