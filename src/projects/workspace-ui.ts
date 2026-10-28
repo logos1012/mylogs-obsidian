@@ -94,6 +94,21 @@ export function renderWorkspace(root: HTMLElement, p: Project, h: WorkspaceHost)
 	if (!p.archived) iconButton(ak, "pencil", "다음 행동 수정", () => h.edit());
 	h.milestones(main);
 	h.schedule?.(main, calendarSlot);
+	// The calendar lines up with 할 일·일정 (its top level with the schedule's), not with the page top.
+	const align = () => {
+		const sched = main.querySelector<HTMLElement>(".pf-schedule");
+		calendarSlot.style.marginTop = "0px";
+		if (!sched || getComputedStyle(layout).gridTemplateColumns.split(" ").length < 2) return;
+		const gap = sched.getBoundingClientRect().top - calendarSlot.getBoundingClientRect().top;
+		if (gap > 0) calendarSlot.style.marginTop = `${Math.round(gap)}px`;
+	};
+	window.requestAnimationFrame(align);
+	const ro = new ResizeObserver(() => {
+		if (!calendarSlot.isConnected) return ro.disconnect();
+		align();
+	});
+	ro.observe(main);
+	h.component.register(() => ro.disconnect());
 	const sections = workspaceSections(h.text).filter((s) => !isEmptySection(s.text));
 	if (sections.length) {
 		const info = main.createDiv({ cls: "pf-workspace-info" });
