@@ -12,6 +12,7 @@ import { refreshToolbox, registerToolbox } from "./toolbox/register.ts";
 import { activateDiary, refreshDiaries, registerDiary } from "./diary/register.ts";
 import { refreshFlywheel, registerFlywheel } from "./flywheel/register.ts";
 import { refreshShelf, registerShelf } from "./shelf/register.ts";
+import { refreshVisionBoard, registerVisionBoard } from "./vision/register.ts";
 import { LumiController } from "./lumi/controller.ts";
 import type { SideMode } from "./side.ts";
 import { syncSideSwitches } from "./ui/nav.ts";
@@ -33,6 +34,7 @@ import { registerLumi } from "./lumi/register.ts";
  * TODO(Toolbox AGENTS 「4-5」): move 폐기 files to `10 Archive Box/Closed/` once that format is decided (now the file stays in place).
  * TODO(My Life AGENTS 「4」): writing or regenerating My Life files (Hermes does that); index editing; Weekly/Monthly charts.
  * Shelf view (`mylogs-shelf`, 책장: 칸 = 위키, 책 = 도메인, read only): src/shelf/.
+ * Vision Board view (`mylogs-vision-board`, 계획 「Vision Board」: 비전 카드 덱 → 확언 끝까지 읽기 → Flywheel 수행 표): src/vision/.
  * Flywheel view (`mylogs-flywheel`, 계획 「10-1」: 오늘 체크 / 최근 4주 / 바퀴 카드 / 요소 추가): src/flywheel/.
  * Daily Pad 결정 대기 (계획 §4 「못 한 일 버튼」): src/pending/. Desk Calendar 날짜 칸의 못 한 일: src/desk/.
  * Shared UI: top navigation (src/ui/nav.ts), hidden help (src/ui/tip.ts), item detail popover (src/ui/popover.ts).
@@ -71,6 +73,7 @@ export default class MyLogsPlugin extends Plugin {
 			refreshDiaries(this);
 			refreshFlywheel(this);
 			refreshShelf(this);
+			refreshVisionBoard(this);
 		},
 		600,
 		true,
@@ -114,6 +117,7 @@ export default class MyLogsPlugin extends Plugin {
 		registerDiary(this);
 		registerFlywheel(this);
 		registerShelf(this);
+		registerVisionBoard(this);
 		registerLumi(this);
 
 		this.addSettingTab(new MyLogsSettingTab(this.app, this));

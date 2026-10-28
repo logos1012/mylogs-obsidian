@@ -10917,6 +10917,168 @@ button.pb-ended-toggle.is-on {
 	.mylogs-shelf .mls-open-body > .mls-kicker, .mylogs-shelf .mls-open-body > .mls-open-title, .mylogs-shelf .mls-open-body > .mls-open-summary { grid-column: 2; }
 	.mylogs-shelf .mls-open-summary { font-size: 13px; -webkit-line-clamp: 4; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
 	.mylogs-shelf button.mls-item { padding: 12px 2px; }
+/* ═════════════════════════ Vision Board (src/vision/) ═════════════════════════
+ * A deck of slightly overlapping cards. The front card is thrown sideways; the one behind
+ * rises to the front. The last card is the 확언, read to the end before it can be thrown. */
+
+.mylogs-vision-container { padding: 0 !important; overflow: hidden; position: relative; }
+.mylogs-vision {
+	--vb-radius: 26px;
+	--vb-ink: #2b2620;
+	--vb-paper: #f8f3ea;
+	--vb-paper-2: #efe6d6;
+	--vb-accent: #c8894a;
+	--vb-serif: "Noto Serif KR", "Nanum Myeongjo", "AppleMyungjo", "Batang", Georgia, serif;
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+	outline: none;
+	position: relative;
+	isolation: isolate;
+	background: var(--background-primary);
+}
+.theme-dark .mylogs-vision { --vb-ink: #efe6d6; --vb-paper: #221e19; --vb-paper-2: #191612; --vb-accent: #e0a868; }
+
+/* ── header ── */
+.vb-head { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; padding: 18px 22px 6px; position: relative; z-index: 3; }
+.vb-eyebrow { color: var(--text-muted); font-size: 12px; letter-spacing: 0.04em; }
+.vb-title { margin: 2px 0 0; font-family: var(--vb-serif); font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+.vb-head-right { display: flex; align-items: center; gap: 6px; }
+.vb-chip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; border-radius: 999px; font-size: 12px; color: var(--text-muted); background: color-mix(in srgb, var(--background-secondary) 80%, transparent); border: 1px solid var(--background-modifier-border); backdrop-filter: blur(8px); white-space: nowrap; }
+.vb-chip.is-done { color: #fff; background: linear-gradient(135deg, #d39a5c, #b8763c); border-color: transparent; box-shadow: 0 4px 14px -6px rgba(184, 118, 60, 0.8); }
+.vb-chip-icon { display: inline-flex; }
+.vb-chip-icon svg { width: 13px; height: 13px; stroke-width: 3; }
+.vb-icon { color: var(--text-muted); }
+
+/* ── stage ── */
+.vb-stage { flex: 1 1 auto; min-height: 0; position: relative; container-type: size; display: flex; align-items: center; justify-content: center; }
+.vb-ambient {
+	position: absolute; inset: -12%; z-index: -1;
+	background-size: cover; background-position: center;
+	filter: blur(48px) saturate(1.35);
+	opacity: 0.38;
+	transform: scale(1.1);
+	transition: background-image 0.6s ease, opacity 0.6s ease;
+}
+.theme-dark .vb-ambient { opacity: 0.32; }
+.vb-ambient.is-warm { background: radial-gradient(60% 50% at 50% 55%, rgba(214, 160, 100, 0.55), transparent 70%); filter: blur(30px); }
+.mylogs-vision::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: radial-gradient(120% 80% at 50% 40%, transparent 40%, var(--background-primary) 100%); }
+
+.vb-progress { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; width: min(100cqw - 48px, (100cqh - 64px) * 0.75, 460px); z-index: 2; }
+.vb-seg { flex: 1; height: 3px; border-radius: 3px; background: color-mix(in srgb, var(--text-normal) 14%, transparent); overflow: hidden; position: relative; }
+.vb-seg::after { content: ""; position: absolute; inset: 0; transform-origin: left; transform: scaleX(0); background: var(--text-normal); opacity: 0.75; transition: transform 0.45s cubic-bezier(.2, .8, .2, 1); }
+.vb-seg.is-past::after { transform: scaleX(1); }
+.vb-seg.is-now::after { transform: scaleX(0.35); }
+
+.vb-deck {
+	position: relative;
+	width: min(100cqw - 48px, (100cqh - 64px) * 0.75, 460px);
+	aspect-ratio: 3 / 4;
+	margin-top: 14px;
+	touch-action: pan-y;
+}
+
+/* ── card ── */
+.vb-card {
+	position: absolute; inset: 0;
+	border-radius: var(--vb-radius);
+	overflow: hidden;
+	background: #1c1a17;
+	box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 30px 60px -28px rgba(20, 16, 10, 0.55), 0 12px 24px -16px rgba(20, 16, 10, 0.4);
+	transform-origin: 50% 85%;
+	transition: transform 0.5s cubic-bezier(.2, .8, .2, 1), opacity 0.4s ease;
+	will-change: transform;
+	user-select: none;
+	-webkit-user-select: none;
+	cursor: grab;
+	touch-action: pan-y;
+}
+.vb-card:not(.is-front) { pointer-events: none; }
+.vb-card.is-gone { transition: transform 0.55s cubic-bezier(.3, .6, .2, 1), opacity 0.45s ease 0.08s; }
+.vb-card.is-dragging { transition: none; cursor: grabbing; }
+.vb-card.no-anim { transition: none !important; }
+.vb-card.is-nudge { animation: vb-nudge 1.4s cubic-bezier(.4, 0, .2, 1) 1; }
+.vb-card.is-shake { animation: vb-shake 0.4s ease 1; }
+@keyframes vb-nudge { 0%, 100% { transform: none; } 30% { transform: translateX(-26px) rotate(-2.4deg); } 60% { transform: translateX(10px) rotate(0.8deg); } }
+@keyframes vb-shake { 0%, 100% { transform: none; } 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+
+.vb-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.vb-noimg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(160deg, #4a5d6e 0%, #8b7a63 55%, #d5a874 100%); }
+button.vb-noimg-btn { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 30%; background: rgba(255, 255, 255, 0.18); color: #fff; border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 999px; padding: 8px 16px; backdrop-filter: blur(8px); box-shadow: none; cursor: pointer; }
+.vb-shade { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(0, 0, 0, 0.18) 0%, transparent 22%, transparent 48%, rgba(8, 6, 4, 0.78) 100%); }
+.vb-card-body { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 26px 28px; color: #fff; pointer-events: none; }
+.vb-card-num { font-size: 11px; letter-spacing: 0.18em; opacity: 0.7; margin-bottom: 8px; font-variant-numeric: tabular-nums; }
+.vb-card-title { margin: 0; font-family: var(--vb-serif); font-size: clamp(22px, 6.4cqw, 30px); font-weight: 600; line-height: 1.25; letter-spacing: -0.01em; text-shadow: 0 2px 18px rgba(0, 0, 0, 0.35); }
+.vb-card-text { margin: 10px 0 0; font-size: clamp(14px, 3.9cqw, 16px); line-height: 1.6; opacity: 0.92; white-space: pre-line; text-shadow: 0 1px 10px rgba(0, 0, 0, 0.4); }
+button.vb-card-more { position: absolute; top: 14px; right: 14px; width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: none; background: rgba(0, 0, 0, 0.22); color: rgba(255, 255, 255, 0.92); backdrop-filter: blur(10px); box-shadow: none; cursor: pointer; opacity: 0; transition: opacity 0.2s; }
+.vb-card.is-front:hover button.vb-card-more, .is-mobile button.vb-card-more, button.vb-card-more:focus-visible { opacity: 1; }
+button.vb-card-more.is-inline { position: static; width: 30px; height: 30px; opacity: 0.55; background: transparent; color: var(--vb-ink); backdrop-filter: none; }
+button.vb-card-more.is-inline:hover { opacity: 1; background: color-mix(in srgb, var(--vb-ink) 8%, transparent); }
+
+/* ── 확언 card ── */
+.vb-card.is-affirm {
+	background:
+		radial-gradient(120% 60% at 50% 0%, color-mix(in srgb, var(--vb-accent) 18%, transparent), transparent 60%),
+		linear-gradient(180deg, var(--vb-paper) 0%, var(--vb-paper-2) 100%);
+	color: var(--vb-ink);
+	display: flex; flex-direction: column;
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--vb-ink) 8%, transparent) inset, 0 30px 60px -28px rgba(20, 16, 10, 0.5), 0 12px 24px -16px rgba(20, 16, 10, 0.35);
+}
+.vb-affirm-head { display: flex; align-items: center; justify-content: space-between; padding: 22px 18px 4px 28px; }
+.vb-affirm-eyebrow { font-size: 11px; letter-spacing: 0.22em; color: var(--vb-accent); font-weight: 600; }
+.vb-affirm-body {
+	flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+	padding: 6px 28px 24px;
+	-webkit-mask-image: linear-gradient(180deg, transparent 0, #000 18px, #000 calc(100% - 28px), transparent 100%);
+	mask-image: linear-gradient(180deg, transparent 0, #000 18px, #000 calc(100% - 28px), transparent 100%);
+	scrollbar-width: none;
+	user-select: text; -webkit-user-select: text;
+}
+.vb-affirm-body::-webkit-scrollbar { display: none; }
+.vb-affirm-text { font-family: var(--vb-serif); font-size: clamp(16px, 4.5cqw, 19px); line-height: 1.95; letter-spacing: -0.005em; word-break: keep-all; }
+.vb-affirm-text p { margin: 0 0 1.05em; }
+.vb-affirm-text strong { color: var(--vb-accent); font-weight: 700; }
+.vb-affirm-empty { height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 14px; color: color-mix(in srgb, var(--vb-ink) 70%, transparent); font-family: var(--vb-serif); line-height: 1.8; }
+.vb-affirm-empty button { align-self: flex-start; }
+.vb-affirm-foot { flex: 0 0 auto; padding: 10px 20px 18px; text-align: center; }
+.vb-affirm-hint { font-size: 12px; letter-spacing: 0.04em; color: color-mix(in srgb, var(--vb-ink) 50%, transparent); transition: color 0.3s; }
+.vb-affirm-hint.is-ready { color: var(--vb-accent); font-weight: 600; animation: vb-breathe 2.4s ease-in-out infinite; }
+@keyframes vb-breathe { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; } }
+.vb-card.is-affirm.is-ready { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--vb-accent) 55%, transparent) inset, 0 30px 70px -26px color-mix(in srgb, var(--vb-accent) 55%, transparent); }
+
+/* ── first card / finish ── */
+button.vb-add-first { position: absolute; bottom: 18%; left: 50%; transform: translateX(-50%); z-index: 50; display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 9px 18px; }
+.vb-finish { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px; text-align: center; pointer-events: none; opacity: 0; transform: translateY(10px) scale(0.98); transition: opacity 0.5s ease 0.25s, transform 0.6s cubic-bezier(.2, .8, .2, 1) 0.25s; }
+.mylogs-vision.is-finished .vb-finish { opacity: 1; transform: none; pointer-events: auto; }
+.vb-finish h2 { margin: 14px 0 0; font-family: var(--vb-serif); font-size: 22px; font-weight: 600; }
+.vb-finish p { margin: 0; color: var(--text-muted); }
+.vb-finish-mark svg { width: 76px; height: 76px; overflow: visible; }
+.vb-finish-mark circle { fill: none; stroke: var(--vb-accent); stroke-width: 2.4; stroke-dasharray: 151; stroke-dashoffset: 151; }
+.vb-finish-mark path { fill: none; stroke: var(--vb-accent); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 40; stroke-dashoffset: 40; }
+.mylogs-vision.is-finished .vb-finish-mark circle { animation: vb-draw 0.8s cubic-bezier(.6, 0, .2, 1) 0.35s forwards; }
+.mylogs-vision.is-finished .vb-finish-mark path { animation: vb-draw 0.45s ease-out 1s forwards; }
+.mylogs-vision.is-finished .vb-finish-mark { filter: drop-shadow(0 6px 24px color-mix(in srgb, var(--vb-accent) 60%, transparent)); }
+@keyframes vb-draw { to { stroke-dashoffset: 0; } }
+button.vb-again { margin-top: 18px; display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 8px 16px; background: transparent; border: 1px solid var(--background-modifier-border); box-shadow: none; color: var(--text-muted); cursor: pointer; }
+button.vb-again:hover { color: var(--text-normal); }
+button.vb-again svg { width: 14px; height: 14px; }
+
+/* ── foot ── */
+.vb-foot { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 18px; padding: 10px 16px 20px; position: relative; z-index: 3; }
+.vb-foot-hint { min-width: 150px; text-align: center; font-size: 12px; color: var(--text-muted); letter-spacing: 0.03em; }
+button.vb-nav-btn { width: 40px; height: 40px; padding: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--background-secondary) 75%, transparent); border: 1px solid var(--background-modifier-border); box-shadow: none; color: var(--text-muted); cursor: pointer; backdrop-filter: blur(8px); transition: transform 0.15s, color 0.15s; }
+button.vb-nav-btn:hover { color: var(--text-normal); transform: scale(1.06); }
+.mylogs-vision.is-finished .vb-foot { visibility: hidden; }
+
+/* ── phone: the deck takes the screen, swipe is the control ── */
+.is-phone .vb-head { padding: 12px 18px 2px; }
+.is-phone .vb-title { font-size: 22px; }
+.is-phone .vb-deck, .is-phone .vb-progress { width: min(100cqw - 32px, (100cqh - 40px) * 0.75, 460px); }
+.is-phone button.vb-nav-btn { display: none; }
+.is-phone .vb-foot { padding: 6px 16px calc(14px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))); }
+@media (prefers-reduced-motion: reduce) {
+	.vb-card, .vb-card.is-gone, .vb-seg::after, .vb-finish { transition-duration: 0.01s !important; }
+	.vb-card.is-nudge, .vb-affirm-hint.is-ready { animation: none; }
 }
 
 /* Project workspace: the 할 일·일정 calendar under 연결 목표 (0.31.1). */

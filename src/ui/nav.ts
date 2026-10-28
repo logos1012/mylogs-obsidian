@@ -4,8 +4,9 @@ import { mountLumiButton } from "../lumi/register.ts";
 import type MyLogsPlugin from "../main.ts";
 import { SIDE_MODES, type SideMode } from "../side.ts";
 
-/** Every MyLogs view, in vault folder order (01 Pinboard … 12 Flywheel). */
+/** Every MyLogs view, in vault folder order (00 Vision Board … 12 Flywheel). */
 export const APP_VIEWS: { type: string; label: string; icon: string; desc: string }[] = [
+	{ type: "mylogs-vision-board", label: "Vision", icon: "sparkles", desc: "Vision Board · 이루고 싶은 모습과 매일 읽는 확언" },
 	{ type: "mylogs-pinboard", label: "Pinboard", icon: "target", desc: "올해의 목표와 진척" },
 	{ type: "mylogs-wall-calendar", label: "Wall", icon: "calendar-range", desc: "Wall Calendar · 한 해의 달별 일정" },
 	{ type: "mylogs-desk-calendar", label: "Desk", icon: "calendar-days", desc: "Desk Calendar · 이번 달 주·날짜 배정" },

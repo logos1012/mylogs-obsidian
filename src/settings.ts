@@ -43,6 +43,8 @@ export interface MyLogsSettings {
 	shelfPath: string;
 	/** Flywheel folder: `<folder>/Flywheel.md` (read only; its `status:: 사용` elements open each new Daily Pad). */
 	flywheelPath: string;
+	/** Vision Board folder: `<folder>/Vision Board.md` (cards + 확언), images in `<folder>/images/`. */
+	visionBoardPath: string;
 	sections: SectionNames;
 	/** 개인 / 회사 / 전체: what Pinboard · Wall · Desk · Projects show, and the side of new lines (set by hand, remembered). */
 	sideMode: SideMode;
@@ -87,6 +89,7 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	diaryMaterialCollapsed: false,
 	shelfPath: "07 Shelf",
 	flywheelPath: "12 Flywheel",
+	visionBoardPath: "00 Vision Board",
 	sections: {
 		pending: "결정 대기",
 		today: "개인 할 일",
@@ -287,6 +290,18 @@ export class MyLogsSettingTab extends PluginSettingTab {
 					.setValue(s.flywheelPath)
 					.onChange(async (v) => {
 						s.flywheelPath = cleanFolder(v) || DEFAULT_SETTINGS.flywheelPath;
+						await this.plugin.saveSettings();
+					}),
+			);
+		new Setting(containerEl)
+			.setName("Vision Board 폴더")
+			.setDesc("비전 카드와 확언: <폴더>/Vision Board.md · 이미지: <폴더>/images/")
+			.addText((t) =>
+				t
+					.setPlaceholder(DEFAULT_SETTINGS.visionBoardPath)
+					.setValue(s.visionBoardPath)
+					.onChange(async (v) => {
+						s.visionBoardPath = cleanFolder(v) || DEFAULT_SETTINGS.visionBoardPath;
 						await this.plugin.saveSettings();
 					}),
 			);
