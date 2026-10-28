@@ -11113,6 +11113,8 @@ button.vb-nav-btn:hover { color: var(--text-normal); transform: scale(1.06); }
 .mylogs-shelf .mls-theme-paper { --r-bg: #F0EADE; --r-panel: #EAE2D3; --r-text: #2F2A24; --r-muted: #776D61; --r-faint: #A59A8B; --r-rule: #DBD1C0; --r-hover: rgba(70, 45, 20, 0.06); --r-gutter: rgba(70, 45, 20, 0.07); color-scheme: light; }
 .mylogs-shelf .mls-theme-night { --r-bg: #1C1B19; --r-panel: #222120; --r-text: #C8C1B4; --r-muted: #8D867A; --r-faint: #5F5A52; --r-rule: #33312D; --r-hover: rgba(255, 240, 220, 0.05); --r-gutter: rgba(0, 0, 0, 0.28); color-scheme: dark; }
 .mylogs-shelf .mls-theme-night { --r-accent: color-mix(in srgb, var(--mls-accent) 62%, var(--r-text)); }
+.mylogs-shelf .mls-theme-paper { --r-desk: #E2D9C8; --r-page: #F4EFE5; }
+.mylogs-shelf .mls-theme-night { --r-desk: #141312; --r-page: #1E1D1B; }
 
 /* 위 막대 (읽는 동안 숨김) */
 .mylogs-shelf .mls-rtop {
@@ -11139,7 +11141,7 @@ button.vb-nav-btn:hover { color: var(--text-normal); transform: scale(1.06); }
 }
 .mylogs-shelf .mls-aa.is-open { display: grid; gap: 12px; }
 .mylogs-shelf .mls-aa-label { font: 11px/1 var(--font-monospace); letter-spacing: 0.06em; color: var(--r-faint); margin-bottom: 7px; }
-.mylogs-shelf .mls-aa-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.mylogs-shelf .mls-aa-seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; }
 .mylogs-shelf button.mls-aa-btn { height: 32px; padding: 0; border-radius: 6px; border: 1px solid var(--r-rule); background: transparent; box-shadow: none; font-size: 12.5px; color: var(--r-muted); cursor: pointer; }
 .mylogs-shelf button.mls-aa-btn:hover { background: var(--r-hover); }
 .mylogs-shelf button.mls-aa-btn.is-on { color: var(--r-text); border-color: var(--r-accent); }
@@ -11156,6 +11158,23 @@ button.vb-nav-btn:hover { color: var(--text-normal); transform: scale(1.06); }
 	background: linear-gradient(90deg, transparent, var(--r-gutter) 50%, transparent); pointer-events: none;
 }
 .mylogs-shelf .mls-flow { column-fill: auto; transition: transform 0.42s cubic-bezier(.22,.7,.18,1); will-change: transform; }
+
+/* 넘김 「책장」: StPageFlip leaves on a desk */
+.mylogs-shelf .mls-reader.is-curl { background: var(--r-desk); }
+.mylogs-shelf .mls-reader.is-curl .mls-panel { background: color-mix(in srgb, var(--r-desk) 55%, var(--r-page)); }
+.mylogs-shelf .mls-viewport.is-measure { position: absolute; left: 0; top: 0; visibility: hidden; pointer-events: none; margin: 0; }
+.mylogs-shelf .mls-reader.is-curl .mls-folio { display: none; }
+.mylogs-shelf .mls-book { position: relative; flex: 0 0 auto; margin-bottom: 14px; }
+.mylogs-shelf .mls-book .stf__wrapper { box-shadow: 0 22px 44px -26px rgba(0, 0, 0, 0.55); }
+.mylogs-shelf .mls-leaf { background: var(--r-page); overflow: hidden; }
+.mylogs-shelf .mls-leaf-box { position: absolute; overflow: hidden; }
+.mylogs-shelf .mls-leaf-box .mls-flow { will-change: auto; }
+.mylogs-shelf .mls-leaf-folio { position: absolute; left: 0; right: 0; bottom: 24px; text-align: center; font: 11px/1 var(--font-monospace); color: var(--r-faint); }
+.mylogs-shelf .mls-reader.is-spread .mls-leaf.is-left { background-image: linear-gradient(270deg, var(--r-gutter) 0, transparent 46px); }
+.mylogs-shelf .mls-reader.is-spread .mls-leaf.is-right { background-image: linear-gradient(90deg, var(--r-gutter) 0, transparent 46px); }
+.mylogs-shelf .mls-reader.is-curl button.mls-edge { opacity: 0.0; }
+.mylogs-shelf .mls-reader.is-curl button.mls-edge:hover { opacity: 1; }
+.mylogs-shelf .mls-reader.is-curl.no-edges button.mls-edge { display: none; }
 
 /* 쪽 번호 · 진행 */
 .mylogs-shelf .mls-folio { position: absolute; bottom: 30px; left: 50%; width: var(--mls-vw); transform: translateX(-50%); display: flex; justify-content: space-between; font: 11px/1 var(--font-monospace); color: var(--r-faint); pointer-events: none; }
@@ -11202,7 +11221,9 @@ button.vb-nav-btn:hover { color: var(--text-normal); transform: scale(1.06); }
 .mylogs-shelf .mls-page-body pre { margin: 1.2em 0; padding: 14px 16px; border-radius: 6px; background: var(--r-hover); white-space: pre-wrap; break-inside: avoid; }
 .mylogs-shelf .mls-page-body pre code { padding: 0; background: transparent; font-size: 12px; }
 .mylogs-shelf .mls-page-body hr { margin: 2em auto; width: 48px; border: 0; border-top: 1px solid var(--r-faint); }
-.mylogs-shelf .mls-page-body table { width: 100%; margin: 1.3em 0; border-collapse: collapse; font: 12.5px/1.5 var(--mls-sans); display: block; overflow-x: auto; break-inside: avoid; color: var(--r-text); }
+.mylogs-shelf .mls-page-body table { width: 100%; margin: 1.3em 0; border-collapse: collapse; font: 12.5px/1.5 var(--mls-sans); display: table; table-layout: auto; overflow-wrap: anywhere; color: var(--r-text); }
+.mylogs-shelf .mls-page-body tr { break-inside: avoid; }
+.mylogs-shelf .mls-page-body thead { display: table-header-group; }
 .mylogs-shelf .mls-page-body th { text-align: left; font-weight: 600; font-size: 11.5px; color: var(--r-muted); border: 0; border-bottom: 1.5px solid var(--r-text); padding: 7px 10px 7px 0; background: transparent; }
 .mylogs-shelf .mls-page-body td { border: 0; border-bottom: 1px solid var(--r-rule); padding: 7px 10px 7px 0; vertical-align: top; background: transparent; }
 .mylogs-shelf .mls-page-body img { max-width: 100%; max-height: calc(var(--mls-page-h, 600px) * 0.8); border-radius: 4px; break-inside: avoid; }

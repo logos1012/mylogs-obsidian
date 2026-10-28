@@ -223,7 +223,7 @@ export class ShelfView extends ItemView {
 	private prefs(): ReaderPrefs {
 		const st = this.plugin.settings;
 		const theme: ReaderTheme = st.shelfReaderTheme === "paper" || st.shelfReaderTheme === "night" ? st.shelfReaderTheme : "auto";
-		return { theme, size: [0, 1, 2].includes(st.shelfReaderSize) ? st.shelfReaderSize : 1, toc: !!st.shelfReaderToc, info: !!st.shelfReaderInfo };
+		return { theme, size: [0, 1, 2].includes(st.shelfReaderSize) ? st.shelfReaderSize : 1, toc: !!st.shelfReaderToc, info: !!st.shelfReaderInfo, flip: st.shelfReaderFlip === "slide" ? "slide" : "curl" };
 	}
 
 	private setPrefs(p: Partial<ReaderPrefs>): void {
@@ -232,6 +232,7 @@ export class ShelfView extends ItemView {
 		if (p.size !== undefined) st.shelfReaderSize = p.size;
 		if (p.toc !== undefined) st.shelfReaderToc = p.toc;
 		if (p.info !== undefined) st.shelfReaderInfo = p.info;
+		if (p.flip !== undefined) st.shelfReaderFlip = p.flip;
 		void this.plugin.saveSettingsQuiet();
 		void this.drawReader(true);
 	}

@@ -7,14 +7,18 @@
  *   chrome   the top bar shows near the top edge or on a tap in the middle, and hides while reading
  *   panels   ☰ 목차 (left) and ⓘ 정보 (right: kind, date, 출처 · 원본 자료 · 관련 글, 원본 열기), each
  *            on or off and remembered. 본문만 is the default.
- *   theme    자동 (follows Obsidian) · 종이 · 밤, and three text sizes, remembered.
+ *   theme    자동 (follows Obsidian) · 종이 · 밤, three text sizes, 넘김 책장 (page curl, the default) or
+ *            밀기 (slide; also when the system asks for reduced motion), remembered.
  *
  * Markdown rendering and link resolution come from the view (Obsidian), so this file stays DOM only.
  */
 
+import { PageFlip } from "page-flip/dist/js/page-flip.module.js";
 import { KIND_LABEL, KIND_ORDER, seriesOf, spineLook, splitTitle, type ShelfArticle, type ShelfBook, type ShelfWiki } from "./model.ts";
 
 export type ReaderTheme = "auto" | "paper" | "night";
+/** 책장: the page curls under the finger (StPageFlip). 밀기: the spread slides. */
+export type ReaderFlip = "curl" | "slide";
 
 export interface ReaderPrefs {
 	theme: ReaderTheme;
@@ -22,6 +26,7 @@ export interface ReaderPrefs {
 	size: number;
 	toc: boolean;
 	info: boolean;
+	flip: ReaderFlip;
 }
 
 export interface ReaderDoc {
@@ -137,6 +142,7 @@ export function renderReader(root: HTMLElement, c: ReaderCtx, h: ReaderHandlers)
 	};
 	seg("테마", (["auto", "paper", "night"] as ReaderTheme[]).map((t) => ({ text: THEME_LABEL[t], on: c.prefs.theme === t, fn: () => h.setPrefs({ theme: t }) })));
 	seg("글자", ["작게", "보통", "크게"].map((t, n) => ({ text: t, on: c.prefs.size === n, fn: () => h.setPrefs({ size: n }) })));
+	seg("넘김", (["curl", "slide"] as ReaderFlip[]).map((f) => ({ text: f === "curl" ? "책장" : "밀기", on: c.prefs.flip === f, fn: () => h.setPrefs({ flip: f }) })));
 
 	// ── panels ──
 	const body = wrap.createDiv({ cls: "mls-rbody" });
@@ -156,23 +162,30 @@ export function renderReader(root: HTMLElement, c: ReaderCtx, h: ReaderHandlers)
 	if (t.sub) head.createDiv({ cls: "mls-page-sub", text: t.sub });
 	head.createDiv({ cls: "mls-page-rule" });
 	const text = flow.createDiv({ cls: "mls-page-body markdown-rendered" });
-	text.addEventListener("click", (e) => {
-		const a = (e.target as HTMLElement).closest("a.internal-link");
+	const end = flow.createDiv({ cls: "mls-end" });
+	end.createDiv({ cls: "mls-end-mark", text: "◆" });
+	if (nextDoc) {
+		const nb = end.createEl("button", { cls: "mls-end-next", attr: { type: "button", "data-read": nextDoc.path } });
+		nb.createSpan({ cls: "mls-end-k", text: "다음 글" });
+		nb.createSpan({ cls: "mls-end-t", text: nextDoc.title });
+	} else if (c.book) {
+		end.createDiv({ cls: "mls-end-k", text: `「${c.book.label}」 끝` });
+	}
+	// Links and 「다음 글」 by delegation: the 책장 mode shows clones of the text.
+	stage.addEventListener("click", (e) => {
+		const el = e.target as HTMLElement;
+		const r = el.closest<HTMLElement>("[data-read]");
+		if (r?.dataset.read) {
+			e.preventDefault();
+			e.stopPropagation();
+			return h.read(r.dataset.read);
+		}
+		const a = el.closest("a.internal-link");
 		if (!a) return;
 		e.preventDefault();
 		e.stopPropagation();
 		h.follow(a.getAttribute("data-href") ?? a.getAttribute("href") ?? "", c.doc.path);
-	});
-	const end = flow.createDiv({ cls: "mls-end" });
-	end.createDiv({ cls: "mls-end-mark", text: "◆" });
-	if (nextDoc) {
-		const nb = end.createEl("button", { cls: "mls-end-next", attr: { type: "button" } });
-		nb.createSpan({ cls: "mls-end-k", text: "다음 글" });
-		nb.createSpan({ cls: "mls-end-t", text: nextDoc.title });
-		nb.addEventListener("click", () => h.read(nextDoc.path));
-	} else if (c.book) {
-		end.createDiv({ cls: "mls-end-k", text: `「${c.book.label}」 끝` });
-	}
+	}, true);
 
 	const folio = stage.createDiv({ cls: "mls-folio" });
 	const folioL = folio.createSpan({ cls: "mls-folio-l" });
@@ -183,28 +196,58 @@ export function renderReader(root: HTMLElement, c: ReaderCtx, h: ReaderHandlers)
 	const edgeL = stage.createEl("button", { cls: "mls-edge mls-edge-l", attr: { type: "button", "aria-label": "이전 쪽" } });
 	const edgeR = stage.createEl("button", { cls: "mls-edge mls-edge-r", attr: { type: "button", "aria-label": "다음 쪽" } });
 
+	const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+	const curl = c.prefs.flip === "curl" && !reduce;
+	wrap.toggleClass("is-curl", curl);
+
 	// ── paging ──
 	let per = 1;
-	let step = 0;
 	let pages = 1;
-	let spread = 0;
+	/** 밀기: the spread shown. 책장: the page index (left page of a spread). */
+	let at = 0;
 	let ready = false;
-	const spreads = () => Math.max(1, Math.ceil(pages / per));
-	const show = () => {
-		flow.style.transform = `translateX(${-spread * step}px)`;
-		const first = spread * per + 1;
-		folioL.setText(String(first));
-		folioR.setText(per === 2 && first + 1 <= pages ? String(first + 1) : "");
-		const n = spreads();
-		fill.style.width = `${n <= 1 ? 100 : (spread / (n - 1)) * 100}%`;
-		count.setText(`${Math.min(pages, first + per - 1)} / ${pages}`);
-		edgeL.toggleClass("is-off", spread === 0 && !prevDoc);
-		edgeR.toggleClass("is-off", spread >= n - 1 && !nextDoc);
+	let book: PageFlip | null = null;
+	let bookEl: HTMLElement | null = null;
+	let lastSize = "";
+	const total = () => (curl ? Math.max(1, book?.getPageCount() ?? pages) : Math.max(1, Math.ceil(pages / per)));
+	const fraction = () => {
+		const n = total();
+		return n <= 1 ? 0 : (curl ? Math.min(at, n - 1) : at) / (n - 1);
 	};
-	const measure = (keep: "first" | "last" | "same" | number) => {
+	const atStart = () => at <= 0;
+	const atEnd = () => (curl ? at + per >= total() : at >= total() - 1);
+	const show = () => {
+		const first = curl ? at + 1 : at * per + 1;
+		const last = Math.min(pages, first + per - 1);
+		fill.style.width = `${Math.round(fraction() * 100)}%`;
+		count.setText(`${Math.min(pages, last)} / ${pages}`);
+		edgeL.toggleClass("is-off", atStart() && !prevDoc);
+		edgeR.toggleClass("is-off", atEnd() && !nextDoc);
+		if (!curl) {
+			flow.style.transform = `translateX(${-at * stepPx}px)`;
+			folioL.setText(String(first));
+			folioR.setText(per === 2 && first + 1 <= pages ? String(first + 1) : "");
+		}
+	};
+	/** Columns the text fills at this page box (the end block's right edge). */
+	const countPages = (pageW: number, gap: number) => {
+		const keep = flow.style.transform;
+		flow.style.transform = "none";
+		const f = flow.getBoundingClientRect();
+		const e = end.getBoundingClientRect();
+		flow.style.transform = keep;
+		return Math.max(1, Math.round((e.right - f.left + gap) / (pageW + gap)));
+	};
+	const startIndex = (keep: "first" | "last" | "same" | number, n: number, before: number) => {
+		const frac = typeof keep === "number" ? keep : before;
+		return keep === "first" ? 0 : keep === "last" ? n - 1 : Math.min(n - 1, Math.round(frac * (n - 1)) || 0);
+	};
+
+	// 밀기: one flow box, translated by a spread.
+	let stepPx = 0;
+	const measureSlide = (keep: "first" | "last" | "same" | number) => {
 		const w = stage.clientWidth;
 		const hgt = stage.clientHeight;
-		if (!w || !hgt) return;
 		const narrow = w < SPREAD_MIN;
 		per = narrow ? 1 : 2;
 		const gap = narrow ? 48 : 112;
@@ -214,46 +257,129 @@ export function renderReader(root: HTMLElement, c: ReaderCtx, h: ReaderHandlers)
 		const vh = Math.max(240, hgt - (narrow ? 120 : 150));
 		wrap.style.setProperty("--mls-page-h", `${vh}px`);
 		wrap.style.setProperty("--mls-vw", `${vw}px`);
+		wrap.style.setProperty("--mls-gutter", `${gap}px`);
+		wrap.toggleClass("is-spread", per === 2);
 		viewport.style.width = `${vw}px`;
 		viewport.style.height = `${vh}px`;
 		flow.style.width = `${vw}px`;
 		flow.style.height = `${vh}px`;
 		flow.style.columnCount = String(per);
 		flow.style.columnGap = `${gap}px`;
-		wrap.toggleClass("is-spread", per === 2);
-		wrap.style.setProperty("--mls-gutter", `${gap}px`);
-		step = vw + gap;
-		const before = spread / Math.max(1, spreads() - 1);
-		// The end block's right edge tells how many columns the text filled.
-		const prev = flow.style.transform;
-		flow.style.transform = "none";
-		const f = flow.getBoundingClientRect();
-		const e = end.getBoundingClientRect();
-		flow.style.transform = prev;
-		pages = Math.max(1, Math.round((e.right - f.left + gap) / (pageW + gap)));
-		const n = spreads();
-		const frac = typeof keep === "number" ? keep : before;
-		spread = keep === "first" ? 0 : keep === "last" ? n - 1 : Math.min(n - 1, Math.round(frac * (n - 1)) || 0);
+		stepPx = vw + gap;
+		const before = fraction();
+		pages = countPages(Math.floor((vw - gap * (per - 1)) / per), gap);
+		at = startIndex(keep, total(), before);
 		show();
+	};
+
+	// 책장: the text cut into page leaves; StPageFlip turns them (drag a corner, swipe, or a key).
+	const buildCurl = (keep: "first" | "last" | "same" | number) => {
+		const w = stage.clientWidth;
+		const hgt = stage.clientHeight;
+		const narrow = w < SPREAD_MIN;
+		per = narrow ? 1 : 2;
+		const outerW = narrow ? Math.min(w, 640) : Math.min(600, Math.floor((w - 96) / 2));
+		const outerH = narrow ? hgt - 30 : Math.min(hgt - 64, Math.round(outerW * 1.5));
+		const padX = narrow ? 26 : 50;
+		const padT = narrow ? 38 : 54;
+		const padB = narrow ? 54 : 64;
+		const pageW = outerW - padX * 2;
+		const pageH = Math.max(200, outerH - padT - padB);
+		const gap = 64;
+		wrap.style.setProperty("--mls-page-h", `${pageH}px`);
+		wrap.toggleClass("is-spread", per === 2);
+		// Measure in the hidden flow, one page per column.
+		viewport.addClass("is-measure");
+		viewport.style.width = `${pageW}px`;
+		viewport.style.height = `${pageH}px`;
+		flow.style.width = `${pageW}px`;
+		flow.style.height = `${pageH}px`;
+		flow.style.columnCount = "1";
+		flow.style.columnGap = `${gap}px`;
+		flow.style.transform = "none";
+		const before = fraction();
+		pages = countPages(pageW, gap);
+		const n = per === 2 && pages % 2 ? pages + 1 : pages;
+
+		book?.destroy();
+		bookEl?.remove();
+		bookEl = stage.createDiv({ cls: "mls-book" });
+		bookEl.style.width = `${outerW * per}px`;
+		const leaves: HTMLElement[] = [];
+		for (let k = 0; k < n; k++) {
+			const leaf = bookEl.createDiv({ cls: `mls-leaf${per === 2 ? (k % 2 ? " is-right" : " is-left") : ""}` });
+			const box = leaf.createDiv({ cls: "mls-leaf-box" });
+			box.style.cssText = `left:${padX}px;top:${padT}px;width:${pageW}px;height:${pageH}px;`;
+			if (k < pages) {
+				const copy = flow.cloneNode(true) as HTMLElement;
+				copy.style.transform = `translateX(${-k * (pageW + gap)}px)`;
+				copy.style.transition = "none";
+				box.appendChild(copy);
+				leaf.createDiv({ cls: "mls-leaf-folio", text: String(k + 1) });
+			}
+			leaves.push(leaf);
+		}
+		book = new PageFlip(bookEl, {
+			width: outerW,
+			height: outerH,
+			size: "fixed",
+			minWidth: outerW,
+			maxWidth: outerW,
+			minHeight: outerH,
+			maxHeight: outerH,
+			usePortrait: true,
+			showCover: false,
+			drawShadow: true,
+			maxShadowOpacity: 0.32,
+			flippingTime: 780,
+			mobileScrollSupport: false,
+			swipeDistance: 24,
+			disableFlipByClick: true,
+			showPageCorners: true,
+			clickEventForward: true,
+			startPage: 0,
+			startZIndex: 0,
+			autoSize: true,
+			useMouseEvents: true,
+		} as never);
+		book.loadFromHTML(leaves);
+		const idx = startIndex(keep, n, before);
+		at = per === 2 ? idx - (idx % 2) : idx;
+		if (at) book.turnToPage(at);
+		book.on("flip", (e) => {
+			at = Number(e.data) || 0;
+			show();
+		});
+		const margin = (w - outerW * per) / 2;
+		edgeL.style.width = edgeR.style.width = `${Math.max(0, margin)}px`;
+		wrap.toggleClass("no-edges", margin < 40);
+		show();
+	};
+
+	const measure = (keep: "first" | "last" | "same" | number) => {
+		const w = stage.clientWidth;
+		const hgt = stage.clientHeight;
+		if (!w || !hgt) return;
+		lastSize = `${w}x${hgt}`;
+		if (curl) buildCurl(keep);
+		else measureSlide(keep);
 	};
 	const go = (d: number) => {
 		if (!ready) return;
-		const n = spreads();
-		if (spread + d < 0) {
-			if (prevDoc) h.read(prevDoc.path, "last");
+		if (d < 0 && atStart()) return void (prevDoc && h.read(prevDoc.path, "last"));
+		if (d > 0 && atEnd()) return void (nextDoc && h.read(nextDoc.path, "first"));
+		if (curl) {
+			if (d > 0) book?.flipNext("top" as never);
+			else book?.flipPrev("top" as never);
 			return;
 		}
-		if (spread + d > n - 1) {
-			if (nextDoc) h.read(nextDoc.path, "first");
-			return;
-		}
-		spread += d;
+		at += d;
 		show();
 	};
 	edgeL.addEventListener("click", () => go(-1));
 	edgeR.addEventListener("click", () => go(1));
 
-	// 가운데 탭: 위 막대 보이기 / 숨기기. 위쪽 가장자리에 마우스가 오면 보인다.
+	// 가운데 탭: 위 막대 보이기 / 숨기기 (끌어서 넘긴 뒤의 클릭은 빼고). 위쪽 가장자리에 마우스가 오면 보인다.
 	let hideT = 0;
 	const chrome = (on: boolean) => {
 		wrap.toggleClass("is-chrome", on);
@@ -262,8 +388,18 @@ export function renderReader(root: HTMLElement, c: ReaderCtx, h: ReaderHandlers)
 			if (!top.matches(":hover") && !menu.hasClass("is-open")) wrap.removeClass("is-chrome");
 		}, 2600);
 	};
-	viewport.addEventListener("click", (e) => {
+	let px = 0;
+	let py = 0;
+	stage.addEventListener("pointerdown", (e) => {
+		px = e.clientX;
+		py = e.clientY;
+	});
+	stage.addEventListener("click", (e) => {
 		if ((e.target as HTMLElement).closest("a, button")) return;
+		if (Math.hypot(e.clientX - px, e.clientY - py) > 6) return;
+		const r = stage.getBoundingClientRect();
+		const x = (e.clientX - r.left) / r.width;
+		if (curl && (x < 0.2 || x > 0.8)) return;
 		chrome(!wrap.hasClass("is-chrome"));
 	});
 	wrap.addEventListener("mousemove", (e) => {
@@ -271,7 +407,7 @@ export function renderReader(root: HTMLElement, c: ReaderCtx, h: ReaderHandlers)
 	});
 	top.addEventListener("mouseleave", () => chrome(true));
 
-	// 밀기 (touch)
+	// 밀기 mode swipe (책장 mode: the page follows the finger).
 	let sx = 0;
 	let sy = 0;
 	stage.addEventListener("touchstart", (e) => {
@@ -281,17 +417,27 @@ export function renderReader(root: HTMLElement, c: ReaderCtx, h: ReaderHandlers)
 	stage.addEventListener("touchend", (e) => {
 		const dx = e.changedTouches[0].clientX - sx;
 		const dy = e.changedTouches[0].clientY - sy;
-		if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.4) go(dx < 0 ? 1 : -1);
+		if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+		if (!curl) return go(dx < 0 ? 1 : -1);
+		// At the first / last page the book does not turn: go on to the neighbour article.
+		if (dx < 0 && atEnd() && nextDoc) h.read(nextDoc.path, "first");
+		else if (dx > 0 && atStart() && prevDoc) h.read(prevDoc.path, "last");
 	}, { passive: true });
 
-	const ro = new ResizeObserver(() => ready && measure("same"));
+	let rt = 0;
+	const ro = new ResizeObserver(() => {
+		if (!ready || `${stage.clientWidth}x${stage.clientHeight}` === lastSize) return;
+		window.clearTimeout(rt);
+		rt = window.setTimeout(() => measure("same"), 180);
+	});
 	ro.observe(stage);
 	chrome(true);
 	void h.renderMarkdown(c.doc.body, text, c.doc.path).then(async () => {
 		await document.fonts?.ready;
+		const imgs = [...text.querySelectorAll("img")].filter((i) => !i.complete);
+		await Promise.race([Promise.all(imgs.map((i) => new Promise((r) => i.addEventListener("load", r, { once: true })))), new Promise((r) => window.setTimeout(r, 1500))]);
 		ready = true;
 		measure(c.startAt);
-		text.querySelectorAll("img").forEach((img) => img.addEventListener("load", () => measure("same"), { once: true }));
 	});
 
 	return {
@@ -306,10 +452,13 @@ export function renderReader(root: HTMLElement, c: ReaderCtx, h: ReaderHandlers)
 			return true;
 		},
 		layout: () => ready && measure("same"),
-		fraction: () => spread / Math.max(1, spreads() - 1),
+		fraction,
 		destroy: () => {
 			ro.disconnect();
 			window.clearTimeout(hideT);
+			window.clearTimeout(rt);
+			book?.destroy();
+			book = null;
 		},
 	};
 }
