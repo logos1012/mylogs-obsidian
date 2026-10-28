@@ -501,23 +501,7 @@ export class DeskCalendarView extends ItemView {
 	}
 
 	private renderBands(root: HTMLElement, cur: MonthData, ctx: Ctx): void {
-		const focus = root.createEl("section", { cls: "dc-band" });
-		focus.createDiv({ cls: "dc-lbl", text: "이달의 초점" });
-		const fl = focus.createEl("ul", { cls: "dc-focuslist" });
-		if (!cur.focus.length) fl.createEl("li", { cls: "dc-focus dc-none", text: "이달의 초점이 아직 없어요" });
-		for (const f of cur.focus) {
-			const li = fl.createEl("li", { cls: "dc-focus" });
-			li.createSpan({ cls: "dc-fid", text: "◎" });
-			if (f.id) {
-				li.addClass("is-link");
-				tip(li, "목표 열기");
-				li.addEventListener("click", () => this.openGoal(f.id));
-			}
-			li.createSpan({ cls: "dc-ftitle", text: f.title });
-			if (f.note) li.createSpan({ cls: "dc-fnote", text: f.note });
-			if (f.test && this.plugin.settings.showTestMarkers) this.testDot(li);
-		}
-
+		// 이달의 초점 band removed (2026-10-28): the month starts with the 인박스.
 		const during = root.createEl("section", { cls: "dc-band dc-during" });
 		during.createDiv({ cls: "dc-lbl", text: "인박스" });
 		const ul = during.createEl("ul");
