@@ -48,6 +48,8 @@ export interface MyLogsSettings {
 	shelfReaderSize: number;
 	shelfReaderToc: boolean;
 	shelfReaderInfo: boolean;
+	/** 넘김: 책장 (page curl) or 밀기 (slide). */
+	shelfReaderFlip: "curl" | "slide";
 	/** Flywheel folder: `<folder>/Flywheel.md` (read only; its `status:: 사용` elements open each new Daily Pad). */
 	flywheelPath: string;
 	/** Vision Board folder: `<folder>/Vision Board.md` (cards + 확언), images in `<folder>/images/`. */
@@ -102,6 +104,7 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	shelfReaderSize: 1,
 	shelfReaderToc: false,
 	shelfReaderInfo: false,
+	shelfReaderFlip: "curl",
 	flywheelPath: "12 Flywheel",
 	visionBoardPath: "00 Vision Board",
 	sections: {
