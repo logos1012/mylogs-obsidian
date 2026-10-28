@@ -10214,3 +10214,8 @@ button.lumi-fab.is-busy { animation: lumi-breathe 1.6s ease-in-out infinite; }
 .mylogs-lumi .lumi-input { display: flex; gap: 8px; align-items: flex-end; padding: 10px 12px 12px; border-top: 1px solid var(--background-modifier-border); }
 .mylogs-lumi .lumi-input textarea { flex: 1; min-height: 40px; max-height: 160px; resize: none; border-radius: 10px; padding: 8px 10px; font-size: var(--font-ui-small); }
 .mylogs-lumi button.lumi-send { flex: 0 0 36px; width: 36px; height: 36px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+
+/* Obsidian 상태 표시줄(창 오른쪽 아래에 떠 있음)에 가리지 않게 (0.20.1) */
+body:not(.is-mobile) .mylogs-lumi .lumi-input { padding-bottom: 40px; }
+body:not(.is-mobile) button.lumi-fab { bottom: 44px; }
+body:not(.is-mobile) .has-lumi-fab > .view-content { padding-bottom: 112px; }
