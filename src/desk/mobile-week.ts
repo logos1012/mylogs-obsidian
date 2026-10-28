@@ -34,6 +34,32 @@ export interface BacklogGroup {
 	tasks: ProjectTask[];
 }
 
+/** Month level (Desk 월 보기, 「할 일」 off): events, timed tasks (appointments) and #마감. Milestones are drawn separately. */
+export function monthLevel(it: DeskItem, showTasks: boolean): boolean {
+	if (it.item.kind === "event") return true;
+	if (it.item.kind !== "task") return false;
+	return showTasks || !!it.item.time || it.item.tags.includes("마감");
+}
+
+/** A day's Daily Pad 「오늘 할 일」 under its day cell (주 보기, phone and desktop). */
+export function appendPadTasks(cell: HTMLElement, tasks: PadTask[], toggle: (t: PadTask) => void): void {
+	if (!tasks.length) return;
+	cell.removeClass("dc-blank");
+	const sec = cell.createDiv({ cls: "dc-wk-pad" });
+	tip(sec.createDiv({ cls: "dc-wk-pad-label", text: "Daily Pad" }), "그날 Daily Pad 「오늘 할 일」에 적은 일");
+	const ul = sec.createEl("ul", { cls: "dc-items" });
+	for (const t of tasks) {
+		const li = ul.createEl("li", { cls: `dc-it dc-k-task dc-s-${t.done ? "done" : "scheduled"}` });
+		const sym = li.createSpan({ cls: "dc-sym is-clickable", attr: { role: "checkbox", "aria-checked": String(t.done), tabindex: "0" } });
+		li.createSpan({ cls: "dc-body", text: t.text });
+		sym.addEventListener("click", (e) => {
+			e.stopPropagation();
+			li.addClass("is-pending");
+			toggle(t);
+		});
+	}
+}
+
 type Loose =
 	| { kind: "alloc"; it: DeskItem }
 	| { kind: "during"; it: DeskItem }
@@ -144,21 +170,7 @@ export function renderWeekScreen(h: DeskMobileHost, root: HTMLElement, w: WeekSt
 			if (seq !== w.seq) return;
 			if (!tasks.length) continue;
 			const box = dayBoxes.get(iso)!;
-			const cell = box.querySelector<HTMLElement>(".dc-day") ?? box;
-			cell.removeClass("dc-blank");
-			const sec = cell.createDiv({ cls: "dc-wk-pad" });
-			tip(sec.createDiv({ cls: "dc-wk-pad-label", text: "Daily Pad" }), "그날 Daily Pad 「오늘 할 일」에 적은 일");
-			const ul = sec.createEl("ul", { cls: "dc-items" });
-			for (const t of tasks) {
-				const li = ul.createEl("li", { cls: `dc-it dc-k-task dc-s-${t.done ? "done" : "scheduled"}` });
-				const sym = li.createSpan({ cls: "dc-sym is-clickable", attr: { role: "checkbox", "aria-checked": String(t.done), tabindex: "0" } });
-				li.createSpan({ cls: "dc-body", text: t.text });
-				sym.addEventListener("click", (e) => {
-					e.stopPropagation();
-					li.addClass("is-pending");
-					void h.togglePadTask(iso, t);
-				});
-			}
+			appendPadTasks(box.querySelector<HTMLElement>(".dc-day") ?? box, tasks, (pt) => void h.togglePadTask(iso, pt));
 		}
 	})();
 }
