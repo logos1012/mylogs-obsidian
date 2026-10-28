@@ -41,6 +41,8 @@ export interface MyLogsSettings {
 	diaryMaterialCollapsed: boolean;
 	/** Shelf folder: wikis `<folder>/<위키>/wiki/`, map `<folder>/Shelf.md` (read only). */
 	shelfPath: string;
+	/** Shelf 읽기 화면: the note read last (이어 읽기). */
+	shelfLastRead: string;
 	/** Flywheel folder: `<folder>/Flywheel.md` (read only; its `status:: 사용` elements open each new Daily Pad). */
 	flywheelPath: string;
 	/** Vision Board folder: `<folder>/Vision Board.md` (cards + 확언), images in `<folder>/images/`. */
@@ -88,6 +90,7 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	diaryPath: "09 Diary",
 	diaryMaterialCollapsed: false,
 	shelfPath: "07 Shelf",
+	shelfLastRead: "",
 	flywheelPath: "12 Flywheel",
 	visionBoardPath: "00 Vision Board",
 	sections: {
