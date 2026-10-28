@@ -714,7 +714,10 @@ export class DailyPadView extends ItemView {
 		this.deskEl = this.rootEl.createDiv({ cls: "ml-panel ml-desk" });
 		this.pendingEl = this.rootEl.createDiv({ cls: "ml-panel ml-pending" });
 		this.gridEl = this.rootEl.createDiv({ cls: "ml-grid" });
+		const mode = this.plugin.settings.sideMode;
 		for (const key of MAIN_SECTION_KEYS) {
+			// 개인 / 회사 mode: only that side's task section (전체: both).
+			if ((key === "today" && mode === "회사") || (key === "work" && mode === "개인")) continue;
 			const p = new SectionPanel(this, key);
 			p.mount(this.gridEl);
 			this.panels.push(p);
