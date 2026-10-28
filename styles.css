@@ -10918,3 +10918,10 @@ button.pb-ended-toggle.is-on {
 	.mylogs-shelf .mls-open-summary { font-size: 13px; -webkit-line-clamp: 4; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
 	.mylogs-shelf button.mls-item { padding: 12px 2px; }
 }
+
+/* Project workspace: the 할 일·일정 calendar under 연결 목표 (0.31.1). */
+.pf-workspace-calendar:empty { display: none; }
+.pf-workspace-calendar { margin-bottom: 16px; }
+.pf-schedule-side .pf-schedule-calendar { width: 100%; }
+.pf-schedule-side .pf-schedule-day { min-height: 56px; }
+.pf-schedule-side .pf-schedule-day button { font-size: 10.5px; white-space: normal; overflow-wrap: anywhere; text-align: left; }

@@ -421,7 +421,7 @@ export class ProjectFoldersView extends ItemView {
 			file: path => navigate(() => { const f = this.app.vault.getAbstractFileByPath(path); if (f instanceof TFile) void this.app.workspace.getLeaf("tab").openFile(f); else new Notice(`파일을 찾지 못했어요: ${path}`); }),
 			wheel: e => navigate(() => { void this.app.workspace.openLinkText(`${flywheelPath(this.plugin.settings.flywheelPath)}#${e.id} ${e.name}`, p.path, "tab"); }),
 			milestones: el => { let ms = this.milestoneStates.get(p.path); if (!ms) { ms = { open: true }; this.milestoneStates.set(p.path, ms); } renderMilestones(el, p, ms, (change, expected) => saveMilestone(this.plugin, p, expected, change, todayIso()), () => this.refresh(), m => choose({kind:"milestone",projectPath:p.path,projectId:p.id,line:m.line,title:m.text,source:p.milestoneSource??"",date:m.due}), (el,m) => scheduleSource(el,this.plugin,{kind:"milestone",projectPath:p.path,projectId:p.id,line:m.line,title:m.text,source:p.milestoneSource??"",date:m.due})); },
-			schedule: el => renderProjectSchedule(el, this.plugin, p, d.tasks.get(p.id) ?? [], schedule!, () => this.refresh(), d.texts.get(p.id) ?? ""),
+			schedule: (el, cal) => renderProjectSchedule(el, this.plugin, p, d.tasks.get(p.id) ?? [], schedule!, () => this.refresh(), d.texts.get(p.id) ?? "", cal),
 		});
 	}
 
