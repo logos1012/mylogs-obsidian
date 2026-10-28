@@ -37,7 +37,7 @@ export function localIso(d = new Date()): string {
 
 /** 「3-1」 title: about ten characters from the first question, without file-name characters. */
 export function titleFrom(text: string): string {
-	const t = text.replace(/[\/:\\*?"<>|#^[\]]/g, " ").replace(/\s+/g, " ").trim();
+	const t = text.replace(/[\/:\\*?"'`<>|#^[\]]/g, " ").replace(/\s+/g, " ").trim();
 	return (t.length > 16 ? t.slice(0, 16).trim() : t) || "루미와 대화";
 }
 

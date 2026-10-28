@@ -11,7 +11,7 @@
 import { type App, Component, ItemView, MarkdownRenderer, Menu, Modal, Notice, setIcon, type WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { LUMI_SVG } from "./icon.ts";
-import type { LumiChat, LumiMessage } from "./controller.ts";
+import type { LumiAction, LumiChat, LumiMessage } from "./controller.ts";
 import { tip } from "../ui/tip.ts";
 import { splitChoices } from "./session.ts";
 
@@ -203,6 +203,43 @@ export class LumiView extends ItemView {
 		});
 	}
 
+	/** What 루미 did in this answer: done (되돌리기), and cards waiting for 「넣기」. */
+	private renderActions(chat: LumiChat, actions: LumiAction[]): void {
+		const box = this.listEl.createDiv({ cls: "lumi-actions" });
+		for (const a of actions) {
+			const card = box.createDiv({ cls: `lumi-action is-${a.status}` });
+			const head = card.createDiv({ cls: "lumi-action-head" });
+			setIcon(head.createSpan({ cls: "lumi-action-icon" }), ACTION_ICON[a.status]);
+			head.createSpan({ cls: "lumi-action-label", text: a.label });
+			if (a.status === "undone") head.createSpan({ cls: "lumi-action-tag", text: "되돌림" });
+			if (a.status === "cancelled") head.createSpan({ cls: "lumi-action-tag", text: "그만둠" });
+			if (a.status === "failed" && a.error) tip(card, a.error);
+			if (a.status === "waiting" && a.lines?.length) {
+				const ul = card.createEl("ul", { cls: "lumi-action-lines" });
+				for (const l of a.lines) ul.createEl("li", { text: l });
+			}
+			const btns = card.createDiv({ cls: "lumi-action-btns" });
+			if (a.status === "done" && a.changes?.length) {
+				const b = btns.createEl("button", { cls: "lumi-action-btn", text: "되돌리기", attr: { type: "button" } });
+				tip(b, "루미가 바꾼 파일을 바꾸기 전으로 돌려요");
+				b.addEventListener("click", () => {
+					b.disabled = true;
+					void chat.undo(a.id);
+				});
+			}
+			if (a.status === "waiting") {
+				const ok = btns.createEl("button", { cls: "lumi-action-btn mod-cta", text: "넣기", attr: { type: "button" } });
+				ok.addEventListener("click", () => {
+					ok.disabled = true;
+					void chat.confirm(a.id);
+				});
+				const no = btns.createEl("button", { cls: "lumi-action-btn", text: "그만두기", attr: { type: "button" } });
+				no.addEventListener("click", () => void chat.cancel(a.id));
+			}
+			if (!btns.childElementCount) btns.remove();
+		}
+	}
+
 	private codexOptions(chat: LumiChat): [string, string][] {
 		if (!this.codexModels) {
 			this.codexModels = [["", "기본 모델"]];
@@ -235,6 +272,7 @@ export class LumiView extends ItemView {
 			for (const a of m.activity) act.createDiv({ text: a });
 		}
 		if (m.error) bubble.createDiv({ cls: "lumi-error", text: m.error });
+		if (m.actions?.length) this.renderActions(chat, m.actions);
 		if (!streaming && m.text.trim()) {
 			const cp = row.createEl("button", { cls: "lumi-copy clickable-icon", attr: { type: "button", "aria-label": "복사" } });
 			setIcon(cp, "copy");
@@ -249,6 +287,8 @@ export class LumiView extends ItemView {
 		}
 	}
 }
+
+const ACTION_ICON: Record<LumiAction["status"], string> = { done: "check", undone: "undo-2", failed: "alert-circle", waiting: "sparkles", cancelled: "x" };
 
 class RenameModal extends Modal {
 	constructor(
