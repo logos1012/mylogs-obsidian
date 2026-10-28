@@ -333,3 +333,64 @@ test("루미: project_task_add with parent / month, project_tasks, project_task_
  await tool("project_task_change").run(ctx,{project:v.p.id,task:"녹음",action:"delete"});
  assert.doesNotMatch(v.data.get("03 Desk Calendar/2026/2026-10.md")!,/5강 만들기 · 녹음/);
 });
+test("루미 (모든 화면 기능): project_edit rename · goal_progress · goal_link · desk_item · wall_item · drawer_item · pending_choose",async()=>{
+ const v=await taskSetup();const ctx={host:v.host,today:TODAY};const tool=(n:string)=>{const t=api.LUMI_TOOLS.find((t:any)=>t.name===n);assert.ok(t,n);return t;};
+ // 프로젝트 이름 바꾸기: 폴더 · 허브 · 목표 링크까지.
+ await tool("project_edit").run(ctx,{project:v.p.id,name:"뉴스레터 첫 호"});
+ const hub=[...v.data.keys()].find(p=>p.endsWith("/뉴스레터 첫 호.md"))!;assert.ok(hub,"renamed hub");
+ assert.match(v.data.get(v.sub.path)!,/뉴스레터 첫 호\/뉴스레터 첫 호\]\]/);
+ // 목표 진행: health + 진척 기록.
+ await tool("goal_progress").run(ctx,{goal:v.sub.id,health:"at-risk",log_text:"초안 절반"});
+ assert.match(v.data.get(v.sub.path)!,/^health: at-risk$/m);assert.match(v.data.get(v.sub.path)!,/초안 절반/);
+ // 목표 ↔ 프로젝트 끊기.
+ await tool("goal_link").run(ctx,{goal:v.sub.id,project:v.p.id,link:false});
+ assert.doesNotMatch(v.data.get(v.sub.path)!,/뉴스레터 첫 호\]\]/);
+ // Desk: 인박스 → 주 → 다른 주, 날짜 → 다른 날, 놓아주기, 지우기.
+ const deskPath="03 Desk Calendar/2026/2026-10.md";
+ v.data.set(deskPath,v.data.get(deskPath)!.replace("## 이달 중\n","## 이달 중\n- [ ] 보고서 쓰기\n- [ ] 장보기\n").replace("### 2026-10-28\n","### 2026-10-28\n- [ ] 우편 보내기\n"));
+ await tool("desk_item").run(ctx,{month:"2026-10",text:"보고서",action:"week",monday:"2026-10-19"});
+ await tool("desk_item").run(ctx,{month:"2026-10",text:"보고서",action:"week",monday:"2026-10-26"});
+ let desk=v.data.get(deskPath)!;assert.match(desk,/- \[ \] 보고서 쓰기 → W44/);assert.doesNotMatch(desk,/→ W43/);assert.match(desk,/## W43[^\n]*\n\n### 이번 주\n\n/);
+ await tool("desk_item").run(ctx,{date:"2026-10-28",text:"우편",action:"day",date_to:"2026-10-29"});
+ desk=v.data.get(deskPath)!;assert.match(desk,/\[>\] 우편 보내기 → 10\/29/);assert.match(desk,/### 2026-10-29\n- \[ \] 우편 보내기 \(moved:: 1\)/);
+ await tool("desk_item").run(ctx,{month:"2026-10",text:"장보기",action:"letgo",why:"필요 없음"});
+ assert.match(v.data.get(deskPath)!,/\[-\] 장보기 \(why:: 필요 없음\)/);
+ assert.equal(tool("desk_item").big({action:"delete"}),true);
+ // Wall: 넣고 다른 달로 옮기기.
+ v.put("02 Wall Calendar/2026.md","---\ntype: wall-calendar\n---\n\n## 2026-11\n- 11/20 송년회\n\n## 2026-12\n");
+ await tool("wall_item").run(ctx,{year:2026,month:11,text:"송년회",action:"move",to_month:12});
+ assert.match(v.data.get("02 Wall Calendar/2026.md")!,/## 2026-12\n- 12\/20 송년회/);
+ // Drawer: 보류 → 아이디어.
+ v.put("06 Drawer/Drawer.md","---\ntype: drawer\nupdated: 2026-10-27\n---\n\n# Drawer\n\n## 보류\n- [ ] 블로그 이사 (when:: 미정) (added:: 2026-10-20) (reviewed:: 2026-10-20)\n\n## 아이디어\n\n## 프로젝트 후보\n\n## 변경 기록\n");
+ await tool("drawer_item").run(ctx,{text:"블로그",action:"section",to:"아이디어"});
+ assert.match(v.data.get("06 Drawer/Drawer.md")!,/## 아이디어\n- \[ \] 블로그 이사/);
+ // 모든 도구는 이름이 하나뿐.
+ const names=api.LUMI_TOOLS.map((t:any)=>t.name);assert.equal(new Set(names).size,names.length);
+});
+test("루미 (모든 화면 기능 2): project_milestone · desk_item split/edit/side/delete · wall_item to_desk · pending_choose · goal_delete",async()=>{
+ const v=await taskSetup();const ctx={host:v.host,today:TODAY};const tool=(n:string)=>api.LUMI_TOOLS.find((t:any)=>t.name===n);
+ await tool("project_milestone").run(ctx,{project:v.p.id,action:"add",text:"창간호 발송",due:"2026-11-30"});
+ assert.match(v.data.get(v.path)!,/창간호 발송[^\n]*due:: 2026-11-30/);
+ await tool("project_milestone").run(ctx,{project:v.p.id,action:"done",milestone:"창간호"});
+ assert.match(v.data.get(v.path)!,/- \[x\] 창간호 발송/);
+ const deskPath="03 Desk Calendar/2026/2026-10.md";
+ v.data.set(deskPath,v.data.get(deskPath)!.replace("### 2026-10-28\n","### 2026-10-28\n- [ ] 큰 일\n- [ ] 이름 틀린 일\n- [ ] 지울 일\n"));
+ await tool("desk_item").run(ctx,{date:"2026-10-28",text:"큰 일",action:"split",parts:"작은 일 1\n작은 일 2"});
+ let d=v.data.get(deskPath)!;assert.match(d,/\[>\] 큰 일 → 쪼갬/);assert.match(d,/- \[ \] 작은 일 1\n- \[ \] 작은 일 2/);
+ await tool("desk_item").run(ctx,{date:"2026-10-28",text:"이름 틀린",action:"edit",new_text:"이름 고친 일"});
+ await tool("desk_item").run(ctx,{date:"2026-10-28",text:"이름 고친",action:"side",side:"회사"});
+ assert.match(v.data.get(deskPath)!,/- \[ \] 이름 고친 일 #회사/);
+ await tool("desk_item").run(ctx,{date:"2026-10-28",text:"지울 일",action:"delete"});
+ assert.doesNotMatch(v.data.get(deskPath)!,/지울 일/);
+ v.put("02 Wall Calendar/2026.md","---\ntype: wall-calendar\n---\n\n## 2026-10\n- [ ] 10/30 세금 신고\n");
+ await tool("wall_item").run(ctx,{year:2026,month:10,text:"세금",action:"to_desk"});
+ assert.match(v.data.get(deskPath)!,/### 2026-10-30\n- \[ \] 세금 신고/);assert.match(v.data.get("02 Wall Calendar/2026.md")!,/\[>\] 10\/30 세금 신고 → \[\[/);
+ v.put("04 Daily Pad/2026/2026-10-28.md","---\ntype: daily-pad\ndate: 2026-10-28\nupdated: 2026-10-28\n---\n\n# 2026-10-28\n\n## 결정 대기\n- [ ] 은행 서류 (from:: Daily Pad 2026-10-27)\n\n## 개인 할 일\n\n## 메모\n");
+ v.put("04 Daily Pad/2026/2026-10-27.md","---\ntype: daily-pad\n---\n\n# 2026-10-27\n\n## 개인 할 일\n- [ ] 은행 서류\n");
+ v.put("04 Daily Pad/Daily Pad Index.md","---\nupdated: 2026-10-27\n---\n\n## 결정 대기\n\n## 변경 기록\n");
+ await tool("pending_choose").run(ctx,{date:"2026-10-28",text:"은행",choice:"letgo",why:"이미 처리됨"});
+ assert.doesNotMatch(v.data.get("04 Daily Pad/2026/2026-10-28.md")!,/은행 서류 \(from/);
+ assert.equal(tool("goal_delete").big({}),true);
+ await tool("goal_delete").run(ctx,{goal:v.sub.id});
+ assert.ok(!v.data.has(v.sub.path),"sub goal trashed");
+});

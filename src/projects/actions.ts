@@ -409,7 +409,9 @@ export async function editProject(host: ProjectsHost, p: Project, e: ProjectEdit
 	if (hub) await app.vault.process(hub, (t) => applyHubEdit(t, plan.hub)).catch(() => failed.push("허브"));
 	else failed.push("허브");
 	if (plan.newName !== p.name) {
-		for (const path of [`${plan.newFolder}/AGENTS.md`, logIndexPath(plan.newFolder, plan.newName)]) {
+		// Monthly logs too: their `project:` and title name the project (the body stays a record).
+		const monthly = monthlyLogs.map((n) => `${plan.newFolder}/${WORK_DIR}/${LOG_DIR}/${n.replace(p.name, plan.newName)}`);
+		for (const path of [`${plan.newFolder}/AGENTS.md`, logIndexPath(plan.newFolder, plan.newName), ...monthly]) {
 			const f = fileAt(app, path);
 			if (f) await app.vault.process(f, (t) => renameInProjectText(t, p.name, plan.newName)).catch(() => failed.push(path.split("/").pop()!));
 		}
