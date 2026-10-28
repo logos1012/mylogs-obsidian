@@ -15,7 +15,7 @@ import { actionSheet, enableTouchMenus, menuEventAt, pickTarget, type SheetActio
 import { type DeskItem, type MonthData, weekdayMon0 } from "./model.ts";
 import { type DaySlot, dayInMonth, dayLabel, defaultDay, type DeskDragKind, type DeskTarget, deskMoveTargets, type WeekSlot } from "./mobile-targets.ts";
 import { touchDrag } from "./touch-drag.ts";
-import { type BacklogGroup, type PadTask, renderWeekScreen, type WeekState } from "./mobile-week.ts";
+import { type BacklogGroup, monthLevel, type PadTask, renderWeekScreen, type WeekState } from "./mobile-week.ts";
 import type { ProjectTask } from "../projects/tasks.ts";
 
 
@@ -59,13 +59,7 @@ export interface DeskMobileHost {
 	scheduleProjectTask(t: ProjectTask, iso: string): Promise<void>;
 }
 
-/** Month level: an item shown without 「할 일」 on — milestones are drawn separately. */
-function monthLevel(it: DeskItem, showTasks: boolean): boolean {
-	if (it.item.kind === "event") return true;
-	if (it.item.kind !== "task") return false;
-	// A timed task is an appointment; #마감 is a deadline: both belong to the month.
-	return showTasks || !!it.item.time || it.item.tags.includes("마감");
-}
+
 
 interface State {
 	day: string;

@@ -5,7 +5,7 @@ import { hubLocation, parseProject } from "../projects/model.ts";
 import { parseFrontmatterText } from "../pinboard/model.ts";
 import { readProject, vaultIO } from "../pinboard/create-actions.ts";
 import { isFlywheelLine } from "../flywheel/model.ts";
-import type { BacklogGroup, PadTask } from "./mobile-week.ts";
+import { appendPadTasks, type BacklogGroup, monthLevel, type PadTask } from "./mobile-week.ts";
 import { mountAppNav } from "../ui/nav.ts";
 import { parseWallYear, type WallLine } from "../wall/parse.ts";
 import { deskLineFor, deskLink, insertIntoDesk, markSentToDesk, type WallTarget } from "../wall/edit.ts";
@@ -14,7 +14,7 @@ import { findSection, sectionLineRange, setFrontmatterScalar, toggleCheckbox } f
 import { actionSheet } from "../ui/mobile.ts";
 import { ItemPopover } from "../ui/popover.ts";
 import { tip } from "../ui/tip.ts";
-import { scheduleTarget } from "../projects/schedule-dnd.ts";
+import { scheduleSource, scheduleTarget } from "../projects/schedule-dnd.ts";
 import { ItemView, Keymap, moment, normalizePath, Notice, Platform, setIcon, type TAbstractFile, TFile, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { loadMilestoneCalendar, renderMilestoneMarkers, renderMilestoneIssues, watchesMilestoneProjects, type MilestoneCalendar } from "../projects/milestone-calendar-ui.ts";
@@ -119,6 +119,11 @@ export class DeskCalendarView extends ItemView {
 	private ctx: Ctx | null = null;
 	private zones: DropZone[] = [];
 	private drag: Drag | null = null;
+	/** Desktop 주 보기: the shown week's Monday (null = 월 보기). */
+	private deskWeek: string | null = null;
+	/** Month level filter while the desktop month calendar draws (「할 일」 off). */
+	private levelFilter = false;
+	private weekSeq = 0;
 	/** This month's Wall Calendar year file (its open lines can be dragged into the month). */
 	private wallText: string | null = null;
 	/** A Wall line being dragged onto a day or 이달 중. */
@@ -261,6 +266,11 @@ export class DeskCalendarView extends ItemView {
 			this.renderEmpty(root);
 			return;
 		}
+		if (this.deskWeek) {
+			this.renderWeekView(root, this.deskWeek, ctx);
+			this.contentEl.scrollTop = 0;
+			return;
+		}
 		this.renderBands(root, cur, ctx);
 		const summary = summarizeMonth(cur, ctx.didx);
 		if (summary.counts.test && this.plugin.settings.showTestMarkers) {
@@ -268,7 +278,12 @@ export class DeskCalendarView extends ItemView {
 			bar.createSpan({ cls: "dc-tst", text: "test" });
 			bar.createSpan({ text: `이 달에는 화면 확인용 테스트 데이터(#test) ${summary.counts.test}줄이 있어요. 실제 일정을 넣을 때 지웁니다.` });
 		}
-		this.renderCalendar(root, cur, ctx);
+		this.levelFilter = !this.plugin.settings.deskShowTasks;
+		try {
+			this.renderCalendar(root, cur, ctx);
+		} finally {
+			this.levelFilter = false;
+		}
 		this.renderLegend(root);
 		if (summary.issues.length) {
 			const sec = root.createEl("section", { cls: "dc-fmt" });
@@ -371,10 +386,17 @@ export class DeskCalendarView extends ItemView {
 			b.addEventListener("click", onClick);
 			return b;
 		};
-		btn("◀", "이전 달", () => void this.goTo(shiftMonth(this.month, -1)));
-		const now = btn("이번 달", "이번 달", () => void this.goTo(ctx.today.slice(0, 7)));
-		now.toggleClass("is-active", this.month === ctx.today.slice(0, 7));
-		btn("▶", "다음 달", () => void this.goTo(shiftMonth(this.month, 1)));
+		// Month buttons always lead to 월 보기 (also from 주 보기).
+		const toMonth = (m: string) => {
+			const leaving = this.deskWeek !== null;
+			this.deskWeek = null;
+			if (m !== this.month) void this.goTo(m);
+			else if (leaving) this.render();
+		};
+		btn("◀", "이전 달", () => toMonth(shiftMonth(this.month, -1)));
+		const now = btn("이번 달", "이번 달", () => toMonth(ctx.today.slice(0, 7)));
+		now.toggleClass("is-active", this.month === ctx.today.slice(0, 7) && !this.deskWeek);
+		btn("▶", "다음 달", () => toMonth(shiftMonth(this.month, 1)));
 		const hide = this.plugin.settings.deskHideClosed;
 		const hb = btn(hide ? "완료 숨김" : "모두 보기", "완료 · 옮김 · 놓아줌 항목 보이기/숨기기", () => {
 			this.plugin.settings.deskHideClosed = !this.plugin.settings.deskHideClosed;
@@ -386,6 +408,18 @@ export class DeskCalendarView extends ItemView {
 		hb.createSpan({ cls: "dc-hide-label", text: hide ? "완료 숨김" : "모두 보기" });
 		hb.toggleClass("is-active", hide);
 		tip(hb, hide ? "완료 · 옮김 · 놓아줌 항목을 숨겼어요. 누르면 모두 보여요." : "누르면 완료 · 옮김 · 놓아줌 항목을 숨겨요. 파일은 그대로예요.");
+		if (!Platform.isMobile && !this.deskWeek) {
+			const show = this.plugin.settings.deskShowTasks;
+			const tb = btn("할 일", "할 일 보이기/숨기기", () => {
+				this.plugin.settings.deskShowTasks = !this.plugin.settings.deskShowTasks;
+				void this.plugin.saveSettings();
+				this.render();
+			}, "list-checks");
+			tb.addClass("dc-tasks-toggle");
+			tb.createSpan({ cls: "dc-hide-label", text: "할 일" });
+			tb.toggleClass("is-active", show);
+			tip(tb, show ? "할 일까지 모두 보여요. 누르면 마일스톤 · 이벤트 · 시각 있는 일 · 마감만" : "마일스톤 · 이벤트 · 시각 있는 일 · 마감만 보여요. 누르면 할 일까지. 할 일은 주 보기에서 모두 볼 수 있어요");
+		}
 		btn("", "마크다운 파일 열기", (e) => void this.openAt(this.month, 0, e), "file-text");
 		this.rootEl.toggleClass("dc-hide-closed", hide);
 		renderMilestoneIssues(root, this.milestones.issues, path => void this.plugin.openProjectAt(path));
@@ -482,6 +516,16 @@ export class DeskCalendarView extends ItemView {
 		head.createSpan({ cls: "dc-wk-no", text: `W${String(no).padStart(2, "0")}` });
 		const sun = addDays(monday, 6);
 		head.createSpan({ cls: "dc-wk-range", text: `${+monday.slice(5, 7)}/${+monday.slice(8, 10)} – ${+sun.slice(5, 7)}/${+sun.slice(8, 10)}` });
+		if (!Platform.isMobile && !this.deskWeek) {
+			const open = head.createEl("button", { cls: "dc-wk-open", attr: { type: "button", "aria-label": "주 보기" } });
+			open.createSpan({ text: "주 보기" });
+			setIcon(open.createSpan({ cls: "dc-wk-open-ic" }), "chevron-right");
+			tip(open, "이 주의 할 일을 모두 보고, 배정 안 된 일을 날짜에 끌어 놓아요");
+			open.addEventListener("click", (e) => {
+				e.stopPropagation();
+				this.openWeek(monday);
+			});
+		}
 
 		const fileKey = allocFileOf(monday);
 		const elsewhere = fileKey !== cur.key;
@@ -520,6 +564,8 @@ export class DeskCalendarView extends ItemView {
 		const [, un] = weekAllocStats(week);
 		if (un) label.createSpan({ cls: "dc-badge dc-warn", text: `미배정 ${un}` });
 		else label.createSpan({ cls: "dc-badge dc-ok", text: "✓ 모두 배정" });
+		// Month level: the week's tasks are in 주 보기.
+		if (this.levelFilter) return;
 		const ul = cell.createEl("ul", { cls: "dc-items" });
 		for (const it of alloc) this.renderAllocItem(ul, it, ctx);
 	}
@@ -531,7 +577,8 @@ export class DeskCalendarView extends ItemView {
 		cell.setAttr("tabindex", "0"); cell.setAttr("aria-label", `${iso} 날짜 칸`);
 		const inMonth = iso.slice(0, 7) === cur.key;
 		const data = ctx.months.find((m) => m.key === iso.slice(0, 7));
-		const items = data?.days.get(iso) ?? [];
+		const all = data?.days.get(iso) ?? [];
+		const items = this.levelFilter ? all.filter((it) => monthLevel(it, false)) : all;
 		if (!inMonth) cell.addClass("dc-out");
 		if (iso === ctx.today) cell.addClass("dc-today");
 		else if (iso < ctx.today) cell.addClass("dc-past");
@@ -552,9 +599,12 @@ export class DeskCalendarView extends ItemView {
 		this.addZone(cell, {
 			accepts: (d) =>
 				(d.kind === "alloc" && isOpenTask(d.item) && d.item.monday === monday && !d.item.assign.includes(iso)) ||
-				(d.kind === "day" && isOpenTask(d.item) && d.item.date !== iso),
+				(d.kind === "day" && isOpenTask(d.item) && d.item.date !== iso) ||
+				// 주 보기: 이달 중 → this day (through its week's 이번 주 할 일).
+				(d.kind === "during" && !!this.deskWeek && isOpenTask(d.item)),
 			drop: (d) => {
 				if (d.kind === "alloc") void this.exec(planAssignDay(d.item, iso, ctx.today));
+				else if (d.kind === "during") void this.assignDuringToDay(d.item, iso);
 				else void this.moveToDay(d.item, iso);
 			},
 		});
@@ -1002,6 +1052,98 @@ export class DeskCalendarView extends ItemView {
 		if (a === "letgo") await this.chooseLetGo(it);
 		else if (a === "split") await this.chooseSplit(it);
 		return false;
+	}
+
+	/** Desktop 주 보기 for the week starting `monday` (moving to the month holding its Thursday). */
+	private openWeek(monday: string | null): void {
+		this.deskWeek = monday;
+		const month = monday ? addDays(monday, 3).slice(0, 7) : null;
+		if (month && month !== this.month) void this.goTo(month);
+		else this.render();
+	}
+
+	/**
+	 * Desktop 주 보기 (계획 「할 일의 레벨」): 배정 안 된 일 on the left (이번 주 할 일 without a date,
+	 * 이달 중, 진행 · 대기 projects' undated tasks — all draggable onto a day), the seven day cells on
+	 * the right with each day's Daily Pad 「오늘 할 일」 under it.
+	 */
+	private renderWeekView(root: HTMLElement, monday: string, ctx: Ctx): void {
+		const seq = ++this.weekSeq;
+		const sunday = addDays(monday, 6);
+		const bar = root.createDiv({ cls: "dc-wkv-bar" });
+		const back = bar.createEl("button", { cls: "dc-btn dc-wkv-back", attr: { type: "button" } });
+		setIcon(back.createSpan(), "chevron-left");
+		back.createSpan({ text: "월 보기" });
+		back.addEventListener("click", () => this.openWeek(null));
+		const prev = bar.createEl("button", { cls: "dc-btn", attr: { type: "button", "aria-label": "이전 주" } });
+		setIcon(prev, "chevron-left");
+		prev.addEventListener("click", () => this.openWeek(addDays(monday, -7)));
+		const title = bar.createDiv({ cls: "dc-wkv-title" });
+		title.createSpan({ cls: "dc-wk-no", text: `W${String(isoWeekNo(monday)).padStart(2, "0")}` });
+		title.createSpan({ text: `${+monday.slice(5, 7)}/${+monday.slice(8, 10)} – ${+sunday.slice(5, 7)}/${+sunday.slice(8, 10)}` });
+		const next = bar.createEl("button", { cls: "dc-btn", attr: { type: "button", "aria-label": "다음 주" } });
+		setIcon(next, "chevron-right");
+		next.addEventListener("click", () => this.openWeek(addDays(monday, 7)));
+		const thisWeek = bar.createEl("button", { cls: "dc-btn", text: "이번 주", attr: { type: "button" } });
+		thisWeek.toggleClass("is-active", monday <= ctx.today && ctx.today <= sunday);
+		thisWeek.addEventListener("click", () => this.openWeek(addDays(ctx.today, -weekdayMon0(ctx.today))));
+
+		const wrap = root.createDiv({ cls: "dc-wkv" });
+		const loose = wrap.createEl("aside", { cls: "dc-wkv-loose" });
+		tip(loose.createDiv({ cls: "dc-lbl", text: "배정 안 된 일" }), "날짜 칸으로 끌어 놓으면 그날로 배정돼요");
+		const group = (label: string, hint: string) => {
+			const g = loose.createDiv({ cls: "dc-wkv-group" });
+			tip(g.createDiv({ cls: "dc-wkv-glabel", text: label }), hint);
+			return g.createEl("ul", { cls: "dc-items" });
+		};
+		const cur = ctx.cur!;
+		const alloc = (allocWeek(ctx, monday)?.alloc ?? []).filter((it) => isOpenTask(it) && !it.assign.length);
+		if (alloc.length) {
+			const ul = group(`이번 주 할 일 ${alloc.length}`, "이번 주에 하기로 한 일 중 날짜를 아직 정하지 않은 일");
+			for (const it of alloc) this.renderAllocItem(ul, it, ctx);
+		}
+		const during = cur.during.filter((it) => isOpenTask(it));
+		if (during.length) {
+			const ul = group(`이달 중 ${during.length}`, "이달 안에 할 일. 날짜에 놓으면 이번 주 할 일을 거쳐 그날로 배정돼요");
+			for (const it of during) this.renderDuringItem(ul, it, ctx);
+		}
+		const projects = loose.createDiv({ cls: "dc-wkv-projects" });
+		projects.createDiv({ cls: "dc-empty-note", text: "프로젝트 할 일 불러오는 중…" });
+
+		const grid = wrap.createDiv({ cls: "dc-wkv-days" });
+		const days = Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+		const cells = new Map<string, HTMLElement>();
+		for (const iso of days) {
+			const col = grid.createDiv({ cls: "dc-wkv-day", attr: { "data-iso": iso } });
+			this.renderDayCell(col, iso, cur, ctx);
+			const cell = col.querySelector<HTMLElement>(".dc-day")!;
+			cell.removeClass("dc-out");
+			cells.set(iso, cell);
+		}
+		void (async () => {
+			const groups = await this.projectBacklog();
+			if (seq !== this.weekSeq) return;
+			projects.empty();
+			for (const g of groups) {
+				const pg = projects.createDiv({ cls: "dc-wkv-group" });
+				tip(pg.createDiv({ cls: "dc-wkv-glabel", text: `${g.project} ${g.tasks.length}` }), "프로젝트에서 만든, 날짜가 아직 없는 할 일");
+				const ul = pg.createEl("ul", { cls: "dc-items" });
+				for (const t of g.tasks) {
+					const li = ul.createEl("li", { cls: "dc-it dc-k-task dc-s-scheduled dc-wkv-ptask" });
+					li.createSpan({ cls: "dc-sym", attr: { "aria-hidden": "true" } });
+					li.createSpan({ cls: "dc-body", text: t.title });
+					scheduleSource(li, this.plugin, { kind: "task", projectPath: t.path, projectId: t.projectId, title: t.title, task: t });
+				}
+			}
+			if (!loose.querySelector("li.dc-it")) loose.createDiv({ cls: "dc-empty-note", text: "배정 안 된 일이 없어요" });
+		})();
+		void (async () => {
+			for (const iso of days) {
+				const tasks = await this.padTasks(iso);
+				if (seq !== this.weekSeq) return;
+				appendPadTasks(cells.get(iso)!, tasks, (pt) => void this.togglePadTask(iso, pt).then(() => this.render()));
+			}
+		})();
 	}
 
 	/** 주 보기: 이달 중 → that week's 이번 주 할 일 → the day (the two desktop drops in a row). */
