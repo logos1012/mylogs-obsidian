@@ -36,6 +36,7 @@ import {
 	TASK_LINE_RE,
 	toIsoDate,
 } from "./parser.ts";
+import { asSide, lineSide, type ScopeLookup, shows } from "./side.ts";
 import { MAIN_SECTION_KEYS, type MainSectionKey } from "./settings.ts";
 import { flywheelIdOf, isFlywheelLine, missedCount, weeklyDone } from "./flywheel/model.ts";
 import { weekMonday } from "./mylife/model.ts";
@@ -595,6 +596,8 @@ export class DailyPadView extends ItemView {
 	private deskEl!: HTMLElement;
 	private milestoneEl!: HTMLElement;
 	private milestoneSeq = 0;
+	/** Project id → 개인 / 회사, for project-linked Desk lines (from the milestone load). */
+	private scopeOf: ScopeLookup | undefined;
 	private pendingEl!: HTMLElement;
 	private gridEl!: HTMLElement;
 	private panels: SectionPanel[] = [];
@@ -791,7 +794,14 @@ export class DailyPadView extends ItemView {
 		const seq = ++this.milestoneSeq, date = this.date;
 		const result = await loadMilestoneCalendar(this.plugin);
 		if (seq !== this.milestoneSeq || date !== this.date || !this.milestoneEl) return;
-		const markers = result.markers.filter(m => m.date === date), el = this.milestoneEl;
+		const mode = this.plugin.settings.sideMode;
+		const markers = result.markers.filter(m => m.date === date && shows(asSide(m.scope), mode)), el = this.milestoneEl;
+		if (this.scopeOf === undefined && result.scopeOf) {
+			// Project-linked Desk lines follow their project's side: redraw now that it is known.
+			this.scopeOf = result.scopeOf;
+			void this.readDesk().then((t) => this.renderDesk(t));
+		}
+		this.scopeOf = result.scopeOf;
 		el.empty(); el.toggle(!!(markers.length || result.issues.length));
 		if (markers.length) {
 			tip(el.createDiv({ cls: "ml-panel-head" }).createEl("h3", { cls: "ml-panel-title", text: date === todayIso() ? "오늘의 마일스톤" : "이날의 마일스톤" }), "프로젝트의 목표일 · 할 일 체크와는 별개예요");
@@ -924,7 +934,25 @@ export class DailyPadView extends ItemView {
 			this.gentle(body, "이 날 Desk Calendar에 적힌 일이 없어요.");
 			return;
 		}
-		renderItemList(body, sec.lines, {
+		// 개인 / 회사 mode: the other side folds to its count (`./side.ts`).
+		const mode = this.plugin.settings.sideMode;
+		let parentShown = true;
+		const lines = sec.lines.filter((sl) => {
+			// A nested line goes with its parent.
+			if (sl.indent > 0) return parentShown;
+			parentShown = !sl.item || shows(lineSide(sl.line, this.scopeOf), mode);
+			return parentShown;
+		});
+		const folded = sec.lines.filter((sl) => sl.item && sl.item.status === "scheduled" && !lines.includes(sl)).length;
+		if (folded) {
+			const other = mode === "개인" ? "회사" : "개인";
+			tip(tools.createSpan({ cls: `ml-side-hidden is-${other === "회사" ? "work" : "personal"}`, text: `${other} ${folded}` }), `${other} 일 ${folded}개는 ${mode} 모드에서 접어 두었어요`);
+		}
+		if (!lines.length) {
+			this.gentle(body, `이 날 ${mode} 일이 없어요.`);
+			return;
+		}
+		renderItemList(body, lines, {
 			showTest: this.plugin.settings.showTestMarkers,
 			onToggle: (sl, li) => void this.toggleDeskLine(sl, li),
 			openGoal: (id) => void this.plugin.openPinboardGoal(id),
