@@ -34,10 +34,10 @@ export async function applySchedule(host:ProjectsHost,item:ScheduleItem,target:S
   await changeProjectTask(host,p,{kind:"schedule",task:item.task,target,reviewed},todayIsoLocal());
  }
 }
-export function scheduleTarget(el:HTMLElement,host:ProjectsHost,target:ScheduleTarget,refresh:()=>Promise<void>):void {
+export function scheduleTarget(el:HTMLElement,host:ProjectsHost,target:ScheduleTarget,refresh:()=>Promise<void>,done?:(item:ScheduleItem)=>void):void {
  el.addClass("ml-schedule-target");
  const accepts=()=>{const i=selectedSchedule(host);return !!i&&(i.kind!=="milestone"||target.kind==="day");};
- const run=async()=>{const item=selectedSchedule(host);if(!item||saving)return;saving=true;el.addClass("is-saving");try{await applySchedule(host,item,target);selectSchedule(host,null);await refresh();}catch(e){new Notice(e instanceof Error?e.message:String(e));}finally{saving=false;el.removeClass("is-saving");}};
+ const run=async()=>{const item=selectedSchedule(host);if(!item||saving)return;saving=true;el.addClass("is-saving");try{await applySchedule(host,item,target);selectSchedule(host,null);done?.(item);await refresh();}catch(e){new Notice(e instanceof Error?e.message:String(e));}finally{saving=false;el.removeClass("is-saving");}};
  el.addEventListener("dragover",e=>{if(!e.dataTransfer?.types.includes(MIME)||!accepts())return;e.preventDefault();e.stopPropagation();if(e.dataTransfer)e.dataTransfer.dropEffect="move";el.addClass("ml-schedule-over");});
  el.addEventListener("dragleave",e=>{if(!el.contains(e.relatedTarget as Node|null))el.removeClass("ml-schedule-over");});
  el.addEventListener("drop",e=>{if(!e.dataTransfer?.types.includes(MIME)||!accepts())return;e.preventDefault();e.stopPropagation();el.removeClass("ml-schedule-over");void run();});

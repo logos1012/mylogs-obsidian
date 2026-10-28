@@ -10442,3 +10442,85 @@ button.pb-board-switch.is-personal {
 .mylogs-daily-pad .ml-desk .s-done .ml-time {
 	text-decoration: line-through;
 }
+
+/* ───────────────────────── Wall: 배정 안 된 프로젝트 할 일 · 할 일 위계 (0.26.0) ───────────────────────── */
+
+.mylogs-wall-calendar .wc-backlog {
+	margin: 12px 0 16px;
+	padding: 10px 12px;
+	border: 1px dashed var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background: var(--background-secondary);
+}
+.mylogs-wall-calendar .wc-backlog-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 6px;
+}
+.mylogs-wall-calendar .wc-backlog-head h3 {
+	margin: 0;
+	font-size: var(--font-ui-medium);
+}
+.mylogs-wall-calendar .wc-backlog-chosen {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--text-accent);
+	font-size: var(--font-ui-small);
+}
+.mylogs-wall-calendar .wc-backlog-group {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 6px;
+	padding: 4px 0;
+}
+.mylogs-wall-calendar button.wc-backlog-project {
+	padding: 0;
+	border: 0;
+	background: none;
+	box-shadow: none;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	font-weight: 600;
+	cursor: pointer;
+}
+.mylogs-wall-calendar .wc-backlog-tasks {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+.mylogs-wall-calendar button.wc-backlog-task {
+	height: auto;
+	min-height: 28px;
+	padding: 2px 10px;
+	border-radius: 999px;
+	font-size: var(--font-ui-small);
+	white-space: normal;
+	text-align: left;
+	cursor: grab;
+}
+.mylogs-wall-calendar button.wc-backlog-task.is-chosen {
+	outline: 2px solid var(--interactive-accent);
+}
+.is-mobile .mylogs-wall-calendar button.wc-backlog-task {
+	min-height: 40px;
+}
+.mylogs-wall-calendar .wc-month.ml-schedule-over {
+	outline: 2px dashed var(--interactive-accent);
+	outline-offset: -2px;
+}
+
+.pf-task-row.is-child {
+	margin-left: 22px;
+}
+.pf-task-row.is-group .pf-task-title {
+	font-weight: 600;
+}
+.pf-task-parent-hint {
+	width: 100%;
+	color: var(--text-accent);
+	font-size: var(--font-ui-smaller);
+}

@@ -1,13 +1,11 @@
 import { changeProjectTask, loadProjectTasks, toggleLinkedProjectTask } from "../projects/task-actions.ts";
-import type { ProjectTask } from "../projects/tasks.ts";
-import { activeRoot, archiveRoot } from "../projects/actions.ts";
-import { hubLocation, parseProject } from "../projects/model.ts";
-import { parseFrontmatterText } from "../pinboard/model.ts";
+import { type ProjectTask, taskLabel } from "../projects/tasks.ts";
 import { readProject, vaultIO } from "../pinboard/create-actions.ts";
 import { isFlywheelLine } from "../flywheel/model.ts";
 import { asSide, projectRef, shows } from "../side.ts";
 import { filterMonth, type SideCounts } from "./side-filter.ts";
 import { renderSideCount } from "./side-ui.ts";
+import { loadProjectBacklog } from "../projects/backlog.ts";
 import { appendPadTasks, type BacklogGroup, monthLevel, type PadTask } from "./mobile-week.ts";
 import { mountAppNav } from "../ui/nav.ts";
 import { parseWallYear, type WallLine } from "../wall/parse.ts";
@@ -1179,8 +1177,8 @@ export class DeskCalendarView extends ItemView {
 				for (const t of g.tasks) {
 					const li = ul.createEl("li", { cls: "dc-it dc-k-task dc-s-scheduled dc-wkv-ptask" });
 					li.createSpan({ cls: "dc-sym", attr: { "aria-hidden": "true" } });
-					li.createSpan({ cls: "dc-body", text: t.title });
-					scheduleSource(li, this.plugin, { kind: "task", projectPath: t.path, projectId: t.projectId, title: t.title, task: t });
+					li.createSpan({ cls: "dc-body", text: taskLabel(t) });
+					scheduleSource(li, this.plugin, { kind: "task", projectPath: t.path, projectId: t.projectId, title: taskLabel(t), task: t });
 				}
 			}
 			if (!loose.querySelector("li.dc-it")) loose.createDiv({ cls: "dc-empty-note", text: "배정 안 된 일이 없어요" });
@@ -1247,25 +1245,9 @@ export class DeskCalendarView extends ItemView {
 		if (!ok) new Notice("Daily Pad에서 이 줄을 찾지 못했어요. 파일이 바뀌었어요.");
 	}
 
-	/** 진행 · 대기 projects' undated hub tasks (주 보기 배정 안 된 일). */
+	/** 진행 · 대기 projects' undated hub tasks (주 보기 배정 안 된 일), the shown side only. */
 	private async projectBacklog(): Promise<BacklogGroup[]> {
-		const host = this.plugin;
-		const out: BacklogGroup[] = [];
-		for (const f of this.app.vault.getMarkdownFiles()) {
-			const loc = hubLocation(f.path, activeRoot(host), archiveRoot(host));
-			if (!loc || loc.archived) continue;
-			const text = await this.app.vault.cachedRead(f);
-			const fm = parseFrontmatterText(text);
-			const p = parseProject(fm.data, fm.body, loc, f.path);
-			if (!p || !["진행", "대기"].includes(p.status) || !shows(asSide(p.scope), host.settings.sideMode)) continue;
-			try {
-				const tasks = (await loadProjectTasks(host, p, text)).filter((t) => t.kind === "hub" && t.state === "scheduled" && !t.date && !t.month);
-				if (tasks.length) out.push({ project: p.title, tasks });
-			} catch (err) {
-				console.warn("[MyLogs] project tasks unreadable", p.path, err);
-			}
-		}
-		return out.sort((a, b) => a.project.localeCompare(b.project));
+		return loadProjectBacklog(this.plugin);
 	}
 
 	private async scheduleProjectTask(task: ProjectTask, iso: string): Promise<void> {
