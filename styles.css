@@ -609,9 +609,10 @@
 	}
 }
 
-@container (min-width: 1080px) {
-	.mylogs-daily-pad .ml-grid {
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+/* Two columns at most (2026-10-28): 개인 · 회사 side by side, 메모 · 로그, then 자료 across. */
+@container (min-width: 700px) {
+	.mylogs-daily-pad .ml-section-refs {
+		grid-column: 1 / -1;
 	}
 }
 

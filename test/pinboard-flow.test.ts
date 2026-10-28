@@ -15,8 +15,8 @@ import { TODAY, ROOT, MAIN_TEMPLATE, SUB_TEMPLATE, INDEX, REGISTRY, WHEEL, INPUT
 
 // Real actions, real parsers, real templates; only the Obsidian storage adapter is simulated.
 const temp=mkdtempSync(join(tmpdir(),"mylogs-pinboard-test-"));after(()=>rmSync(temp,{recursive:true,force:true}));
-const stub=`export class App{};export class PluginSettingTab{};export class Setting{};export class Notice{constructor(message){globalThis.__notices?.push(message)}};export class TFile{constructor(path){this.path=path;this.name=path.split('/').pop();this.basename=this.name.replace(/\\.md$/,'')}};export class TFolder{constructor(path){this.path=path;this.name=path.split('/').pop();this.children=[]}};export const normalizePath=p=>p.replace(/\\\\/g,'/').replace(/\\/+/g,'/').replace(/^\\/|\\/$/g,'');`;
-const result=await build({stdin:{contents:`export * from './src/pinboard/create-actions.ts';export * from './src/projects/actions.ts';export * from './src/projects/milestone-actions.ts';export * from './src/projects/task-actions.ts';export * from './src/desk/actions.ts';export * from './src/pinboard/inline-actions.ts';export * from './src/pinboard/project-rollup.ts';export {DEFAULT_SETTINGS} from './src/settings.ts';export {TFile,TFolder} from 'obsidian';`,resolveDir:resolve(import.meta.dirname,"..")},bundle:true,format:"cjs",platform:"node",write:false,plugins:[{name:"mock-obsidian",setup(b){b.onResolve({filter:/^obsidian$/},()=>({path:"obsidian",namespace:"mock"}));b.onLoad({filter:/.*/,namespace:"mock"},()=>({contents:stub,loader:"js"}));}}]});
+const stub=`export class Modal{};export class SuggestModal{};export const moment=Object.assign((d)=>({format:()=>'',isoWeek:()=>1}),{});export function setIcon(){};export function setTooltip(){};export const Platform={isMobile:false};export class App{};export class PluginSettingTab{};export class Setting{};export class Notice{constructor(message){globalThis.__notices?.push(message)}};export class TFile{constructor(path){this.path=path;this.name=path.split('/').pop();this.basename=this.name.replace(/\\.md$/,'')}};export class TFolder{constructor(path){this.path=path;this.name=path.split('/').pop();this.children=[]}};export const normalizePath=p=>p.replace(/\\\\/g,'/').replace(/\\/+/g,'/').replace(/^\\/|\\/$/g,'');`;
+const result=await build({stdin:{contents:`export * from './src/pinboard/create-actions.ts';export * from './src/projects/actions.ts';export * from './src/projects/milestone-actions.ts';export * from './src/projects/task-actions.ts';export * from './src/desk/actions.ts';export * from './src/pinboard/inline-actions.ts';export * from './src/pinboard/project-rollup.ts';export {DEFAULT_SETTINGS} from './src/settings.ts';export {LUMI_TOOLS} from './src/lumi/tools.ts';export {TFile,TFolder} from 'obsidian';`,resolveDir:resolve(import.meta.dirname,"..")},bundle:true,format:"cjs",platform:"node",write:false,plugins:[{name:"mock-obsidian",setup(b){b.onResolve({filter:/^obsidian$/},()=>({path:"obsidian",namespace:"mock"}));b.onLoad({filter:/.*/,namespace:"mock"},()=>({contents:stub,loader:"js"}));}}]});
 const bundle=join(temp,"actions.cjs");writeFileSync(bundle,result.outputFiles[0].text);const api=createRequire(import.meta.url)(bundle);
 
 function vault(){
@@ -308,4 +308,28 @@ test("project tasks: delete removes the hub row, and an assigned task's calendar
  await api.changeProjectTask(v.host,v.p,{kind:"delete",id:"T-d"},TODAY);
  assert.doesNotMatch(v.data.get(v.path)!,/^\s*- [^\n]*\(task:: T-d\)/m);assert.doesNotMatch(v.data.get("03 Desk Calendar/2026/2026-10.md")!,/지울 일/);
  assert.deepEqual((await getTasks(v)).map((t:any)=>t.id),["T-e"]);
+});
+test("goal scope: a Main and its Subs move to 회사 together; the index logs it",async()=>{
+ const v=await start();
+ await api.saveGoalScope(v.host,v.sub.id,"회사",TODAY);
+ assert.match(v.data.get(v.main.path)!,/^scope: 회사$/m);assert.match(v.data.get(v.sub.path)!,/^scope: 회사$/m);
+ assert.match(v.data.get(`${ROOT}/Pinboard Index.md`)!,/회사 목표로/);
+ await api.saveGoalScope(v.host,v.main.id,"개인",TODAY);assert.match(v.data.get(v.sub.path)!,/^scope: 개인$/m);
+});
+test("루미: project_task_add with parent / month, project_tasks, project_task_change schedule · under · out · delete",async()=>{
+ const v=await taskSetup();const ctx={host:v.host,today:TODAY};const tool=(n:string)=>api.LUMI_TOOLS.find((t:any)=>t.name===n);
+ await tool("project_task_add").run(ctx,{project:v.p.id,text:"5강 만들기"});
+ await tool("project_task_add").run(ctx,{project:v.p.id,text:"스크립트",parent:"5강"});
+ await tool("project_task_add").run(ctx,{project:v.p.id,text:"녹음",parent:"5강 만들기",month:"2026-10"});
+ assert.match(v.data.get(v.path)!,/- \[ \] 5강 만들기[^\n]*\n    - \[ \] 스크립트[^\n]*\n    - 녹음/);
+ assert.match(v.data.get("03 Desk Calendar/2026/2026-10.md")!,/5강 만들기 · 녹음/);
+ const list=await tool("project_tasks").run(ctx,{project:v.p.id});assert.match(list,/5강 만들기 — 묶음 · 하위 0\/2/);assert.match(list,/    - \[ \] 스크립트 — 배정 전/);
+ await tool("project_task_change").run(ctx,{project:v.p.id,task:"스크립트",action:"out"});
+ assert.match(v.data.get(v.path)!,/\n- \[ \] 스크립트/);
+ await tool("project_task_change").run(ctx,{project:v.p.id,task:"스크립트",action:"under",value:"5강"});
+ await tool("project_task_change").run(ctx,{project:v.p.id,task:"스크립트",action:"schedule",week:"2026-10-26"});
+ assert.match(v.data.get("03 Desk Calendar/2026/2026-10.md")!,/5강 만들기 · 스크립트/);
+ assert.equal(tool("project_task_change").big({action:"delete"}),true);
+ await tool("project_task_change").run(ctx,{project:v.p.id,task:"녹음",action:"delete"});
+ assert.doesNotMatch(v.data.get("03 Desk Calendar/2026/2026-10.md")!,/5강 만들기 · 녹음/);
 });
