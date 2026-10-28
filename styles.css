@@ -10684,10 +10684,18 @@ button.pf-ol-del {
 
 /* Wall 보기: 마일스톤 · 이벤트 · 할 일 (0.29.0). */
 .mylogs-wall-calendar .wc-show {
-	display: inline-flex;
+	display: flex;
 	flex-wrap: wrap;
+	align-items: center;
+	justify-content: flex-end;
 	gap: 4px;
-	margin-top: 8px;
+	margin: 4px 0 10px;
+}
+.mylogs-wall-calendar .wc-show-sep {
+	width: 1px;
+	height: 18px;
+	margin: 0 4px;
+	background: var(--background-modifier-border);
 }
 .mylogs-wall-calendar button.wc-show-btn {
 	height: 28px;

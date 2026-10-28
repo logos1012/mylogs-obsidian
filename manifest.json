@@ -1,7 +1,7 @@
 {
 	"id": "mylogs",
 	"name": "MyLogs",
-	"version": "0.29.0",
+	"version": "0.29.1",
 	"minAppVersion": "1.5.0",
 	"description": "불렛저널 기반 기록·계획 시스템 MyLogs의 화면. Daily Pad, Pinboard, Wall Calendar, Desk Calendar, Project Folders, Drawer, My Life, Toolbox, Diary에서 쓰면 바로 마크다운 파일에 저장됩니다.",
 	"author": "Yoonwoo Lee",
