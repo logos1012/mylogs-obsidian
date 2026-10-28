@@ -12,7 +12,7 @@
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { Codex } from "@openai/codex-sdk";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 
@@ -155,4 +155,17 @@ async function* runCodex(prompt: string, exe: string, o: RunOptions): AsyncGener
 		else if (e.type === "error") yield { type: "error", message: e.message };
 	}
 	yield { type: "done", sessionId: thread.id };
+}
+
+/** Codex models offered to this user (`~/.codex/models_cache.json`, visible ones by priority). */
+export function listCodexModels(): { id: string; label: string }[] {
+	try {
+		const raw = JSON.parse(readFileSync(join(homedir(), ".codex", "models_cache.json"), "utf8")) as { models?: { slug?: string; display_name?: string; visibility?: string; priority?: number }[] };
+		return (raw.models ?? [])
+			.filter((m) => m.slug && m.visibility !== "hide")
+			.sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99))
+			.map((m) => ({ id: m.slug!, label: m.display_name ?? m.slug! }));
+	} catch {
+		return [];
+	}
 }
