@@ -10524,3 +10524,7 @@ button.pb-board-switch.is-personal {
 	color: var(--text-accent);
 	font-size: var(--font-ui-smaller);
 }
+.mylogs-wall-calendar .wc-backlog-empty {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
