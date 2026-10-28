@@ -6,15 +6,18 @@
  * Node-only (child processes). Loaded with a dynamic `import()` from `./controller.ts` the first
  * time 루미 is asked something, so the plugin still loads on a phone, where this file never runs.
  *
- * P0: read-only. Claude may Read / Glob / Grep in the vault; every other tool is denied. Codex runs
- * in its read-only sandbox.
+ * Both read the vault freely but never write it directly: Claude may Read / Glob / Grep and every other
+ * built-in tool is denied, Codex runs in its read-only sandbox. Writes go through the MyLogs tools
+ * (`./tools.ts`) — in-process for Claude, over `./mcp-http.ts` for Codex — so each one is recorded
+ * and can be undone.
  */
 
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, query, tool } from "@anthropic-ai/claude-agent-sdk";
 import { Codex } from "@openai/codex-sdk";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
+import type { ZodRawShape } from "zod";
 
 export type EngineId = "claude" | "codex";
 
@@ -25,6 +28,12 @@ export type LumiEvent =
 	| { type: "activity"; label: string }
 	| { type: "done"; sessionId: string | null }
 	| { type: "error"; message: string };
+
+/** The MyLogs tools offered for one run, and how to call them (the plugin runs them). */
+export interface ToolBridge {
+	tools: { name: string; description: string; shape: ZodRawShape }[];
+	call(name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean }>;
+}
 
 export interface RunOptions {
 	engine: EngineId;
@@ -37,6 +46,7 @@ export interface RunOptions {
 	/** Engine session/thread id to continue, or null for a new conversation. */
 	resume: string | null;
 	signal: AbortSignal;
+	tools: ToolBridge;
 }
 
 const READ_TOOLS = ["Read", "Glob", "Grep"];
@@ -85,6 +95,16 @@ export async function* runLumi(prompt: string, o: RunOptions): AsyncGenerator<Lu
 async function* runClaude(prompt: string, exe: string, o: RunOptions): AsyncGenerator<LumiEvent> {
 	const abort = new AbortController();
 	o.signal.addEventListener("abort", () => abort.abort(), { once: true });
+	const mylogs = createSdkMcpServer({
+		name: "mylogs",
+		version: "1.0.0",
+		tools: o.tools.tools.map((t) =>
+			tool(t.name, t.description, t.shape, async (args) => {
+				const r = await o.tools.call(t.name, args as Record<string, unknown>);
+				return { content: [{ type: "text" as const, text: r.text }], isError: r.isError };
+			}),
+		),
+	});
 	const q = query({
 		prompt,
 		options: {
@@ -98,11 +118,12 @@ async function* runClaude(prompt: string, exe: string, o: RunOptions): AsyncGene
 			systemPrompt: { type: "preset", preset: "claude_code", append: o.instructions },
 			includePartialMessages: true,
 			// Reads are allowed in the callback (not `allowedTools`, which would bypass it).
+			mcpServers: { mylogs },
 			permissionMode: "default",
-			canUseTool: async (toolName) =>
-				READ_TOOLS.includes(toolName)
-					? { behavior: "allow" }
-					: { behavior: "deny", message: "루미는 아직 읽기만 할 수 있어요(P0). 무엇을 만들지 제안으로 보여 주세요." },
+			canUseTool: async (toolName, input) =>
+				READ_TOOLS.includes(toolName) || toolName.startsWith("mcp__mylogs__")
+					? { behavior: "allow", updatedInput: input }
+					: { behavior: "deny", message: "볼트 파일은 MyLogs 도구(mcp__mylogs__*)로만 바꿔요. 맞는 도구가 없으면 무엇을 바꿀지 사용자에게 보여 주세요." },
 			abortController: abort,
 		},
 	});
@@ -131,13 +152,29 @@ async function* runClaude(prompt: string, exe: string, o: RunOptions): AsyncGene
 function activityLabel(name: string, input: Record<string, unknown>): string {
 	const path = String(input.file_path ?? input.path ?? input.pattern ?? "");
 	const short = path.split("/").slice(-2).join("/");
+	if (name.startsWith("mcp__mylogs__")) return "MyLogs에 쓰는 중";
 	if (name === "Read") return `읽는 중 · ${short}`;
 	if (name === "Glob" || name === "Grep") return `찾는 중 · ${String(input.pattern ?? "")}`;
 	return name;
 }
 
 async function* runCodex(prompt: string, exe: string, o: RunOptions): AsyncGenerator<LumiEvent> {
-	const codex = new Codex({ codexPathOverride: exe, env: envFor(exe) });
+	const { openRun, token } = await import("./mcp-http.ts");
+	const run = await openRun(o.tools);
+	try {
+		yield* codexTurn(prompt, exe, o, run.url, token);
+	} finally {
+		run.close();
+	}
+}
+
+async function* codexTurn(prompt: string, exe: string, o: RunOptions, url: string, token: string): AsyncGenerator<LumiEvent> {
+	const codex = new Codex({
+		codexPathOverride: exe,
+		env: { ...envFor(exe), MYLOGS_LUMI_TOKEN: token },
+		// Only this server's tools are pre-approved (they are recorded and undoable); the sandbox stays read-only.
+		config: { mcp_servers: { mylogs: { url, bearer_token_env_var: "MYLOGS_LUMI_TOKEN", tool_timeout_sec: 120, default_tools_approval_mode: "approve" } } },
+	});
 	const opts = {
 		workingDirectory: o.vaultPath,
 		skipGitRepoCheck: true,
@@ -151,6 +188,7 @@ async function* runCodex(prompt: string, exe: string, o: RunOptions): AsyncGener
 	for await (const e of events) {
 		if ((e.type === "item.updated" || e.type === "item.completed") && e.item.type === "agent_message") yield { type: "text", text: e.item.text };
 		else if (e.type === "item.started" && e.item.type === "command_execution") yield { type: "activity", label: `살펴보는 중 · ${e.item.command.slice(0, 60)}` };
+		else if (e.type === "item.started" && e.item.type === "mcp_tool_call") yield { type: "activity", label: "MyLogs에 쓰는 중" };
 		else if (e.type === "turn.failed") yield { type: "error", message: e.error.message };
 		else if (e.type === "error") yield { type: "error", message: e.message };
 	}

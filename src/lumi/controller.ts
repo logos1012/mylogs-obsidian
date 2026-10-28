@@ -9,7 +9,26 @@ import { FileSystemAdapter, normalizePath, Notice, Platform, TFile } from "obsid
 import type MyLogsPlugin from "../main.ts";
 import { buildContext, greeting, type LumiScreen } from "./context.ts";
 import { carriedFrom, localIso, type LumiTurn, parseSession, type SessionMeta, sessionId, sessionPath, sessionText, titleFrom, transcript, upsertIndexRow } from "./session.ts";
-import type { EngineId } from "./engines.ts";
+import type { EngineId, ToolBridge } from "./engines.ts";
+import { type Change, recordingHost, undoChanges } from "./recorder.ts";
+import { LUMI_TOOLS, todayIsoNow } from "./tools.ts";
+
+/** One thing 루미 did (or proposes, on a card) during an answer. */
+export interface LumiAction {
+	id: string;
+	tool: string;
+	status: "done" | "undone" | "failed" | "waiting" | "cancelled";
+	/** What was done, or the card's title. */
+	label: string;
+	/** Card details (big tools). */
+	lines?: string[];
+	error?: string;
+	changes?: Change[];
+	args?: Record<string, unknown>;
+}
+
+const ACTION_MARK: Record<LumiAction["status"], string> = { done: "✓", undone: "↶", failed: "!", waiting: "?", cancelled: "✗" };
+const ACTION_NOTE: Record<LumiAction["status"], string> = { done: "", undone: " (되돌림)", failed: " (실패)", waiting: " (확인 대기)", cancelled: " (그만둠)" };
 
 export interface LumiMessage extends LumiTurn {
 	/** Small "읽는 중 · …" lines shown under an answer while it is made. */
@@ -17,6 +36,15 @@ export interface LumiMessage extends LumiTurn {
 	error?: string;
 	/** 루미's local greeting: shown, never sent or saved. */
 	local?: boolean;
+	/** What 루미 did through the MyLogs tools during this answer. */
+	actions?: LumiAction[];
+}
+
+/** The answer text as saved: what 루미 did follows the words. */
+function savedText(m: LumiMessage): string {
+	if (!m.actions?.length) return m.text;
+	const done = m.actions.map((a) => `- ${ACTION_MARK[a.status]} ${a.label}${ACTION_NOTE[a.status]}`).join("\n");
+	return `${m.text.replace(/\s+$/, "")}\n\n**루미가 한 일**\n${done}`;
 }
 
 type Listener = () => void;
@@ -41,6 +69,8 @@ export class LumiChat {
 	path: string | null = null;
 	private meta: SessionMeta | null = null;
 	private abort: AbortController | null = null;
+	/** Card answers and undos since the last message, told to 루미 with the next one. */
+	private notes: string[] = [];
 
 	constructor(
 		private owner: LumiController,
@@ -93,7 +123,13 @@ export class LumiChat {
 		if (!this.started) this.title = titleFrom(prompt);
 		const history = this.messages.filter((m) => !m.local && m.text.trim());
 		this.messages.push({ role: "user", text: prompt, at: localIso() });
-		const answer: LumiMessage = { role: "lumi", text: "", at: localIso(), activity: [] };
+		const answer: LumiMessage = { role: "lumi", text: "", at: localIso(), activity: [], actions: [] };
+		const told = this.notes.length ? `(지난 답 이후 사용자가 한 일: ${this.notes.join(" / ")})\n\n` : "";
+		this.notes = [];
+		const tools: ToolBridge = {
+			tools: LUMI_TOOLS.map(({ name, description, shape }) => ({ name, description, shape })),
+			call: (name, args) => this.callTool(answer, name, args),
+		};
 		this.messages.push(answer);
 		this.busy = true;
 		this.abort = new AbortController();
@@ -104,7 +140,7 @@ export class LumiChat {
 			const instructions = await buildContext(plugin.app, plugin.settings, this.owner.screen);
 			const path = this.engine === "claude" ? plugin.settings.lumiClaudePath : plugin.settings.lumiCodexPath;
 			const run = async (input: string, resume: string | null) => {
-				for await (const ev of runLumi(input, { engine: this.engine, path, model: this.model, vaultPath, instructions, resume, signal: this.abort!.signal })) {
+				for await (const ev of runLumi(input, { engine: this.engine, path, model: this.model, vaultPath, instructions, resume, signal: this.abort!.signal, tools })) {
 					if (ev.type === "delta") answer.text += ev.text;
 					else if (ev.type === "text") answer.text = ev.text;
 					else if (ev.type === "activity") answer.activity = [...(answer.activity ?? []), ev.label].slice(-4);
@@ -114,7 +150,7 @@ export class LumiChat {
 					this.owner.emit();
 				}
 			};
-			await run(prompt, this.engineSession);
+			await run(told + prompt, this.engineSession);
 			// A reopened conversation whose engine thread is gone: start a new thread with the
 			// conversation so far in front of the question.
 			if (!answer.text && answer.error && this.engineSession && !this.abort.signal.aborted) {
@@ -130,8 +166,95 @@ export class LumiChat {
 			this.abort = null;
 			this.owner.emit();
 		}
-		if (answer.text.trim()) await this.save();
+		if (answer.text.trim() || answer.actions?.length) await this.save();
 		this.owner.persist();
+	}
+
+	/** A MyLogs tool call from the engine: small ones run now (recorded), big ones become a card. */
+	private async callTool(answer: LumiMessage, name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean }> {
+		const def = LUMI_TOOLS.find((t) => t.name === name);
+		if (!def) return { text: `없는 도구예요: ${name}`, isError: true };
+		const plugin = this.owner.plugin;
+		const action: LumiAction = { id: `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, tool: name, status: "waiting", label: "", args };
+		if (def.big?.(args)) {
+			try {
+				const pv = await def.preview!({ host: recordingHost(plugin.app, plugin.settings), today: todayIsoNow() }, args);
+				action.label = pv.title;
+				action.lines = pv.lines;
+			} catch (err) {
+				return { text: `아직 카드를 만들 수 없어요: ${err instanceof Error ? err.message : String(err)}`, isError: true };
+			}
+			(answer.actions ??= []).push(action);
+			this.owner.emit();
+			return { text: "확인 카드를 사용자에게 보여 줬어요. 사용자가 「넣기」를 눌러야 만들어져요. 아직 만들어지지 않았으니 만들었다고 말하지 말고, 카드를 확인해 달라고 짧게 말해요.", isError: false };
+		}
+		const r = await this.execute(action, args);
+		(answer.actions ??= []).push(action);
+		this.owner.emit();
+		return r.ok ? { text: `${action.label} (사용자는 대화에서 되돌릴 수 있어요)`, isError: false } : { text: `못 했어요: ${action.error}`, isError: true };
+	}
+
+	/** Run a tool on a recording host; on failure undo whatever it already wrote. */
+	private async execute(action: LumiAction, args: Record<string, unknown>): Promise<{ ok: boolean }> {
+		const def = LUMI_TOOLS.find((t) => t.name === action.tool)!;
+		const plugin = this.owner.plugin;
+		const host = recordingHost(plugin.app, plugin.settings);
+		try {
+			const summary = await def.run({ host, today: todayIsoNow() }, args);
+			action.status = "done";
+			action.label = summary;
+			action.changes = host.changes;
+			return { ok: true };
+		} catch (err) {
+			if (host.changes.length) await undoChanges(plugin.app, host.changes).catch((e) => console.error("[MyLogs] 루미 rollback failed", e, host.changes));
+			action.status = "failed";
+			action.error = err instanceof Error ? err.message : String(err);
+			if (!action.label) action.label = action.tool;
+			return { ok: false };
+		}
+	}
+
+	private findAction(id: string): LumiAction | null {
+		for (const m of this.messages) for (const a of m.actions ?? []) if (a.id === id) return a;
+		return null;
+	}
+
+	/** 「넣기」 on a card. */
+	async confirm(id: string): Promise<void> {
+		const a = this.findAction(id);
+		if (!a || a.status !== "waiting") return;
+		const title = a.label;
+		const r = await this.execute(a, a.args ?? {});
+		if (!r.ok) new Notice(`루미: ${a.error}`);
+		this.notes.push(r.ok ? `카드 「${title}」 넣음 → ${a.label}` : `카드 「${title}」 넣기 실패: ${a.error}`);
+		this.owner.emit();
+		await this.save();
+	}
+
+	/** 「그만두기」 on a card. */
+	async cancel(id: string): Promise<void> {
+		const a = this.findAction(id);
+		if (!a || a.status !== "waiting") return;
+		a.status = "cancelled";
+		this.notes.push(`카드 「${a.label}」 그만둠`);
+		this.owner.emit();
+		await this.save();
+	}
+
+	/** 「되돌리기」 on something 루미 did. */
+	async undo(id: string): Promise<void> {
+		const a = this.findAction(id);
+		if (!a || a.status !== "done" || !a.changes) return;
+		try {
+			await undoChanges(this.owner.plugin.app, a.changes);
+			a.status = "undone";
+			this.notes.push(`「${a.label}」 되돌림`);
+			new Notice("되돌렸어요");
+		} catch (err) {
+			new Notice(err instanceof Error ? err.message : String(err));
+		}
+		this.owner.emit();
+		await this.save();
 	}
 
 	/** Restore from a session file (history list or panel restart). */
@@ -148,7 +271,7 @@ export class LumiChat {
 
 	/** Write the session file and its `Sessions Index.md` row (10 Archive Box AGENTS 「3」「4-1」). */
 	private async save(): Promise<void> {
-		const turns = this.messages.filter((m) => !m.local && m.text.trim());
+		const turns = this.messages.filter((m) => !m.local && (m.text.trim() || m.actions?.length)).map((m) => ({ role: m.role, at: m.at, text: savedText(m) }));
 		if (!turns.length) return;
 		const app = this.owner.plugin.app;
 		try {
