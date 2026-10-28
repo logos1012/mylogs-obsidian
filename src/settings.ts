@@ -56,6 +56,8 @@ export interface MyLogsSettings {
 	wallShow: { milestone: boolean; event: boolean; task: boolean };
 	/** Wall Calendar: hide months already past (remembered). */
 	wallHidePast: boolean;
+	/** Wall Calendar: hide 완료 (done tasks, achieved milestones, done Desk tasks). Remembered. */
+	wallHideDone: boolean;
 	/** Desk month level (phone 흐름 · 달력): show every task, not only milestones · events · #마감 (remembered). */
 	deskShowTasks: boolean;
 	/** 루미 (desktop AI): which local agent runs — the user's own Claude Code or Codex login. */
@@ -104,6 +106,7 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	deskShowTasks: false,
 	wallShow: { milestone: true, event: true, task: true },
 	wallHidePast: false,
+	wallHideDone: false,
 	lumiEngine: "claude",
 	lumiClaudePath: "",
 	lumiCodexPath: "",
