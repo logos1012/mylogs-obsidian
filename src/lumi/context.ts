@@ -31,7 +31,7 @@ MyLogs를 다루는 원칙:
 직접 하기 (MyLogs 도구):
 - 너의 핵심은 사용자 대신 일을 해 주는 것이다. 볼트를 바꾸는 일은 MyLogs 도구(mcp mylogs: pad_add, pad_check, schedule_add, drawer_put, goal_create, goal_update, project_create, project_status, project_task_add, project_write, flywheel_check, flywheel_add, flywheel_update)로 직접 한다.
 - 시키면 되묻지 말고 바로 한다. 꼭 필요한 정보가 없을 때만 한 가지를 묻는다. 날짜·섹션처럼 정할 수 있는 건 상식대로 정한다.
-- 할 일의 자리: 프로젝트의 일이면 project_task_add(날짜가 있으면 date). 프로젝트와 상관없는 단발 업무는 오늘 할 일이면 pad_add(오늘 할 일), 다른 날로 정해진 일이면 schedule_add(date). 사용자가 Desk Calendar·특정 날짜를 말하면 그 말을 따른다. 약속·회의처럼 시각이 있는 일은 schedule_add(event, time).
+- 할 일의 자리: 프로젝트의 일이면 project_task_add(날짜가 있으면 date). 프로젝트와 상관없는 단발 업무는 오늘 할 일이면 pad_add(개인 할 일 또는 회사 할 일 — 회사 일이 분명할 때만 회사), 다른 날로 정해진 일이면 schedule_add(date). 사용자가 Desk Calendar·특정 날짜를 말하면 그 말을 따른다. 약속·회의처럼 시각이 있는 일은 schedule_add(event, time).
 - 월 캘린더는 마일스톤 · 이벤트 · 마감(#마감)만 보는 곳이고, 할 일은 주 보기에서 본다. 마감이 있는 단발 업무는 마감일에 #마감 태그를 붙인 할 일로 넣는다.
 - 작은 일(pad_add, pad_check, schedule_add, drawer_put, goal_update, project_status, project_task_add, project_write new/append, flywheel_check, flywheel_update)은 바로 실행되고, 사용자가 대화에서 되돌릴 수 있다. 끝나면 무엇을 했는지 한 줄로 말한다.
 - 큰 일(goal_create, project_create, flywheel_add, project_write replace)은 확인 카드가 뜬다. 사용자가 「넣기」를 눌러야 실행되니 "카드를 확인해 주세요"라고 말하고, 만들었다고 말하지 않는다.
@@ -44,7 +44,7 @@ const FOLDER_MAP = `MyLogs 폴더 지도 (볼트 루트 기준):
 01 Pinboard — 목표 (Main/Sub Goal 노트, Pinboard Index)
 02 Wall Calendar — 한 해의 달별 일정 ({YYYY}.md)
 03 Desk Calendar — 이번 달의 주·날짜 배정 ({YYYY}/{YYYY-MM}.md)
-04 Daily Pad — 하루 기록 ({YYYY}/{YYYY-MM-DD}.md, 결정 대기·오늘 할 일·메모·로그·끼적임·자료)
+04 Daily Pad — 하루 기록 ({YYYY}/{YYYY-MM-DD}.md, 결정 대기·개인 할 일·회사 할 일·메모·로그·끼적임·자료)
 05 Project Folders — 프로젝트 (개인|회사/<이름>/ 허브·01 초안·02 산출물·99 작업실)
 06 Drawer — 지금은 아닌 일 (보류·아이디어·프로젝트 후보)
 07 Shelf — 읽을거리·자료 위키
@@ -73,17 +73,18 @@ export async function buildContext(app: App, s: MyLogsSettings, screen: LumiScre
 		.filter((f) => f.path.startsWith(`${s.pinboardFolder}/${year}/`))
 		.map((f) => fm(app, f))
 		.filter((g) => g.type === "main-goal" || g.type === "sub-goal")
-		.map((g) => `${g.type === "sub-goal" ? "  - " : "- "}${String(g.id ?? "")} ${String(g.title ?? "")}${g.status && g.status !== "active" ? ` (${String(g.status)})` : ""}${g.progress !== undefined && g.progress !== null && g.progress !== "" ? ` · ${String(g.progress)}%` : ""}`)
+		.map((g) => `${g.type === "sub-goal" ? "  - " : "- "}${String(g.id ?? "")} ${String(g.title ?? "")}${g.status && g.status !== "active" ? ` (${String(g.status)})` : ""}${g.scope === "회사" ? " [회사]" : ""}${g.progress !== undefined && g.progress !== null && g.progress !== "" ? ` · ${String(g.progress)}%` : ""}`)
 		.sort((a, b) => a.trim().localeCompare(b.trim()));
 	const projects = files
 		.filter((f) => f.path.startsWith(`${s.projectFoldersFolder}/`))
 		.map((f) => fm(app, f))
 		.filter((p) => p.type === "project")
-		.map((p) => `- ${String(p.id ?? "")} ${String(p.title ?? "")} [${String(p.status ?? "")}]`);
+		.map((p) => `- ${String(p.id ?? "")} ${String(p.title ?? "")} [${String(p.status ?? "")}${p.scope === "회사" ? " · 회사" : ""}]`);
 	const wheel = app.vault.getAbstractFileByPath(normalizePath(flywheelPath(s.flywheelPath)));
 	const elements = wheel instanceof TFile ? parseFlywheel(await app.vault.cachedRead(wheel)) : [];
 	const lines = [
 		`오늘: ${date}`,
+		`개인/회사 모드: ${s.sideMode} — 사용자가 따로 말하지 않으면 새 할 일은 ${s.sideMode === "회사" ? "회사(Daily Pad 회사 할 일, Wall·Desk 줄 끝 #회사)" : "개인(표시 없음)"}로 넣는다. 다른 쪽이 분명하면 그쪽.`,
 		screen ? `사용자가 지금 보고 있는 화면: ${screen.label}${screen.item ? ` · ${screen.item}` : ""}` : "",
 		"",
 		FOLDER_MAP,

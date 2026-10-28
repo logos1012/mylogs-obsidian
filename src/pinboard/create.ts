@@ -8,10 +8,13 @@ import { applyMainRollup, linkProject, removeUndecidedLines } from "./goal-edit.
 import { INDEX_FILE, indexPathCell, prependChangeLog } from "./index-writer.ts";
 import { type Goal, parseFrontmatterText, parseGoal, rollupMain, displaySubProgress, isEnded, toNum } from "./model.ts";
 import type { Write } from "./batch.ts";
+import { asSide } from "../side.ts";
 
 export interface GoalInput {
 	title: string; area: string; why: string; measure: "metric" | "milestone";
 	baseline: string; current: string; target: string; unit: string; due: string;
+	/** 개인 / 회사 (a Sub Goal takes its Main's). Empty = 개인. */
+	scope?: string;
 }
 export function inputProblems(i: GoalInput, sub: boolean): string[] {
 	const errors: string[] = [];
@@ -76,7 +79,7 @@ export function planGoal(o: {root:string; year:number; input:GoalInput; template
 	const ids=[...o.existing.map(g=>g.id),...(o.index.match(/G-\d{4}-\d+(?:\.\d+)?/g)??[])];
 	const id=nextGoalId(o.year,ids,parent?.goal.id);const path=`${o.root}/${o.year}/${id} ${i.title.trim()}.md`;
 	let text=o.template;
-	const fields:Record<string,string>={id,type:parent?"sub-goal":"main-goal",title:yamlScalar(i.title.trim()),area:yamlScalar(i.area.trim()),status:"active",health:"",progress:"0",updated:today};
+	const fields:Record<string,string>={id,type:parent?"sub-goal":"main-goal",title:yamlScalar(i.title.trim()),scope:asSide(parent?parent.goal.scope:i.scope),area:yamlScalar(i.area.trim()),status:"active",health:"",progress:"0",updated:today};
 	if(parent)Object.assign(fields,{parent:parent.goal.id,measure:i.measure,kind:"outcome",baseline:i.measure==="metric"?i.baseline.replace(/,/g,""):"",current:i.measure==="metric"?i.current.replace(/,/g,""):"",target:yamlScalar(i.target),unit:yamlScalar(i.measure==="metric"?i.unit:""),due:i.due,weight:""});
 	else Object.assign(fields,{period:String(o.year),sub_total:"0",sub_achieved:"0"});
 	for(const [k,v]of Object.entries(fields))text=setFmValue(text,k,v);

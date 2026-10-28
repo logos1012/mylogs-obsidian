@@ -207,8 +207,15 @@ export async function applyPending(host: PendingHost, padDate: string, sl: Sourc
 	const srcPad = padPath(host, src);
 	const srcText = await load(srcPad);
 	if (srcText !== null) {
-		const r = markInPadSection(srcText, s.sections.today, key, mark);
-		if (r.count) put(srcPad, setFrontmatterScalar(r.text, "updated", today));
+		// The original is in 개인 할 일 or 회사 할 일.
+		let t = srcText;
+		let n = 0;
+		for (const sec of [s.sections.today, s.sections.work]) {
+			const r = markInPadSection(t, sec, key, mark);
+			t = r.text;
+			n += r.count;
+		}
+		if (n) put(srcPad, setFrontmatterScalar(t, "updated", today));
 	}
 
 	// 4. Daily Pad Index 「결정 대기」 row + change log.
@@ -267,8 +274,14 @@ export async function togglePending(host: PendingHost, padDate: string, sl: Sour
 		if (srcPad !== pad) {
 			const st = await load(srcPad);
 			if (st !== null) {
-				const c = checkInPadSection(st, s.sections.today, key, from, to);
-				if (c.count) put(srcPad, setFrontmatterScalar(c.text, "updated", today));
+				let t = st;
+				let n = 0;
+				for (const sec of [s.sections.today, s.sections.work]) {
+					const c = checkInPadSection(t, sec, key, from, to);
+					t = c.text;
+					n += c.count;
+				}
+				if (n) put(srcPad, setFrontmatterScalar(t, "updated", today));
 			}
 		}
 		if (nowDone) {

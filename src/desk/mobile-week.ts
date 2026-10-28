@@ -11,6 +11,7 @@
  */
 
 import { setIcon } from "obsidian";
+import type { Side } from "../side.ts";
 import { addDays } from "../parser.ts";
 import { tip } from "../ui/tip.ts";
 import { actionSheet, type SheetAction } from "../ui/mobile.ts";
@@ -20,12 +21,15 @@ import type { DeskMobileHost } from "./mobile.ts";
 import type { ProjectTask } from "../projects/tasks.ts";
 import { touchDrag } from "./touch-drag.ts";
 
-/** A Daily Pad 「오늘 할 일」 line of one day. */
+/** A Daily Pad 「개인 할 일」 / 「회사 할 일」 line of one day. */
 export interface PadTask {
 	index: number;
 	line: string;
 	text: string;
 	done: boolean;
+	/** The section it is written in (its side). */
+	section: string;
+	side: Side;
 }
 
 /** One project's undated tasks (주 보기 배정 안 된 일). */
@@ -46,10 +50,10 @@ export function appendPadTasks(cell: HTMLElement, tasks: PadTask[], toggle: (t: 
 	if (!tasks.length) return;
 	cell.removeClass("dc-blank");
 	const sec = cell.createDiv({ cls: "dc-wk-pad" });
-	tip(sec.createDiv({ cls: "dc-wk-pad-label", text: "Daily Pad" }), "그날 Daily Pad 「오늘 할 일」에 적은 일");
+	tip(sec.createDiv({ cls: "dc-wk-pad-label", text: "Daily Pad" }), "그날 Daily Pad 「개인 할 일」 · 「회사 할 일」에 적은 일");
 	const ul = sec.createEl("ul", { cls: "dc-items" });
 	for (const t of tasks) {
-		const li = ul.createEl("li", { cls: `dc-it dc-k-task dc-s-${t.done ? "done" : "scheduled"}` });
+		const li = ul.createEl("li", { cls: `dc-it dc-k-task dc-s-${t.done ? "done" : "scheduled"}${t.side === "회사" ? " is-work" : ""}` });
 		const sym = li.createSpan({ cls: "dc-sym is-clickable", attr: { role: "checkbox", "aria-checked": String(t.done), tabindex: "0" } });
 		li.createSpan({ cls: "dc-body", text: t.text });
 		sym.addEventListener("click", (e) => {

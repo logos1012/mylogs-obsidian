@@ -1,3 +1,4 @@
+import { asSide, inputSide, shows, type SideMode } from "../side.ts";
 import { loadProjectProgress, saveProgressSettings } from "./project-rollup.ts";
 import { mountAppNav } from "../ui/nav.ts";
 import { tip } from "../ui/tip.ts";
@@ -353,7 +354,11 @@ export class PinboardView extends ItemView {
 		}
 		const projectProgress = await loadProjectProgress(this.plugin);
 		applyProjectProgress(goals, projectProgress);
-		const board = buildBoard(goals);
+		// 개인 / 회사 핀보드: a Sub Goal is on its Main's board.
+		const mode = this.plugin.settings.sideMode;
+		const mainScope = new Map(goals.filter((g) => g.type === "main-goal").map((g) => [g.id, g.scope]));
+		const sideOf = (g: Goal) => asSide(g.type === "sub-goal" && mainScope.has(g.parent) ? mainScope.get(g.parent) : g.scope);
+		const board = buildBoard(goals.filter((g) => shows(sideOf(g), mode)));
 		const projects = this.loadProjects();
 		const habits = await this.loadHabits();
 		const related = new Map<string, RelatedItem[]>();
@@ -438,7 +443,15 @@ export class PinboardView extends ItemView {
 		head.createDiv({ cls: "pb-horizon" });
 		const top = head.createDiv({ cls: "pb-head-top" });
 		const titleEl = top.createDiv({ cls: "pb-head-title" });
-		titleEl.createEl("h1", { text: "Pinboard" });
+		const mode = this.plugin.settings.sideMode;
+		titleEl.createEl("h1", { text: mode === "전체" ? "Pinboard" : `${mode} 핀보드` });
+		// The other board in one tap (the same switch as the top bar: Wall · Desk follow).
+		const other: SideMode = mode === "회사" ? "개인" : "회사";
+		const sw = titleEl.createEl("button", { cls: `pb-board-switch is-${other === "회사" ? "work" : "personal"}`, text: `${other} 핀보드 →`, attr: { type: "button" } });
+		tip(sw, `${other} 모드로 바꿔요. Wall · Desk도 같이 바뀌어요`);
+		sw.addEventListener("click", () => {
+			if (this.canNavigate()) void this.plugin.setSideMode(other);
+		});
 		if (d.years.length > 1) {
 			const sel = titleEl.createEl("select", { cls: "dropdown pb-year-select", attr: { "aria-label": "연도 고르기" } });
 			for (const y of d.years) sel.createEl("option", { text: String(y), value: String(y) });
@@ -1327,6 +1340,7 @@ export class PinboardView extends ItemView {
 			const year = this.data?.year ?? Number(todayIso().slice(0,4));
 			const answer = await askCreateGoal(this.app, { year, parent, projects: this.data?.projects ?? [], flywheel: parseFlywheel(f instanceof TFile ? await this.app.vault.read(f) : null), taken: await takenIdsAndNames(this.plugin, []), today: todayIso(), areas: [...new Set(this.data?.goals.map(g => g.area) ?? [])] });
 			if (!answer) return;
+			if (!parent) answer.input.scope = inputSide(this.plugin.settings.sideMode);
 			const goal = await createGoalFlow(this.plugin, answer, year, parent?.id, todayIso());
 			this.year = year; this.openId = goal.id;
 			new Notice(parent ? "하위 목표와 실행 공간을 저장했어요." : "목표를 만들었어요. 하위 목표를 추가해 보세요.");

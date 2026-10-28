@@ -9,6 +9,7 @@
  * Pure module (no Obsidian imports) so it can be unit-tested with `node --test`.
  */
 
+import { hasWorkTag, setSide, type Side, withWorkTag } from "../side.ts";
 import { replaceContent, setFields, setLead, strikeContent, TIME_LEAD_RE } from "../line-edit.ts";
 import { frontmatterEnd, splitLinesKeepEol, stripEol, TASK_LINE_RE } from "../parser.ts";
 import { detectEol, findSection, locateLine, setFrontmatterScalar } from "../writer.ts";
@@ -467,7 +468,8 @@ export function planLetGo(src: DeskItem, why: string, today: string): Plan {
 export function planSplit(src: DeskItem, parts: string[], today: string): Plan {
 	const ref = refOf(src);
 	const date = src.date!;
-	const lines = parts.map((p) => p.trim().replace(/^[-*+]\s+(\[.\]\s+)?/, "")).filter(Boolean).map((p) => `- [ ] ${p}`);
+	const work = hasWorkTag(src.item.raw);
+	const lines = parts.map((p) => p.trim().replace(/^[-*+]\s+(\[.\]\s+)?/, "")).filter(Boolean).map((p) => `- [ ] ${work ? withWorkTag(p) : p}`);
 	return finish(`「${src.item.text}」 쪼갬 → ${lines.length}개`, [
 		monthEdit(src.file, today, (t, y, m) => editLine(t, y, m, ref, (l) => markMoved(l, "쪼갬")), (t, y, m) => appendLines(t, y, m, { kind: "day", date }, lines)),
 	]);
@@ -625,6 +627,16 @@ export function planEdit(src: DeskItem, c: DeskChange, copies: DeskItem[], alloc
 	const more = copies.length && c.text !== undefined ? ` (짝 ${copies.length}줄도)` : "";
 	const moved = moving ? `, ${mmdd(src.date!)} → ${mmdd(c.date!)}` : "";
 	return finish(`${label} 수정${moved}${more}`, edits);
+}
+
+/** 개인 ↔ 회사: `#회사` on this line and its paired copies (`../side.ts`). Pairs match by text, not tags. */
+export function planSetSide(src: DeskItem, side: Side, copies: DeskItem[], today: string): Plan {
+	const to = (l: string) => mapBody(l, (b) => setSide(b, side));
+	const edits: FileEdit[] = [src, ...copies].map((x) => {
+		const ref = refOf(x);
+		return monthEdit(x.file, today, (t, y, m) => editLine(t, y, m, ref, to));
+	});
+	return finish(`「${src.item.text}」 → ${side} 일`, edits);
 }
 
 function allocAfterMove(line: string, oldIso: string, newIso: string, alloc: DeskItem): string {

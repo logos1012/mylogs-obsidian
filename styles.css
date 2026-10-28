@@ -607,20 +607,11 @@
 	.mylogs-daily-pad .ml-grid {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
-	.mylogs-daily-pad .ml-section-refs {
-		grid-column: 1 / -1;
-	}
 }
 
 @container (min-width: 1080px) {
 	.mylogs-daily-pad .ml-grid {
 		grid-template-columns: repeat(3, minmax(0, 1fr));
-	}
-	.mylogs-daily-pad .ml-section-scribble {
-		grid-column: span 2;
-	}
-	.mylogs-daily-pad .ml-section-refs {
-		grid-column: auto;
 	}
 }
 
@@ -10321,3 +10312,124 @@ body:not(.is-mobile) .has-lumi-fab > .view-content { padding-bottom: 112px; }
 .mylogs-desk-calendar .dc-wkv-day > .dc-day { flex: 1; min-height: 420px; border: 1px solid var(--background-modifier-border); border-radius: 8px; }
 .mylogs-desk-calendar .dc-wk-pad { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--background-modifier-border); }
 .mylogs-desk-calendar .dc-wk-pad-label { color: var(--text-faint); font-size: 11px; font-weight: 600; margin-bottom: 2px; }
+
+/* ───────────────────────── 공통: 개인 / 회사 모드 (0.25.0) ───────────────────────── */
+
+body {
+	--mylogs-personal: var(--color-green);
+	--mylogs-work: var(--color-blue);
+}
+.mylogs-appnav {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	border-bottom-width: 3px;
+}
+.mylogs-appnav .mylogs-appnav-list {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+.mylogs-appnav[data-side="개인"] {
+	border-bottom-color: var(--mylogs-personal);
+}
+.mylogs-appnav[data-side="회사"] {
+	border-bottom-color: var(--mylogs-work);
+}
+.mylogs-side-switch {
+	display: inline-flex;
+	flex: 0 0 auto;
+	margin-right: 8px;
+	padding: 2px;
+	gap: 2px;
+	border-radius: var(--radius-m);
+	background: var(--background-modifier-hover);
+}
+button.mylogs-side-btn {
+	height: 26px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: var(--radius-s);
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	cursor: pointer;
+}
+button.mylogs-side-btn.is-active {
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-weight: 600;
+}
+button.mylogs-side-btn.is-active[data-side="개인"] {
+	color: var(--mylogs-personal);
+}
+button.mylogs-side-btn.is-active[data-side="회사"] {
+	color: var(--mylogs-work);
+}
+.is-mobile button.mylogs-side-btn {
+	height: 36px;
+	min-width: 44px;
+	padding: 0 8px;
+}
+.is-mobile .mylogs-side-switch {
+	margin-right: 6px;
+}
+
+/* A 회사 line among 개인 ones (전체), and the folded other side's count. */
+.dc-it.is-work,
+.dc-m-flow-it.is-work,
+.wc-item.is-work {
+	box-shadow: inset 3px 0 0 var(--mylogs-work);
+	padding-left: 6px;
+}
+.ml-side-count {
+	display: inline-flex;
+	gap: 4px;
+	margin-left: auto;
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+}
+.ml-side-count .is-personal,
+.ml-side-hidden.is-personal {
+	color: var(--mylogs-personal);
+}
+.ml-side-count .is-work,
+.ml-side-hidden.is-work {
+	color: var(--mylogs-work);
+}
+.ml-side-count > span {
+	padding: 0 5px;
+	border-radius: var(--radius-s);
+	background: var(--background-modifier-hover);
+}
+.ml-side-hidden {
+	margin-left: auto;
+	padding: 0 6px;
+	border-radius: var(--radius-s);
+	background: var(--background-modifier-hover);
+	font-size: var(--font-ui-smaller);
+	opacity: 0.8;
+}
+.mylogs-daily-pad .ml-section-today .ml-panel-title {
+	color: var(--mylogs-personal);
+}
+.mylogs-daily-pad .ml-section-work .ml-panel-title {
+	color: var(--mylogs-work);
+}
+button.pb-board-switch {
+	margin-left: 8px;
+	height: 26px;
+	padding: 0 10px;
+	border-radius: var(--radius-s);
+	font-size: var(--font-ui-small);
+	cursor: pointer;
+}
+button.pb-board-switch.is-work {
+	color: var(--mylogs-work);
+}
+button.pb-board-switch.is-personal {
+	color: var(--mylogs-personal);
+}
+.wc-addside {
+	margin-left: auto;
+}

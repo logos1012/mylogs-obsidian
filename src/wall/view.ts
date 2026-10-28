@@ -1,3 +1,4 @@
+import { asSide, inputSide, lineSide, projectRef, setSide, shows, type Side } from "../side.ts";
 import { toggleLinkedProjectTask } from "../projects/task-actions.ts";
 import { mountAppNav } from "../ui/nav.ts";
 import { ItemPopover } from "../ui/popover.ts";
@@ -20,6 +21,7 @@ import {
 	formatNewLine,
 	insertIntoDesk,
 	insertIntoMonth,
+	setWallSide,
 	markSentToDesk,
 	moveWallItem,
 	type NewKind,
@@ -71,6 +73,9 @@ export class WallCalendarView extends ItemView {
 	private loadSeq = 0;
 	private busy = false;
 	private milestones: MilestoneCalendar = { markers: [], issues: [] };
+	/** 개인 / 회사 of each line (by index), and per month how many 예정 lines the mode folded away. */
+	private sides = new Map<number, Side>();
+	private hidden = new Map<number, number>();
 	/** Month whose inline add form is open (kept across re-renders). */
 	private addOpen: number | null = null;
 
@@ -182,7 +187,8 @@ export class WallCalendarView extends ItemView {
 		const milestones = await loadMilestoneCalendar(this.plugin);
 		if (seq !== this.loadSeq) return;
 		this.text = text;
-		this.milestones = milestones;
+		const mode = this.plugin.settings.sideMode;
+		this.milestones = { ...milestones, markers: milestones.markers.filter((m) => shows(asSide(m.scope), mode)) };
 		// Project sync must not erase a calendar task the user is currently typing.
 		if (this.addOpen !== null && this.rootEl.querySelector(".wc-addform")) return;
 		this.render();
@@ -224,7 +230,14 @@ export class WallCalendarView extends ItemView {
 
 		const wy = parseWallYear(this.text ?? wallYearSkeleton(this.year, todayIso()), this.year);
 		const grid = sheet.createDiv({ cls: "wc-months" });
-		for (const sec of wy.months) this.renderMonth(grid, sec.month, sec.lines, sec.headingIndex !== -1);
+		const mode = this.plugin.settings.sideMode;
+		const scopeOf = this.milestones.scopeOf;
+		for (const sec of wy.months) {
+			for (const l of sec.lines) this.sides.set(l.index, lineSide(l.line, scopeOf));
+			const shown = sec.lines.filter((l) => shows(this.sides.get(l.index)!, mode));
+			this.hidden.set(sec.month, sec.lines.filter((l) => l.item.status === "scheduled").length - shown.filter((l) => l.item.status === "scheduled").length);
+			this.renderMonth(grid, sec.month, shown, sec.headingIndex !== -1);
+		}
 
 		const global = wy.issues.filter((x) => x.month === undefined);
 		if (global.length) {
@@ -321,6 +334,12 @@ export class WallCalendarView extends ItemView {
 		if (state === "now") meta.createSpan({ cls: "wc-nowmark", text: "이번 달" });
 		const live = lines.filter((l) => l.item.status === "scheduled").length;
 		if (live) meta.createSpan({ cls: "wc-cnt", text: `예정 ${live}` });
+		const folded = this.hidden.get(month) ?? 0;
+		const mode = this.plugin.settings.sideMode;
+		if (folded && mode !== "전체") {
+			const other = mode === "개인" ? "회사" : "개인";
+			tip(meta.createSpan({ cls: `ml-side-hidden is-${other === "회사" ? "work" : "personal"}`, text: `${other} ${folded}` }), `${other} 일 ${folded}개는 ${mode} 모드에서 접어 두었어요`);
+		}
 		if (this.editable(month) && hasHeading) {
 			const add = meta.createEl("button", { cls: "wc-add", text: "+", attr: { type: "button", "aria-label": `${month}월에 추가`, title: "이 달에 추가" } });
 			add.addEventListener("click", () => {
@@ -420,6 +439,7 @@ export class WallCalendarView extends ItemView {
 		const it = l.item;
 		const kind = it.kind ?? "plain";
 		const li = ol.createEl("li", { cls: `wc-item k-${kind} s-${it.status}` });
+		if (this.sides.get(l.index) === "회사") li.addClass("is-work");
 		if (it.problems.length) li.addClass("is-flag");
 		const target: WallTarget = { month, index: l.index, line: l.line };
 		const canEdit = this.editable(month);
@@ -533,6 +553,10 @@ export class WallCalendarView extends ItemView {
 					.setIcon("check")
 					.onClick(() => void this.toggleProjectAware(month, target)),
 			);
+		}
+		if (canEdit && it.ok && !projectRef(l.line)) {
+			const other: Side = this.sides.get(l.index) === "회사" ? "개인" : "회사";
+			menu.addItem((m) => m.setTitle(`${other} 일로`).setIcon("arrow-left-right").onClick(() => void this.apply(`「${it.text}」 → ${other} 일`, (data) => setWallSide(data, this.year, target, other))));
 		}
 		if (canEdit && isCurrent && it.status === "scheduled" && it.ok) {
 			menu.addItem((m) => m.setTitle("Desk Calendar로 보내기").setIcon("arrow-right").onClick(() => void this.sendToDesk(month, l, target)));
@@ -716,6 +740,18 @@ export class WallCalendarView extends ItemView {
 			btns[k] = b;
 		}
 		setKind("task");
+		// 개인 / 회사: the mode's side by default (전체 → 개인), changeable here.
+		let side: Side = inputSide(this.plugin.settings.sideMode);
+		const sideSeg = kinds.createDiv({ cls: "mylogs-side-switch wc-addside", attr: { role: "radiogroup", "aria-label": "개인 / 회사" } });
+		const sideBtns = (["개인", "회사"] as Side[]).map((x) => {
+			const b = sideSeg.createEl("button", { cls: "mylogs-side-btn", text: x, attr: { type: "button", role: "radio", "data-side": x } });
+			b.addEventListener("click", () => {
+				side = x;
+				for (const o of sideBtns) o.toggleClass("is-active", o.dataset.side === x);
+			});
+			b.toggleClass("is-active", x === side);
+			return b;
+		});
 		const actions = form.createDiv({ cls: "wc-addactions" });
 		const cancel = actions.createEl("button", { text: "닫기", attr: { type: "button" } });
 		cancel.addEventListener("click", () => {
@@ -748,7 +784,7 @@ export class WallCalendarView extends ItemView {
 				}
 				d = n.date;
 			}
-			const line = formatNewLine({ kind, date: d, text: t });
+			const line = setSide(formatNewLine({ kind, date: d, text: t }), side);
 			this.addOpen = null;
 			void this.apply(`${this.ym(month)}에 ${KIND_LABEL[kind]} 추가: ${t}`, (data) => insertIntoMonth(data, this.year, month, line));
 		});

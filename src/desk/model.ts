@@ -8,6 +8,7 @@
  * Pure module (no Obsidian imports) so it can be unit-tested with `node --test`.
  */
 
+import type { Side } from "../side.ts";
 import { addDays, cleanInline, fromIsoDate, pad2, type ParsedItem, parseItem, splitLinesKeepEol, stripEol, toIsoDate } from "../parser.ts";
 
 export const WEEK_HEAD_RE = /^##\s+W(\d{1,2})\s*\(\s*(\d{1,2})\/(\d{1,2})\s*~\s*(\d{1,2})\/(\d{1,2})\s*\)\s*$/;
@@ -129,6 +130,8 @@ export interface DeskItem {
 	date?: string;
 	/** Assigned dates (ISO), for alloc items. */
 	assign: string[];
+	/** 개인 / 회사, set by `./side-filter.ts` (unset = not computed yet). */
+	side?: Side;
 }
 
 export interface FocusItem {

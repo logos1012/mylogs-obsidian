@@ -2,6 +2,7 @@ import { type ItemView, setIcon } from "obsidian";
 import { tip } from "./tip.ts";
 import { mountLumiButton } from "../lumi/register.ts";
 import type MyLogsPlugin from "../main.ts";
+import { SIDE_MODES, type SideMode } from "../side.ts";
 
 /** Every MyLogs view, in vault folder order (01 Pinboard … 12 Flywheel). */
 export const APP_VIEWS: { type: string; label: string; icon: string; desc: string }[] = [
@@ -40,9 +41,43 @@ export function mountAppNav(view: ItemView): void {
 			if (!on) void goToView(view, v.type);
 		});
 	}
+	const plugin = (view as unknown as { plugin?: MyLogsPlugin }).plugin;
+	if (plugin) mountSideSwitch(nav, plugin);
 	// Keep the current tab visible when the bar scrolls (phone width).
 	window.requestAnimationFrame(() => list.querySelector<HTMLElement>(".is-active")?.scrollIntoView({ block: "nearest", inline: "center" }));
-	mountLumiButton(view, (view as unknown as { plugin?: MyLogsPlugin }).plugin);
+	mountLumiButton(view, plugin);
+}
+
+const SIDE_TIP: Record<SideMode, string> = {
+	개인: "개인 모드 · 회사 일은 접어 두고 개인 일만 봐요. 새로 적는 일은 개인이에요",
+	회사: "회사 모드 · 회사 일만 봐요. 새로 적는 일에 #회사가 붙어요",
+	전체: "전체 · 개인과 회사를 함께 봐요. 새로 적는 일은 개인이에요",
+};
+
+/** 개인 / 회사 / 전체 (`../side.ts`). Changed by hand only; the band under the bar shows the mode. */
+function mountSideSwitch(nav: HTMLElement, plugin: MyLogsPlugin): void {
+	const mode = plugin.settings.sideMode;
+	nav.dataset.side = mode;
+	const seg = nav.createDiv({ cls: "mylogs-side-switch", attr: { role: "radiogroup", "aria-label": "개인 / 회사" } });
+	for (const m of SIDE_MODES) {
+		const b = seg.createEl("button", { cls: "mylogs-side-btn", text: m, attr: { type: "button", role: "radio", "data-side": m } });
+		b.toggleClass("is-active", m === mode);
+		b.setAttr("aria-checked", String(m === mode));
+		tip(b, SIDE_TIP[m]);
+		b.addEventListener("click", () => void plugin.setSideMode(m));
+	}
+}
+
+/** Every open MyLogs view's switch and band to `m` (before the views reload). */
+export function syncSideSwitches(m: SideMode): void {
+	document.querySelectorAll<HTMLElement>(".mylogs-appnav").forEach((nav) => {
+		nav.dataset.side = m;
+		nav.querySelectorAll<HTMLElement>(".mylogs-side-btn").forEach((b) => {
+			const on = b.dataset.side === m;
+			b.toggleClass("is-active", on);
+			b.setAttr("aria-checked", String(on));
+		});
+	});
 }
 
 async function goToView(from: ItemView, type: string): Promise<void> {
