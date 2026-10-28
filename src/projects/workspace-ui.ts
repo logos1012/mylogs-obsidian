@@ -11,7 +11,7 @@ export interface WorkspaceHost {
 	goal(id: string): void; link(): void; unlink(g: Goal): void; repair(g: Goal): void;
 	file(path: string): void; wheel(e: FlywheelElement): void;
 	milestones(parent: HTMLElement): void;
-	schedule?(parent: HTMLElement): void;
+	schedule?(parent: HTMLElement, calendar?: HTMLElement): void;
 }
 
 /** Placeholder bodies the templates leave behind: nothing to show yet. */
@@ -66,29 +66,6 @@ export function renderWorkspace(root: HTMLElement, p: Project, h: WorkspaceHost)
 
 	const layout = page.createDiv({ cls: "pf-workspace-layout" });
 	const main = layout.createDiv({ cls: "pf-workspace-main" });
-	const action = main.createDiv({ cls: "pf-workspace-action" });
-	const ak = action.createDiv({ cls: "pf-action-k", text: "지금 가장 효과적인 한 가지 행동" });
-	action.createDiv({ cls: "pf-action-v", text: p.action || "아직 정하지 않았어요" });
-	if (p.actionDraft) tip(action.createSpan({ text: "AI 초안", cls: "pf-draft" }), "AI가 제안한 행동이에요. 확인 후 수정해 주세요.");
-	if (!p.archived) iconButton(ak, "pencil", "다음 행동 수정", () => h.edit());
-	h.milestones(main);
-	h.schedule?.(main);
-	const sections = workspaceSections(h.text).filter((s) => !isEmptySection(s.text));
-	if (sections.length) {
-		const info = main.createDiv({ cls: "pf-workspace-info" });
-		info.createEl("h2", { text: "프로젝트 정보" });
-		for (const s of sections) {
-			const section = info.createEl("details", { cls: "pf-workspace-section" });
-			section.open = s.title === "성공 기준" || s.title === "막힌 점";
-			section.createEl("summary", { text: s.title });
-			const body = section.createDiv({ cls: "pf-workspace-markdown" });
-			void MarkdownRenderer.render(h.app, s.text, body, p.path, h.component).then(() => {
-				// Read-only projection: only the milestone controls write task state.
-				body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach(c => { c.disabled = true; });
-			}).catch(() => { body.setText(s.text); });
-		}
-	}
-
 	const side = layout.createDiv({ cls: "pf-workspace-side" });
 	const goals = side.createDiv({ cls: "pf-workspace-group" });
 	tip(goals.createEl("h2", { text: "연결 목표" }), "이 프로젝트가 돕는 목표예요. 마일스톤은 실행 진척, 목표는 결과라서 자동으로 합치지 않아요.");
@@ -108,6 +85,31 @@ export function renderWorkspace(root: HTMLElement, p: Project, h: WorkspaceHost)
 		});
 	}
 	if (!p.archived) button(goals, "+ 목표 연결", h.link, "pf-btn-quiet");
+	// 할 일·일정 달력 sits here, under 연결 목표 (wide enough; the task list keeps the main column).
+	const calendarSlot = side.createDiv({ cls: "pf-workspace-calendar" });
+	const action = main.createDiv({ cls: "pf-workspace-action" });
+	const ak = action.createDiv({ cls: "pf-action-k", text: "지금 가장 효과적인 한 가지 행동" });
+	action.createDiv({ cls: "pf-action-v", text: p.action || "아직 정하지 않았어요" });
+	if (p.actionDraft) tip(action.createSpan({ text: "AI 초안", cls: "pf-draft" }), "AI가 제안한 행동이에요. 확인 후 수정해 주세요.");
+	if (!p.archived) iconButton(ak, "pencil", "다음 행동 수정", () => h.edit());
+	h.milestones(main);
+	h.schedule?.(main, calendarSlot);
+	const sections = workspaceSections(h.text).filter((s) => !isEmptySection(s.text));
+	if (sections.length) {
+		const info = main.createDiv({ cls: "pf-workspace-info" });
+		info.createEl("h2", { text: "프로젝트 정보" });
+		for (const s of sections) {
+			const section = info.createEl("details", { cls: "pf-workspace-section" });
+			section.open = s.title === "성공 기준" || s.title === "막힌 점";
+			section.createEl("summary", { text: s.title });
+			const body = section.createDiv({ cls: "pf-workspace-markdown" });
+			void MarkdownRenderer.render(h.app, s.text, body, p.path, h.component).then(() => {
+				// Read-only projection: only the milestone controls write task state.
+				body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach(c => { c.disabled = true; });
+			}).catch(() => { body.setText(s.text); });
+		}
+	}
+
 	const wheels = sharedFlywheel(p, h.goals, h.elements);
 	if (wheels.length) {
 		const group = side.createDiv({ cls: "pf-workspace-group" });

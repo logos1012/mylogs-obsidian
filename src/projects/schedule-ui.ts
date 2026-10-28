@@ -6,15 +6,17 @@ import { renderTaskOutline, type OutlineState } from "./outline-ui.ts";
 import { monthDays, weekdayMon0, shiftMonth, weekMondays, todayIsoLocal } from "../desk/model.ts";
 import { applySchedule, scheduleSource, scheduleTarget, selectSchedule, selectedSchedule, type ScheduleItem } from "./schedule-dnd.ts";
 export interface ScheduleState extends OutlineState { month:string; busy?:boolean; error?:string; select?:(item:ScheduleItem)=>void; calendar?:boolean /** undefined = open (default) */; }
-export function renderProjectSchedule(parent:HTMLElement,host:ProjectsHost,p:Project,tasks:ProjectTask[],state:ScheduleState,refresh:()=>Promise<void>, hubText=""):void {
+/** `calendarHost`: where the month calendar goes (the workspace side column), else beside the list. */
+export function renderProjectSchedule(parent:HTMLElement,host:ProjectsHost,p:Project,tasks:ProjectTask[],state:ScheduleState,refresh:()=>Promise<void>, hubText="", calendarHost?:HTMLElement):void {
  const root=parent.createDiv({cls:"pf-schedule"});
+ const calRoot=calendarHost?.createDiv({cls:"pf-schedule pf-schedule-side"});
  const ms:ScheduleItem[]=(p.milestones??[]).map(m=>({kind:"milestone",projectPath:p.path,projectId:p.id,line:m.line,title:m.text,source:p.milestoneSource??"",date:m.due}));
  const ti=(task:ProjectTask):ScheduleItem=>({kind:"task",projectPath:p.path,projectId:p.id,title:task.title,task});
- state.select=item=>{selectSchedule(host,item);state.calendar=true;if(item.kind==="milestone"&&item.date)state.month=item.date.slice(0,7);paint();root.querySelector(".pf-schedule-calendar")?.scrollIntoView({block:"nearest"});root.querySelector<HTMLElement>(".pf-schedule-day")?.focus({preventScroll:true});};
+ state.select=item=>{selectSchedule(host,item);state.calendar=true;if(item.kind==="milestone"&&item.date)state.month=item.date.slice(0,7);paint();(calRoot??root).querySelector(".pf-schedule-calendar")?.scrollIntoView({block:"nearest"});(calRoot??root).querySelector<HTMLElement>(".pf-schedule-day")?.focus({preventScroll:true});};
  const button=(el:HTMLElement,text:string,action:()=>void,cls="")=>{const b=el.createEl("button",{text,cls,attr:{type:"button"}});b.disabled=!!state.busy;b.addEventListener("click",e=>{e.stopPropagation();action();});return b;};
  const run=async(action:()=>Promise<void>,clear=false)=>{if(state.busy)return;state.busy=true;state.error="";paint();try{await action();selectSchedule(host,null);}catch(e){state.error=e instanceof Error?e.message:String(e);}finally{state.busy=false;paint();await refresh();}};
  const paint=()=>{
-  root.empty();root.toggleClass("is-busy",!!state.busy);
+  root.empty();root.toggleClass("is-busy",!!state.busy);calRoot?.empty();
   const head=root.createDiv({cls:"pf-schedule-head"});
   tip(head.createEl("h2",{text:"할 일·일정"}),p.archived?"보관된 프로젝트 · 읽기 전용":"할 일은 □, 마일스톤은 ◆. 항목을 달력 날짜로 끌거나, 항목을 누른 뒤 날짜를 누르면 배정돼요.");
   const selected=selectedSchedule(host),chosen=selected?.projectId===p.id?selected:null;
@@ -33,8 +35,9 @@ export function renderProjectSchedule(parent:HTMLElement,host:ProjectsHost,p:Pro
   renderTaskOutline(list,host,p,tasks,hubText,state,refresh,it=>state.select?.(it));
   const undated=ms.filter(m=>m.kind==="milestone"&&!m.date);
   if(undated.length){list.createEl("h3",{text:"날짜 미정 마일스톤"});for(const m of undated){const b=button(list,`◆ ${m.title}`,()=>state.select?.(m),"pf-schedule-milestone");if(!p.archived&&!state.busy)scheduleSource(b,host,m);}}
-  layout.toggleClass("is-calendar-closed",!calOpen);
-  const calendar=layout.createDiv({cls:"pf-schedule-calendar"}),nav=calendar.createDiv({cls:"pf-schedule-nav"});
+  layout.toggleClass("is-calendar-closed",!calOpen||!!calRoot);
+  calRoot?.toggle(calOpen);
+  const calendar=(calRoot??layout).createDiv({cls:"pf-schedule-calendar"}),nav=calendar.createDiv({cls:"pf-schedule-nav"});
   if(!calOpen)calendar.hide();
   button(nav,"‹",()=>{state.month=shiftMonth(state.month,-1);paint();}).setAttr("aria-label","이전 달");
   nav.createEl("strong",{text:state.month});button(nav,"오늘",()=>{state.month=todayIsoLocal().slice(0,7);paint();});
