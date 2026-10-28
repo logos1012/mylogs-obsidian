@@ -148,3 +148,16 @@ test("checking a 결정 대기 line finishes the original on its day; unchecking
 	assert.equal(await api.togglePending(host, "2026-11-05", doneLine, TODAY), "open");
 	assert.match(data.get("03 Desk Calendar/2026/2026-11.md")!, /### 2026-11-04\n- \[ \] 독서 모임 장소 예약하기/);
 });
+
+test("오늘로: into today's 개인 / 회사 할 일 (the section is the side), original [>] today, side found from the day it came from", async () => {
+	const { host, data } = setup({ "04 Daily Pad/2026/2026-11-04.md": `---\ntype: daily-pad\n---\n\n# 2026-11-04\n\n## 개인 할 일\n- [ ] 장 보기\n\n## 회사 할 일\n- [ ] 산책 코스 정하기\n` });
+	const walk = { index: LINE_INDEX + 1, line: "- [ ] 산책 코스 정하기 (from:: Daily Pad 2026-11-04)", indent: 0, item: { text: "산책 코스 정하기", tags: [], test: false } };
+	assert.equal(await api.pendingSide(host, "2026-11-05", walk), "회사");
+	assert.equal(await api.pendingSide(host, "2026-11-05", sl(LINE_INDEX)), "개인");
+	await api.applyPending(host, "2026-11-05", walk, { kind: "today", date: "2026-11-05", side: "회사" }, TODAY);
+	const p = data.get("04 Daily Pad/2026/2026-11-05.md")!;
+	assert.match(p, /## 회사 할 일\n- \[ \] 산책 코스 정하기 \(moved:: 1\)\n/);
+	assert.doesNotMatch(p, /산책 코스 정하기 \(from::/);
+	assert.match(data.get("04 Daily Pad/2026/2026-11-04.md")!, /\[>\] 산책 코스 정하기 → 11\/05 \(moved:: 1\)/);
+	assert.match(data.get("04 Daily Pad/Daily Pad Index.md")!, /→ 오늘\(11\/05\) 회사 할 일/);
+});

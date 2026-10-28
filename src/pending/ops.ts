@@ -17,6 +17,8 @@ import { findDaySection, parseItem, splitLinesKeepEol, stripEol, TASK_LINE_RE } 
 import { appendToSection, findSection, sectionLineRange } from "../writer.ts";
 
 export type PendingChoice =
+	/** 오늘 하기: into this Daily Pad's 개인 할 일 / 회사 할 일 (one tap, or a drop on that section). */
+	| { kind: "today"; date: string; side: "개인" | "회사" }
 	| { kind: "day"; date: string }
 	| { kind: "future"; month: string }
 	| { kind: "drawer"; when: string }
@@ -44,6 +46,7 @@ function mmdd(iso: string): string {
 /** Where the destination was, as written after `→` on the original line. */
 export function arrowTarget(c: PendingChoice): string | null {
 	switch (c.kind) {
+		case "today":
 		case "day":
 			return mmdd(c.date);
 		case "future":
@@ -59,7 +62,7 @@ export function arrowTarget(c: PendingChoice): string | null {
 
 /** Does this choice postpone (and count in `moved::`)? */
 export function postpones(c: PendingChoice): boolean {
-	return c.kind === "day" || c.kind === "future";
+	return c.kind === "day" || c.kind === "future" || c.kind === "today";
 }
 
 /** The original line, marked for the choice. */
@@ -143,6 +146,8 @@ export function dropIndexRow(indexText: string, key: string, section = "결정 �
 /** One-line description of what happened, for the index change log. */
 export function describeChoice(text: string, c: PendingChoice, moved: number): string {
 	switch (c.kind) {
+		case "today":
+			return `결정 대기 「${text}」 → 오늘(${mmdd(c.date)}) ${c.side} 할 일 (moved:: ${moved + 1})`;
 		case "day":
 			return `결정 대기 「${text}」 → ${mmdd(c.date)} Desk Calendar (moved:: ${moved + 1})`;
 		case "future":

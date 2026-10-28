@@ -11281,3 +11281,12 @@ button.vb-nav-btn:hover { color: var(--text-normal); transform: scale(1.06); }
 	.mylogs-shelf button.mls-toc-item { padding: 9px 0 9px 12px; font-size: 14px; }
 	.mylogs-shelf .mls-folio { bottom: 26px; }
 }
+
+/* Daily Pad 결정 대기: 「오늘로」 + ⋯, drag onto 개인 / 회사 할 일 (0.36.0). */
+.mylogs-daily-pad .ml-decide-acts { display: inline-flex; gap: 4px; margin-left: auto; flex: 0 0 auto; }
+.mylogs-daily-pad button.ml-decide-today { color: var(--text-accent); font-weight: 600; }
+.mylogs-daily-pad button.ml-decide-more { min-width: 28px; padding: 0 6px; }
+.mylogs-daily-pad .ml-pending-draggable { cursor: grab; }
+.mylogs-daily-pad.is-dragging-pending .ml-section-today,
+.mylogs-daily-pad.is-dragging-pending .ml-section-work { outline: 2px dashed var(--background-modifier-border); outline-offset: 4px; border-radius: var(--radius-m); }
+.mylogs-daily-pad .ml-section.is-drop-target { outline: 2px solid var(--interactive-accent) !important; background: var(--background-modifier-hover); }
