@@ -124,6 +124,10 @@ export class DeskCalendarView extends ItemView {
 	/** Month level filter while the desktop month calendar draws (「할 일」 off). */
 	private levelFilter = false;
 	private weekSeq = 0;
+	/** Daily Pad 「오늘 할 일」 of the shown weeks (loaded while 「할 일」 is on). */
+	private pads = new Map<string, PadTask[]>();
+	/** Draw each day's Daily Pad tasks under its cell (month level with 「할 일」 on). */
+	private padCells = false;
 	/** This month's Wall Calendar year file (its open lines can be dragged into the month). */
 	private wallText: string | null = null;
 	/** A Wall line being dragged onto a day or 이달 중. */
@@ -194,7 +198,8 @@ export class DeskCalendarView extends ItemView {
 		mountAppNav(this);
 		const onFile = (f: TAbstractFile, old?: string) => {
 			const paths = this.watchedPaths();
-			if (paths.includes(f.path) || (old && paths.includes(old)) || watchesMilestoneProjects(this.plugin, f.path) || (old && watchesMilestoneProjects(this.plugin, old))) this.scheduleReload();
+			const pad = this.plugin.settings.deskShowTasks && (f.path.startsWith(`${this.plugin.settings.dailyPadFolder}/`) || !!old?.startsWith(`${this.plugin.settings.dailyPadFolder}/`));
+			if (pad || paths.includes(f.path) || (old && paths.includes(old)) || watchesMilestoneProjects(this.plugin, f.path) || (old && watchesMilestoneProjects(this.plugin, old))) this.scheduleReload();
 		};
 		this.registerEvent(this.app.vault.on("modify", (f) => onFile(f)));
 		this.registerEvent(this.app.vault.on("create", (f) => onFile(f)));
@@ -239,11 +244,22 @@ export class DeskCalendarView extends ItemView {
 			loaded.set(key, parseMonthFile(text, ym.year, ym.month));
 		}
 		const milestones = await loadMilestoneCalendar(this.plugin);
+		const pads = new Map<string, PadTask[]>();
+		if (this.plugin.settings.deskShowTasks) {
+			const ym = parseMonthKey(this.month)!;
+			for (const monday of weekMondays(ym.year, ym.month))
+				for (let i = 0; i < 7; i++) {
+					const iso = addDays(monday, i);
+					const tasks = await this.padTasks(iso);
+					if (tasks.length) pads.set(iso, tasks);
+				}
+		}
 		const wf = this.fileAt(this.wallPath(+this.month.slice(0, 4)));
 		const wallText = wf ? await this.app.vault.read(wf) : null;
 		if (seq !== this.loadSeq) return;
 		this.milestones = milestones;
 		this.months = loaded;
+		this.pads = pads;
 		this.wallText = wallText;
 		this.render();
 	}
@@ -279,10 +295,12 @@ export class DeskCalendarView extends ItemView {
 			bar.createSpan({ text: `이 달에는 화면 확인용 테스트 데이터(#test) ${summary.counts.test}줄이 있어요. 실제 일정을 넣을 때 지웁니다.` });
 		}
 		this.levelFilter = !this.plugin.settings.deskShowTasks;
+		this.padCells = this.plugin.settings.deskShowTasks;
 		try {
 			this.renderCalendar(root, cur, ctx);
 		} finally {
 			this.levelFilter = false;
+			this.padCells = false;
 		}
 		this.renderLegend(root);
 		if (summary.issues.length) {
@@ -326,7 +344,15 @@ export class DeskCalendarView extends ItemView {
 			renderHeader: (root) => this.renderHeader(root, ctx()),
 			renderEmpty: (root) => this.renderEmpty(root),
 			renderBands: (root) => this.renderBands(root, cur(), ctx()),
-			renderDayCell: (row, iso) => this.renderDayCell(row, iso, cur(), ctx()),
+			renderDayCell: (row, iso, withPads = false) => {
+				this.padCells = withPads && this.plugin.settings.deskShowTasks;
+				try {
+					this.renderDayCell(row, iso, cur(), ctx());
+				} finally {
+					this.padCells = false;
+				}
+			},
+			padsOf: (iso) => (this.plugin.settings.deskShowTasks ? (this.pads.get(iso) ?? []) : []),
 			renderAllocCell: (row, monday) => this.renderAllocCell(row, monday, cur(), ctx()),
 			dayItems: (iso) => ctx().months.find((m) => m.key === iso.slice(0, 7))?.days.get(iso) ?? [],
 			allocItems: (monday) => allocWeek(ctx(), monday)?.alloc ?? [],
@@ -348,6 +374,7 @@ export class DeskCalendarView extends ItemView {
 			setShowTasks: (v) => {
 				this.plugin.settings.deskShowTasks = v;
 				void this.plugin.saveSettings();
+				void this.reload();
 			},
 			duringItems: () => cur().during,
 			assignDuringToDay: (it, iso) => this.assignDuringToDay(it, iso),
@@ -413,7 +440,7 @@ export class DeskCalendarView extends ItemView {
 			const tb = btn("할 일", "할 일 보이기/숨기기", () => {
 				this.plugin.settings.deskShowTasks = !this.plugin.settings.deskShowTasks;
 				void this.plugin.saveSettings();
-				this.render();
+				void this.reload();
 			}, "list-checks");
 			tb.addClass("dc-tasks-toggle");
 			tb.createSpan({ cls: "dc-hide-label", text: "할 일" });
@@ -593,6 +620,7 @@ export class DeskCalendarView extends ItemView {
 			const ul = cell.createEl("ul", { cls: "dc-items" });
 			for (const it of items) this.renderDayItem(ul, it, ctx);
 		}
+		if (this.padCells) appendPadTasks(cell, this.pads.get(iso) ?? [], (pt) => void this.togglePadTask(iso, pt));
 		if (!dayExists(ctx, iso)) return;
 		if (inMonth) this.wallDropZone(cell, iso);
 		const monday = addDays(iso, -wd);
