@@ -5,7 +5,7 @@ import { missingTaskRefs, type ProjectTask } from "./tasks.ts";
 import { changeProjectTask, newTaskId } from "./task-actions.ts";
 import { monthDays, weekdayMon0, shiftMonth, weekMondays, todayIsoLocal } from "../desk/model.ts";
 import { applySchedule, scheduleSource, scheduleTarget, selectSchedule, selectedSchedule, type ScheduleItem } from "./schedule-dnd.ts";
-export interface ScheduleState { month:string; draft:string; draftId?:string; editing?:ProjectTask; busy?:boolean; error?:string; select?:(item:ScheduleItem)=>void; calendar?:boolean /** undefined = open (default) */ }
+export interface ScheduleState { month:string; draft:string; draftId?:string; editing?:ProjectTask; busy?:boolean; error?:string; select?:(item:ScheduleItem)=>void; calendar?:boolean /** undefined = open (default) */; /** Adding a 하위 할 일 under this task. */ parent?:ProjectTask }
 export function renderProjectSchedule(parent:HTMLElement,host:ProjectsHost,p:Project,tasks:ProjectTask[],state:ScheduleState,refresh:()=>Promise<void>, hubText=""):void {
  const root=parent.createDiv({cls:"pf-schedule"});
  const ms:ScheduleItem[]=(p.milestones??[]).map(m=>({kind:"milestone",projectPath:p.path,projectId:p.id,line:m.line,title:m.text,source:p.milestoneSource??"",date:m.due}));
@@ -30,30 +30,39 @@ export function renderProjectSchedule(parent:HTMLElement,host:ProjectsHost,p:Pro
   list.createEl("h3",{text:"할 일"});
   if(!p.archived){
    const form=list.createEl("form",{cls:"pf-task-form"});
-   const input=form.createEl("input",{attr:{type:"text",placeholder:state.editing?"할 일 수정":"할 일을 적고 Enter", "aria-label":"프로젝트 할 일"}});input.value=state.draft;input.disabled=!!state.busy;
+   if(state.parent)form.createDiv({cls:"pf-task-parent-hint",text:`「${state.parent.title}」 아래에 하위 할 일 추가`});
+   const input=form.createEl("input",{attr:{type:"text",placeholder:state.editing?"할 일 수정":state.parent?"하위 할 일을 적고 Enter":"할 일을 적고 Enter", "aria-label":"프로젝트 할 일"}});input.value=state.draft;input.disabled=!!state.busy;
    input.addEventListener("input",()=>{state.draft=input.value;});
-   input.addEventListener("keydown",e=>{if(e.key==="Escape"&&!state.busy){state.draft="";state.editing=undefined;state.draftId=undefined;paint();void refresh();}});
+   input.addEventListener("keydown",e=>{if(e.key==="Escape"&&!state.busy){state.draft="";state.editing=undefined;state.parent=undefined;state.draftId=undefined;paint();void refresh();}});
    const submit=form.createEl("button",{text:state.editing?"저장":"추가",attr:{type:"submit"}});submit.disabled=!!state.busy;
-   form.addEventListener("submit",e=>{e.preventDefault();if(!state.draft.trim())return;const value=state.draft,editing=state.editing;state.draftId??=newTaskId();void run(()=>changeProjectTask(host,p,editing?{kind:"edit",task:editing,text:value}:{kind:"add",text:value,id:state.draftId!},todayIsoLocal()),true);});
-   if(state.draft||state.editing)button(form,"입력 취소",()=>{state.draft="";state.editing=undefined;state.draftId=undefined;paint();void refresh();});
+   form.addEventListener("submit",e=>{e.preventDefault();if(!state.draft.trim())return;const value=state.draft,editing=state.editing;state.draftId??=newTaskId();const parent=state.parent;void run(()=>changeProjectTask(host,p,editing?{kind:"edit",task:editing,text:value}:{kind:"add",text:value,id:state.draftId!,parentId:parent?.id},todayIsoLocal()).then(()=>{state.parent=undefined;}),true);});
+   if(state.draft||state.editing||state.parent)button(form,"입력 취소",()=>{state.draft="";state.editing=undefined;state.parent=undefined;state.draftId=undefined;paint();void refresh();});
    if(p.action&&!tasks.some(t=>t.title===p.action))button(list,"다음 행동을 할 일에 추가",()=>{state.draft=p.action;paint();root.querySelector<HTMLInputElement>(".pf-task-form input")?.focus();});
   }
   for(const title of missingTaskRefs(hubText,tasks))list.createDiv({cls:"pf-ms-error",text:`「${title}」의 달력 원본을 찾지 못했어요. 삭제·보류 여부를 확인해 주세요. 자동으로 다시 만들지 않습니다.`});
   if(!tasks.length)list.createEl("p",{cls:"pf-schedule-muted",text:"할 일이 없어요."});
-  for(const task of tasks){
-   const row=list.createDiv({cls:`pf-task-row${task.state==="done"?" is-done":""}`});
-   const check=row.createEl("input",{attr:{type:"checkbox","aria-label":`${task.title} 완료`}});check.checked=task.state==="done";check.disabled=p.archived||!!state.busy||task.state==="cancelled"||!!(task.desk&&task.desk.section!=="day");
+  // 위계: a 묶음 row, then its 하위 할 일 indented under it (assigned ones included).
+  const shown=new Set(tasks.filter(t=>t.group).map(t=>t.id));
+  const renderTask=(task:ProjectTask,depth:number)=>{
+   const row=list.createDiv({cls:`pf-task-row${task.state==="done"?" is-done":""}${depth?" is-child":""}${task.group?" is-group":""}`});
+   const check=row.createEl("input",{attr:{type:"checkbox","aria-label":`${task.title} 완료`}});check.checked=task.state==="done";check.disabled=p.archived||!!state.busy||task.state==="cancelled"||!!task.group||!!(task.desk&&task.desk.section!=="day");
+   if(task.group)tip(check,"하위 할 일이 모두 끝나면 저절로 완료돼요");
    check.addEventListener("change",()=>void run(()=>changeProjectTask(host,p,{kind:"toggle",task},todayIsoLocal())));
    const body=row.createDiv({cls:"pf-task-body"}),item=ti(task);
    if(task.issue)body.createDiv({cls:"pf-ms-error",text:task.issue});
-   const pick=button(body,task.title,()=>{if(!p.archived&&task.state==="scheduled"&&!task.issue)state.select?.(item);},"pf-task-title");
-   body.createSpan({cls:"pf-schedule-muted",text:task.state==="cancelled"?"놓아줌":task.date??(task.desk?.section==="alloc"?`${task.desk.monday} 주`:task.month?`${task.month} 이달 중`:"미배정")});
-   if(!p.archived&&task.state==="scheduled"&&!state.busy&&!task.issue)scheduleSource(pick,host,item);
+   const schedulable=!p.archived&&task.state==="scheduled"&&!task.issue&&!task.group;
+   const pick=button(body,task.title,()=>{if(schedulable)state.select?.(item);},"pf-task-title");
+   const kids=task.group?tasks.filter(x=>x.parentId===task.id):[];
+   body.createSpan({cls:"pf-schedule-muted",text:task.group?`하위 ${kids.filter(x=>x.state==="done").length}/${kids.length}`:task.state==="cancelled"?"놓아줌":task.date??(task.desk?.section==="alloc"?`${task.desk.monday} 주`:task.month?`${task.month} 이달 중`:"미배정")});
+   if(schedulable&&!state.busy)scheduleSource(pick,host,item);
    if(!p.archived){
     const more=row.createEl("details",{cls:"pf-task-more"});more.createEl("summary",{text:"⋯",attr:{"aria-label":`${task.title} 메뉴`}});
-    button(more,"수정",()=>{state.editing=task;state.draft=task.title;paint();root.querySelector<HTMLInputElement>(".pf-task-form input")?.focus();});
+    button(more,"수정",()=>{state.editing=task;state.parent=undefined;state.draft=task.title;paint();root.querySelector<HTMLInputElement>(".pf-task-form input")?.focus();});
+    if(task.kind==="hub"&&!depth&&(task.state==="scheduled"||task.group))button(more,"하위 할 일 추가",()=>{state.parent=task;state.editing=undefined;state.draft="";paint();root.querySelector<HTMLInputElement>(".pf-task-form input")?.focus();});
    }
-  }
+   for(const k of kids)renderTask(k,1);
+  };
+  for(const task of tasks){if(task.parentId&&shown.has(task.parentId))continue;renderTask(task,0);}
   const undated=ms.filter(m=>m.kind==="milestone"&&!m.date);
   if(undated.length){list.createEl("h3",{text:"날짜 미정 마일스톤"});for(const m of undated){const b=button(list,`◆ ${m.title}`,()=>state.select?.(m),"pf-schedule-milestone");if(!p.archived&&!state.busy)scheduleSource(b,host,m);}}
   layout.toggleClass("is-calendar-closed",!calOpen);
