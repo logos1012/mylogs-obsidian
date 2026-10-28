@@ -12,6 +12,7 @@
  *   Drawer     drawer_item (today · month · letgo · section · edit · delete)
  *   Toolbox    skill (status · run · discard · create)
  *   Mode       side_mode (개인 · 회사 · 전체, when the user asks)
+ *   Vision     vision_card (add · edit · move · delete) · vision_affirmation (읽음은 flywheel_check)
  *
  * Not here on purpose: Diary body (the user's own words — 09 Diary AGENTS), My Life (Hermes writes it).
  */
@@ -43,6 +44,8 @@ import { deleteDrawerItem, editDrawerItem, letGoItem, moveToSection, takeOutMont
 import { createSkill, discardSkill, loadToolbox, nextId, requestRun, setStatus } from "../toolbox/actions.ts";
 import { SKILL_KINDS, SKILL_STATUSES, type Skill } from "../toolbox/model.ts";
 import { lineSide, type Side } from "../side.ts";
+import { moveCard, parseVisionBoard, setAffirmation, setCards, type VisionCard } from "../vision/model.ts";
+import { editVisionBoard, visionFile } from "../vision/actions.ts";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD");
 const ym = z.string().regex(/^\d{4}-\d{2}$/, "YYYY-MM");
@@ -547,9 +550,64 @@ export const MORE_TOOLS: LumiTool[] = [
 			return `${String(a.mode)} 모드로 바꿨어요.`;
 		},
 	},
+	// ── Vision Board ──
+	{
+		name: "vision_card",
+		description: "Vision Board 비전 카드(화면의 카드 ⋯와 같다). action: add(title, text, image) | edit(card + 바꿀 칸) | move(card, to: 1부터) | delete(card, 확인 카드). card는 장면 이름 또는 1부터 순서. image는 볼트 안 이미지 경로(00 Vision Board/images/…), 비우면 없음. 문장은 이미 이룬 것처럼 짧게, 사용자의 말 그대로.",
+		shape: { action: z.enum(["add", "edit", "move", "delete"]), card: z.string().optional(), title: z.string().optional(), text: z.string().optional(), image: z.string().optional(), to: z.number().int().optional() },
+		big: (a) => a.action === "delete",
+		async preview(ctx, a) {
+			const { c } = await visionCardBy(ctx, String(a.card ?? ""));
+			return { title: `비전 카드 지우기: ${c.title}`, lines: [c.text, "이미지 파일은 images 폴더에 남아요."].filter(Boolean) };
+		},
+		async run(ctx, a) {
+			const folder = ctx.host.settings.visionBoardPath;
+			const action = String(a.action);
+			if (action === "add") {
+				const title = String(a.title ?? "").trim();
+				if (!title) throw new Error("장면 이름(title)이 필요해요.");
+				const card = { title, text: String(a.text ?? ""), image: String(a.image ?? "") };
+				await editVisionBoard(ctx.host.app, folder, ctx.today, `비전 카드 추가: ${title}`, (t, b) => setCards(t, [...b.cards, card]));
+				return `비전 카드 「${title}」를 넣었어요`;
+			}
+			const { i, c } = await visionCardBy(ctx, String(a.card ?? ""));
+			if (action === "delete") {
+				await editVisionBoard(ctx.host.app, folder, ctx.today, `비전 카드 지움: ${c.title}`, (t, b) => setCards(t, b.cards.filter((_, k) => k !== i)));
+				return `비전 카드 「${c.title}」를 지웠어요`;
+			}
+			if (action === "move") {
+				const to = Math.max(1, Number(a.to ?? 1)) - 1;
+				await editVisionBoard(ctx.host.app, folder, ctx.today, `비전 카드 순서: ${c.title}`, (t, b) => setCards(t, moveCard(b.cards, i, to)));
+				return `「${c.title}」를 ${to + 1}번째로 옮겼어요`;
+			}
+			const next = { title: a.title === undefined ? c.title : String(a.title), text: a.text === undefined ? c.text : String(a.text), image: a.image === undefined ? c.image : String(a.image) };
+			await editVisionBoard(ctx.host.app, folder, ctx.today, `비전 카드 고침: ${next.title}`, (t, b) => setCards(t, b.cards.map((x, k) => (k === i ? next : x))));
+			return `비전 카드 「${next.title}」를 고쳤어요`;
+		},
+	},
+	{
+		name: "vision_affirmation",
+		description: "Vision Board 확언 전문을 통째로 바꾸기(화면의 「확언 고치기」와 같다). 사용자가 불러 준 말 그대로 쓰고, 다듬은 초안은 먼저 보여 주고 승인받은 뒤에 쓴다. 읽음 체크는 여기서 하지 않는다(사용자가 화면에서 끝까지 읽고 넘길 때, 또는 flywheel_check).",
+		shape: { text: z.string() },
+		async run(ctx, a) {
+			await editVisionBoard(ctx.host.app, ctx.host.settings.visionBoardPath, ctx.today, "확언 고침", (t) => setAffirmation(t, String(a.text)));
+			return "확언을 바꿨어요";
+		},
+	},
 ];
 
 // ───────────────────────── targets ─────────────────────────
+
+async function visionCardBy(ctx: ToolCtx, want: string): Promise<{ i: number; c: VisionCard }> {
+	const f = visionFile(ctx.host.app, ctx.host.settings.visionBoardPath);
+	if (!f) throw new Error("Vision Board.md가 없어요.");
+	const cards = parseVisionBoard(await ctx.host.app.vault.read(f)).cards;
+	if (!cards.length) throw new Error("비전 카드가 없어요.");
+	const n = /^\d+$/.test(want.trim()) ? Number(want) - 1 : -1;
+	if (n >= 0 && n < cards.length) return { i: n, c: cards[n] };
+	const c = pick(cards, want, (x) => x.title, "비전 카드");
+	return { i: cards.indexOf(c), c };
+}
 
 async function deskTarget(ctx: ToolCtx, a: Record<string, unknown>): Promise<{ it: DeskItem; months: MonthData[] }> {
 	const month = String(a.month ?? (a.date ? String(a.date).slice(0, 7) : ctx.today.slice(0, 7)));
