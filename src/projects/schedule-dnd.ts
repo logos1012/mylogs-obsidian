@@ -2,13 +2,13 @@ import { Notice } from "obsidian";
 import type { ProjectsHost } from "./actions.ts";
 import { readProject } from "../pinboard/create-actions.ts";
 import { saveMilestone } from "./milestone-actions.ts";
-import { changeProjectTask, type ScheduleTarget } from "./task-actions.ts";
+import { changeProjectTask, loadProjectTasks, type ScheduleTarget } from "./task-actions.ts";
 import type { ProjectTask } from "./tasks.ts";
 import { todayIsoLocal } from "../desk/model.ts";
 import { askForm } from "../ui/modals.ts";
 export type ScheduleItem = {kind:"milestone";projectPath:string;projectId:string;line:number;title:string;source:string;date?:string} | {kind:"task";projectPath:string;projectId:string;title:string;task:ProjectTask};
-const MIME="application/x-mylogs-project-schedule";
-const TOUCH_DROP="mylogs-schedule-drop";
+export const MIME="application/x-mylogs-project-schedule";
+export const TOUCH_DROP="mylogs-schedule-drop";
 let active:{app:object;item:ScheduleItem}|null=null;
 let saving=false;
 export const selectedSchedule=(host:ProjectsHost):ScheduleItem|null=>active?.app===host.app?active.item:null;
@@ -26,6 +26,15 @@ export async function applySchedule(host:ProjectsHost,item:ScheduleItem,target:S
   await saveMilestone(host,p,item.source,{kind:"edit",line:item.line,text:item.title,due:target?.date??""},todayIsoLocal());
  }else{
   if(!target)throw Error("할 일을 배정할 달·주·날짜를 골라 주세요.");
+  // A 묶음 goes to a month as a whole: each of its 하위 할 일 not yet assigned goes there.
+  if(item.task.group){
+   if(target.kind!=="month")throw Error("묶음은 달에만 놓아요. 하위 할 일은 Desk에서 주·날로 배정해요.");
+   const {text}=await readProject(host,item.projectPath);
+   const kids=(await loadProjectTasks(host,p,text!)).filter(t=>t.parentId===item.task.id&&t.kind==="hub"&&t.state==="scheduled");
+   if(!kids.length)throw Error("달에 놓을 하위 할 일이 없어요.");
+   for(const k of kids){const fresh=(await loadProjectTasks(host,p,(await readProject(host,item.projectPath)).text!)).find(t=>t.id===k.id&&t.kind==="hub");if(fresh)await changeProjectTask(host,p,{kind:"schedule",task:fresh,target},todayIsoLocal());}
+   return;
+  }
   const n=/\(moved::\s*(\d+)\)/.exec(item.task.line);let reviewed:string|undefined;
   if(item.task.date&&Number(n?.[1])>=2) {
    const v=await askForm(host.app,{title:"세 번째 미루기",desc:"반드시 해야 하는 일인가요? 나나 내 사람에게 중요한가요? 둘 다 아니라면 놓아주기를 고려하세요.",fields:[{key:"reason",label:"의무·가치와 못 한 이유",type:"text",value:""}],validate:v=>v.reason.trim()?[]:["계속할 이유를 적어 주세요."],cta:"확인하고 배정"});

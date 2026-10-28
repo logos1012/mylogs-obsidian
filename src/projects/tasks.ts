@@ -59,6 +59,71 @@ export function appendChildTask(text: string, parentIndex: number, line: string)
 }
 
 /**
+ * Move a hub row (checkbox or reference, by task id) under `parentId` (a top-level row with a
+ * checkbox), or out to the top level (`null`: right after the 묶음 it was in). Two levels only: a
+ * 묶음 with 하위 할 일 can't go under another row.
+ */
+export function placeTask(text: string, id: string, parentId: string | null): string {
+ const sec=findSection(text,"할 일");if(!sec)throw Error("할 일 섹션이 없어요.");
+ const lines=splitLinesKeepEol(text),eol=detectEol(text);
+ let end=sec.headingIndex+1;while(end<lines.length&&!/^#{1,2}\s/.test(stripEol(lines[end])))end++;
+ const idOf=(i:number)=>/\(task::\s*([^)]*)\)/.exec(stripEol(lines[i]))?.[1]?.trim()??"";
+ const isList=(i:number)=>/^\s*[-*+]\s/.test(stripEol(lines[i]));
+ const isChild=(i:number)=>/^\s+[-*+]\s/.test(stripEol(lines[i]));
+ const blockEnd=(top:number)=>{let j=top+1;while(j<end&&isChild(j))j++;return j;};
+ const at=lines.findIndex((_,i)=>i>sec.headingIndex&&i<end&&isList(i)&&idOf(i)===id);
+ if(at<0)throw Error("할 일을 찾을 수 없어요. 다시 열어 주세요.");
+ const child=isChild(at);
+ if(parentId===null&&!child)return text;
+ if(parentId!==null&&!child&&blockEnd(at)>at+1)throw Error("하위 할 일이 있는 묶음은 다른 할 일 아래로 넣을 수 없어요. 위계는 두 단계까지예요.");
+ if(parentId===id)return text;
+ // The 묶음 this row is in now (for an outdent, it goes right after that block).
+ let top=at;while(top>sec.headingIndex&&isChild(top))top--;
+ if(parentId!==null&&child&&idOf(top)===parentId)return text;
+ const row=stripEol(lines[at]).replace(/^\s+/,"");
+ lines.splice(at,1);end--;
+ if(parentId===null){
+  const j=blockEnd(top);
+  lines.splice(j,0,row+eol);
+ }else{
+  const p=lines.findIndex((_,i)=>i>sec.headingIndex&&i<end&&isList(i)&&!isChild(i)&&idOf(i)===parentId);
+  if(p<0)throw Error("위 단계 할 일을 찾을 수 없어요.");
+  if(!/^[-*+]\s+\[[ xX]\]/.test(stripEol(lines[p])))throw Error("배정한 할 일 아래에는 넣을 수 없어요.");
+  const j=blockEnd(p);
+  if(j>0&&!lines[j-1].endsWith("\n"))lines[j-1]+=eol;
+  lines.splice(j,0,"    "+row+eol);
+ }
+ return lines.join("");
+}
+
+/** The top-level row right above this one in the hub (where Tab puts it), or null. */
+export function previousTopLevel(text: string, id: string): string | null {
+ const sec=findSection(text,"할 일");if(!sec)return null;
+ const lines=splitLinesKeepEol(text).map(stripEol);let prev:string|null=null;
+ for(let i=sec.headingIndex+1;i<lines.length;i++){
+  if(/^#{1,2}\s/.test(lines[i]))break;
+  const m=/^(\s*)[-*+]\s+(.*)$/.exec(lines[i]);if(!m)continue;
+  const tid=/\(task::\s*([^)]*)\)/.exec(m[2])?.[1]?.trim()??"";
+  if(tid===id)return prev;
+  if(!m[1].length&&tid)prev=/^\[[ xX]\]/.test(m[2])?tid:null;
+ }
+ return null;
+}
+
+/** The last top-level row with a checkbox (where a Tab-indented new task goes), or null. */
+export function lastTopLevel(text: string): string | null {
+ const sec=findSection(text,"할 일");if(!sec)return null;
+ const lines=splitLinesKeepEol(text).map(stripEol);let last:string|null=null;
+ for(let i=sec.headingIndex+1;i<lines.length;i++){
+  if(/^#{1,2}\s/.test(lines[i]))break;
+  const m=/^([-*+])\s+(.*)$/.exec(lines[i]);if(!m)continue;
+  const tid=/\(task::\s*([^)]*)\)/.exec(m[2])?.[1]?.trim()??"";
+  last=tid&&/^\[[ xX]\]/.test(m[2])?tid:null;
+ }
+ return last;
+}
+
+/**
  * Each 묶음's checkbox from its 하위 할 일: done when every one is done or let go (at least one done),
  * open otherwise. `stateOf` gives a 하위 할 일's state by id (hub checkbox or its calendar copy).
  */

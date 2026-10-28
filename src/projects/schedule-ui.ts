@@ -1,11 +1,11 @@
 import type { ProjectsHost } from "./actions.ts";
 import { tip } from "../ui/tip.ts";
 import type { Project } from "./model.ts";
-import { missingTaskRefs, type ProjectTask } from "./tasks.ts";
+import { lastTopLevel, missingTaskRefs, previousTopLevel, type ProjectTask } from "./tasks.ts";
 import { changeProjectTask, newTaskId } from "./task-actions.ts";
 import { monthDays, weekdayMon0, shiftMonth, weekMondays, todayIsoLocal } from "../desk/model.ts";
-import { applySchedule, scheduleSource, scheduleTarget, selectSchedule, selectedSchedule, type ScheduleItem } from "./schedule-dnd.ts";
-export interface ScheduleState { month:string; draft:string; draftId?:string; editing?:ProjectTask; busy?:boolean; error?:string; select?:(item:ScheduleItem)=>void; calendar?:boolean /** undefined = open (default) */; /** Adding a 하위 할 일 under this task. */ parent?:ProjectTask }
+import { applySchedule, MIME, scheduleSource, scheduleTarget, selectSchedule, selectedSchedule, TOUCH_DROP, type ScheduleItem } from "./schedule-dnd.ts";
+export interface ScheduleState { month:string; draft:string; draftId?:string; editing?:ProjectTask; busy?:boolean; error?:string; select?:(item:ScheduleItem)=>void; calendar?:boolean /** undefined = open (default) */; /** The new-task input is indented (Tab): it adds under the last top-level task. */ indent?:boolean; refocus?:boolean; focusId?:string }
 export function renderProjectSchedule(parent:HTMLElement,host:ProjectsHost,p:Project,tasks:ProjectTask[],state:ScheduleState,refresh:()=>Promise<void>, hubText=""):void {
  const root=parent.createDiv({cls:"pf-schedule"});
  const ms:ScheduleItem[]=(p.milestones??[]).map(m=>({kind:"milestone",projectPath:p.path,projectId:p.id,line:m.line,title:m.text,source:p.milestoneSource??"",date:m.due}));
@@ -27,24 +27,28 @@ export function renderProjectSchedule(parent:HTMLElement,host:ProjectsHost,p:Pro
   if(chosen)button(bar,"선택 취소",()=>{selectSchedule(host,null);paint();});
   if(chosen?.kind==="milestone"&&chosen.date&&!p.archived)button(bar,"날짜 해제",()=>void run(()=>applySchedule(host,chosen,null)));
   const layout=root.createDiv({cls:"pf-schedule-layout"}),list=layout.createDiv({cls:"pf-schedule-list"});
-  list.createEl("h3",{text:"할 일"});
-  if(!p.archived){
-   const form=list.createEl("form",{cls:"pf-task-form"});
-   if(state.parent)form.createDiv({cls:"pf-task-parent-hint",text:`「${state.parent.title}」 아래에 하위 할 일 추가`});
-   const input=form.createEl("input",{attr:{type:"text",placeholder:state.editing?"할 일 수정":state.parent?"하위 할 일을 적고 Enter":"할 일을 적고 Enter", "aria-label":"프로젝트 할 일"}});input.value=state.draft;input.disabled=!!state.busy;
-   input.addEventListener("input",()=>{state.draft=input.value;});
-   input.addEventListener("keydown",e=>{if(e.key==="Escape"&&!state.busy){state.draft="";state.editing=undefined;state.parent=undefined;state.draftId=undefined;paint();void refresh();}});
-   const submit=form.createEl("button",{text:state.editing?"저장":"추가",attr:{type:"submit"}});submit.disabled=!!state.busy;
-   form.addEventListener("submit",e=>{e.preventDefault();if(!state.draft.trim())return;const value=state.draft,editing=state.editing;state.draftId??=newTaskId();const parent=state.parent;void run(()=>changeProjectTask(host,p,editing?{kind:"edit",task:editing,text:value}:{kind:"add",text:value,id:state.draftId!,parentId:parent?.id},todayIsoLocal()).then(()=>{state.parent=undefined;}),true);});
-   if(state.draft||state.editing||state.parent)button(form,"입력 취소",()=>{state.draft="";state.editing=undefined;state.parent=undefined;state.draftId=undefined;paint();void refresh();});
-   if(p.action&&!tasks.some(t=>t.title===p.action))button(list,"다음 행동을 할 일에 추가",()=>{state.draft=p.action;paint();root.querySelector<HTMLInputElement>(".pf-task-form input")?.focus();});
-  }
+  // 할 일 목록 = an outline (two levels): Enter adds, Tab / Shift+Tab go in / out, rows drag onto
+  // rows (in) or onto the 「할 일」 heading (out). The hub file keeps the order and indentation.
+  const h3=list.createEl("h3",{text:"할 일"});
+  const level=(id:string,parentId:string|null)=>{state.focusId=id;void run(()=>changeProjectTask(host,p,{kind:"level",id,parentId},todayIsoLocal()));};
+  const dragged=()=>{const it=selectedSchedule(host);return it?.kind==="task"&&it.projectId===p.id&&it.task.id?it.task:null;};
+  const dropZone=(el:HTMLElement,parentOf:(t:ProjectTask)=>string|null|undefined)=>{
+   if(p.archived)return;
+   el.addClass("ml-schedule-target","pf-outline-drop");
+   const ok=()=>{const t=dragged();return t&&parentOf(t)!==undefined?t:null;};
+   const go=()=>{const t=ok();if(!t)return;selectSchedule(host,null);level(t.id,parentOf(t)!);};
+   el.addEventListener("dragover",e=>{if(!e.dataTransfer?.types.includes(MIME)||!ok())return;e.preventDefault();e.stopPropagation();el.addClass("ml-schedule-over");});
+   el.addEventListener("dragleave",e=>{if(!el.contains(e.relatedTarget as Node|null))el.removeClass("ml-schedule-over");});
+   el.addEventListener("drop",e=>{if(!e.dataTransfer?.types.includes(MIME)||!ok())return;e.preventDefault();e.stopPropagation();el.removeClass("ml-schedule-over");go();});
+   el.addEventListener(TOUCH_DROP,e=>{if(ok()){e.stopPropagation();go();}});
+  };
+  // The heading takes a 하위 할 일 back out to the top level.
+  dropZone(h3,t=>t.parentId?null:undefined);
   for(const title of missingTaskRefs(hubText,tasks))list.createDiv({cls:"pf-ms-error",text:`「${title}」의 달력 원본을 찾지 못했어요. 삭제·보류 여부를 확인해 주세요. 자동으로 다시 만들지 않습니다.`});
-  if(!tasks.length)list.createEl("p",{cls:"pf-schedule-muted",text:"할 일이 없어요."});
-  // 위계: a 묶음 row, then its 하위 할 일 indented under it (assigned ones included).
+  if(!tasks.length)list.createEl("p",{cls:"pf-schedule-muted",text:"할 일이 없어요. 아래에 적고 Enter."});
   const shown=new Set(tasks.filter(t=>t.group).map(t=>t.id));
   const renderTask=(task:ProjectTask,depth:number)=>{
-   const row=list.createDiv({cls:`pf-task-row${task.state==="done"?" is-done":""}${depth?" is-child":""}${task.group?" is-group":""}`});
+   const row=list.createDiv({cls:`pf-task-row${task.state==="done"?" is-done":""}${depth?" is-child":""}${task.group?" is-group":""}`,attr:{tabindex:"0","data-task":task.id}});
    const check=row.createEl("input",{attr:{type:"checkbox","aria-label":`${task.title} 완료`}});check.checked=task.state==="done";check.disabled=p.archived||!!state.busy||task.state==="cancelled"||!!task.group||!!(task.desk&&task.desk.section!=="day");
    if(task.group)tip(check,"하위 할 일이 모두 끝나면 저절로 완료돼요");
    check.addEventListener("change",()=>void run(()=>changeProjectTask(host,p,{kind:"toggle",task},todayIsoLocal())));
@@ -54,15 +58,39 @@ export function renderProjectSchedule(parent:HTMLElement,host:ProjectsHost,p:Pro
    const pick=button(body,task.title,()=>{if(schedulable)state.select?.(item);},"pf-task-title");
    const kids=task.group?tasks.filter(x=>x.parentId===task.id):[];
    body.createSpan({cls:"pf-schedule-muted",text:task.group?`하위 ${kids.filter(x=>x.state==="done").length}/${kids.length}`:task.state==="cancelled"?"놓아줌":task.date??(task.desk?.section==="alloc"?`${task.desk.monday} 주`:task.month?`${task.month} 이달 중`:"미배정")});
-   if(schedulable&&!state.busy)scheduleSource(pick,host,item);
-   if(!p.archived){
+   // Dragging: onto a calendar slot (assign) or onto another row (in / out of a 묶음).
+   if(!p.archived&&!state.busy&&task.id&&(schedulable||task.state!=="cancelled"))scheduleSource(pick,host,item);
+   if(!p.archived&&task.id){
+    row.addEventListener("keydown",e=>{
+     const at=e.target as HTMLElement;if(e.key!=="Tab"||state.busy||at.closest(".pf-task-row")!==row||at.tagName==="INPUT"||at.closest("details"))return;
+     e.preventDefault();
+     if(e.shiftKey){if(depth)level(task.id,null);}
+     else if(!depth&&!task.group){const prev=previousTopLevel(hubText,task.id);if(prev)level(task.id,prev);}
+    });
+    // A row takes the dragged task under it (a top-level row) or into its own 묶음 (a 하위 row).
+    dropZone(row,t=>{if(t.id===task.id||t.group)return undefined;const target=depth?task.parentId!:task.id;return t.parentId===target||(!depth&&task.kind!=="hub")?undefined:target;});
     const more=row.createEl("details",{cls:"pf-task-more"});more.createEl("summary",{text:"⋯",attr:{"aria-label":`${task.title} 메뉴`}});
-    button(more,"수정",()=>{state.editing=task;state.parent=undefined;state.draft=task.title;paint();root.querySelector<HTMLInputElement>(".pf-task-form input")?.focus();});
-    if(task.kind==="hub"&&!depth&&(task.state==="scheduled"||task.group))button(more,"하위 할 일 추가",()=>{state.parent=task;state.editing=undefined;state.draft="";paint();root.querySelector<HTMLInputElement>(".pf-task-form input")?.focus();});
+    button(more,"수정",()=>{state.editing=task;state.indent=false;state.draft=task.title;paint();root.querySelector<HTMLInputElement>(".pf-task-form input")?.focus();});
    }
    for(const k of kids)renderTask(k,1);
   };
   for(const task of tasks){if(task.parentId&&shown.has(task.parentId))continue;renderTask(task,0);}
+  if(!p.archived){
+   // One way in: type, Enter. Tab = under the last top-level task, Shift+Tab = back out. Esc clears.
+   const parentId=state.indent&&!state.editing?lastTopLevel(hubText):null;
+   const parentTitle=parentId?tasks.find(t=>t.id===parentId)?.title:"";
+   const form=list.createEl("form",{cls:`pf-task-form${parentId?" is-child":""}`});
+   const input=form.createEl("input",{attr:{type:"text",placeholder:state.editing?"할 일 수정 · Enter 저장 · Esc 취소":parentId?`「${parentTitle}」 하위 할 일 · Shift+Tab 나가기`:"할 일을 적고 Enter · Tab 하위로","aria-label":"프로젝트 할 일",enterkeyhint:"done"}});input.value=state.draft;input.disabled=!!state.busy;
+   input.addEventListener("input",()=>{state.draft=input.value;});
+   input.addEventListener("keydown",e=>{
+    if(state.busy)return;
+    if(e.key==="Escape"){state.draft="";state.editing=undefined;state.indent=false;state.draftId=undefined;paint();void refresh();}
+    else if(e.key==="Tab"&&!state.editing){e.preventDefault();const want=!e.shiftKey;if(want&&!lastTopLevel(hubText))return;if(state.indent!==want){state.indent=want;state.refocus=true;paint();}}
+   });
+   form.addEventListener("submit",e=>{e.preventDefault();if(!state.draft.trim())return;const value=state.draft,editing=state.editing;state.draftId??=newTaskId();state.refocus=true;void run(()=>changeProjectTask(host,p,editing?{kind:"edit",task:editing,text:value}:{kind:"add",text:value,id:state.draftId!,parentId:parentId??undefined},todayIsoLocal()),true);});
+   if(state.refocus){state.refocus=false;window.setTimeout(()=>{const x=root.querySelector<HTMLInputElement>(".pf-task-form input");x?.focus();},0);}
+  }
+  if(state.focusId&&!state.busy){const id=state.focusId;state.focusId=undefined;window.setTimeout(()=>root.querySelector<HTMLElement>(`.pf-task-row[data-task="${CSS.escape(id)}"]`)?.focus(),0);}
   const undated=ms.filter(m=>m.kind==="milestone"&&!m.date);
   if(undated.length){list.createEl("h3",{text:"날짜 미정 마일스톤"});for(const m of undated){const b=button(list,`◆ ${m.title}`,()=>state.select?.(m),"pf-schedule-milestone");if(!p.archived&&!state.busy)scheduleSource(b,host,m);}}
   layout.toggleClass("is-calendar-closed",!calOpen);
