@@ -30,3 +30,17 @@ test("labels, places, summary, search, freshness, spine geometry", () => {
 	assert.ok(spineLook("a", 0).width >= 24 && spineLook("a", 400).width <= 68);
 	assert.ok(spineLook("a", 40).width > spineLook("a", 4).width);
 });
+
+test("reader: body without frontmatter and H1, title split, frontmatter lists, reading order", async () => {
+	const { readerBody, splitTitle, nameList, readingOrder } = await import("../src/shelf/model.ts");
+	assert.deepEqual(readerBody("---\ntype: concept\n---\n\n# 집밥 기록 (Home Cooking)\n\n김하루의 첫 문단.\n"), { title: "집밥 기록 (Home Cooking)", body: "김하루의 첫 문단.\n" });
+	assert.deepEqual(readerBody("본문만"), { title: "", body: "본문만" });
+	assert.deepEqual(splitTitle("집밥 기록 (Home Cooking)"), { main: "집밥 기록", sub: "Home Cooking" });
+	assert.deepEqual(splitTitle("집밥"), { main: "집밥", sub: "" });
+	assert.deepEqual(nameList(["[[불 조절|불]]", "raw/a.md"]), ["불 조절", "raw/a.md"]);
+	assert.deepEqual(nameList("한 개"), ["한 개"]);
+	assert.deepEqual(nameList(undefined), []);
+	const a = (title: string, kind: "concepts" | "sources", updated: string) => ({ title, path: title, kind, updated });
+	const book = { wiki: "w", slug: "s", label: "S", summary: "", path: "m", tags: [], updated: "", articles: [a("자료1", "sources", "2026-10-02"), a("개념1", "concepts", "2026-10-01"), a("개념2", "concepts", "2026-10-03")] };
+	assert.deepEqual(readingOrder(book).map((x) => x.title), ["개념2", "개념1", "자료1"]);
+});
