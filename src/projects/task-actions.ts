@@ -13,7 +13,7 @@ import { splitWallBody } from "../wall/parse.ts";
 import { replaceContent, setFields, TIME_LEAD_RE } from "../line-edit.ts";
 import { WALL_DATE_RE } from "../wall/parse.ts";
 import { validMilestoneDate } from "./milestones.ts";
-import { appendHubTask, calendarTasks, executionTasks, hubTasks, replaceTaskLine, taskTitle, type ProjectTask } from "./tasks.ts";
+import { annotateGroups, appendChildTask, appendHubTask, calendarTasks, executionTasks, hubTasks, replaceTaskLine, syncGroupChecks, taskLabel, taskTitle, type ProjectTask } from "./tasks.ts";
 
 export type ScheduleTarget = { kind:"day"; date:string } | { kind:"month"; month:string } | { kind:"week"; monday:string };
 export async function loadProjectTasks(host:ProjectsHost,p:Project,text:string, includeParents=false):Promise<ProjectTask[]> {
@@ -23,9 +23,10 @@ export async function loadProjectTasks(host:ProjectsHost,p:Project,text:string, 
   const w=f.path.startsWith(wall+"/") ? /\/(\d{4})\.md$/.exec(f.path):null;
   if(d||w)tasks.push(...calendarTasks(await host.app.vault.read(f),f.path,d?"desk":"wall",(d||w)![1]).filter(t=>t.projectId===p.id));
  }
+ annotateGroups(tasks,text);
  return includeParents ? tasks : executionTasks(tasks).sort((a,b)=>Number(a.state!=="scheduled")-Number(b.state!=="scheduled")||(a.date??a.month??"").localeCompare(b.date??b.month??""));
 }
-export type TaskChange = {kind:"add";text:string;id:string} | {kind:"toggle";task:ProjectTask} | {kind:"edit";task:ProjectTask;text:string} | {kind:"schedule";task:ProjectTask;target:ScheduleTarget;reviewed?:string};
+export type TaskChange = {kind:"add";text:string;id:string;/** 하위 할 일 of this 묶음 / top-level task */parentId?:string} | {kind:"toggle";task:ProjectTask} | {kind:"edit";task:ProjectTask;text:string} | {kind:"schedule";task:ProjectTask;target:ScheduleTarget;reviewed?:string};
 export const newTaskId=():string=>`T-${crypto.randomUUID()}`;
 export function targetLabel(t:ScheduleTarget):string{return t.kind==="day"?t.date:t.kind==="month"?`${t.month} 이달 중`:`${t.monday} 주`}
 /** No goal writes. Scheduling, canonical source and audit records commit or roll back together. */
@@ -43,7 +44,12 @@ export async function changeProjectTask(host:ProjectsHost,displayed:Project,chan
   if(change.kind==="add") {
    const title=taskTitle(change.text); if(!/^T-[a-zA-Z0-9-]+$/.test(change.id))throw Error("할 일 식별자를 확인해 주세요.");
    const all=await loadProjectTasks(host,p,text);if(all.some(t=>t.id===change.id))return;
-   edited=appendHubTask(text,`- [ ] ${title} (task:: ${change.id}) (project:: ${p.id})`);detail=`할 일 추가: ${title}`;
+   const row=`- [ ] ${title} (task:: ${change.id}) (project:: ${p.id})`;
+   if(change.parentId){
+    const parent=hubTasks(text,p.path,p.id).find(x=>x.id===change.parentId&&!/^\s/.test(x.line));
+    if(!parent)throw Error("위 단계 할 일을 찾을 수 없어요. 배정한 할 일에는 하위 할 일을 붙이지 않아요.");
+    edited=appendChildTask(text,parent.index,row);detail=`하위 할 일 추가: ${parent.title} · ${title}`;
+   }else{edited=appendHubTask(text,row);detail=`할 일 추가: ${title}`;}
   }else{
    const t=change.task,all=await loadProjectTasks(host,p,text,true);
    if(t.projectId!==p.id||!all.some(x=>x.path===t.path&&x.index===t.index&&x.line===t.line))throw Error("할 일이 다른 곳에서 바뀌었어요. 다시 열어 주세요.");
@@ -52,6 +58,7 @@ export async function changeProjectTask(host:ProjectsHost,displayed:Project,chan
    if(change.kind!=="schedule") {
     let line=t.line;
     if(change.kind==="toggle") {
+     if(t.group)throw Error("묶음은 하위 할 일이 모두 끝나면 저절로 완료돼요.");
      if(t.desk && t.desk.section!=="day")throw Error("날짜를 배정한 뒤 날짜 칸의 할 일을 완료해 주세요.");
      if(!["done","scheduled"].includes(t.state))throw Error("취소된 일은 원본에서 확인해 주세요.");
      line=setCheckbox(line,t.state==="done"?" ":"x");detail=`할 일 ${t.state==="done"?"완료 취소":"완료"}: ${t.title}`;
@@ -67,6 +74,7 @@ export async function changeProjectTask(host:ProjectsHost,displayed:Project,chan
     }
    }else{
     if(t.issue)throw Error(t.issue);
+    if(t.group)throw Error("묶음은 배정하지 않아요. 하위 할 일을 하나씩 배정해 주세요.");
     if(t.state!=="scheduled")throw Error("완료·취소된 일은 배정하지 않아요.");
     const target=change.target,key=target.kind==="day"?target.date:target.kind==="week"?target.monday:target.month+"-01";
     if(!validMilestoneDate(key)||(target.kind==="week"&&mondayOf(key)!==key))throw Error("배정할 날짜를 확인해 주세요.");
@@ -94,7 +102,11 @@ export async function changeProjectTask(host:ProjectsHost,displayed:Project,chan
     }else{
      const id=t.id||newTaskId();let line=t.kind==="wall"?"- "+(()=>{const x=splitWallBody(t.line.replace(/^\s*[-*+]\s+/,""));return x.checkbox+(x.match?.[5]?x.match[5]+" ":"")+x.rest;})():t.line;
      line=copyTask(line,t.date?movedCount(t.line)+1:undefined).replace(/^(\s*[-*+]\s+)(.*)$/,(_,a,b)=>a+setFields(b,{task:id,project:p.id}));
-     if(t.kind==="hub")edited=replaceTaskLine(text,t,`- ${t.title} (task:: ${id}) (project:: ${p.id})`);
+     // A 하위 할 일 goes out flush and named with its 묶음; its hub reference keeps the indent.
+     const indent=/^(\s*)/.exec(t.line)?.[1]??"";
+     line=line.replace(/^\s+/,"");
+     if(t.kind==="hub"&&t.parentTitle)line=line.replace(/^([-*+]\s+)(.*)$/,(_,a,b)=>a+replaceContent(b,taskLabel(t),TIME_LEAD_RE));
+     if(t.kind==="hub")edited=replaceTaskLine(text,t,`${indent}- ${t.title} (task:: ${id}) (project:: ${p.id})`);
      else{const anchor=kind==="wall"?ym:target.kind==="day"?key:target.kind==="month"?"이달 중":"";const destination=`[[${path.replace(/\.md$/,"")}${anchor?"#"+anchor:""}]]`;await put(t.path,setFrontmatterScalar(replaceTaskLine(before,t,markMoved(t.line,destination,t.date?movedCount(t.line)+1:undefined)),"updated",today));logCalendar(t.kind);}
      const dest=await read(path);
      if(kind==="desk") {
@@ -108,6 +120,18 @@ export async function changeProjectTask(host:ProjectsHost,displayed:Project,chan
     }
     detail=`할 일 배정: ${t.title} → ${targetLabel(target)}${change.reviewed ? ` · 계속할 이유: ${taskTitle(change.reviewed)}` : ""}`;
    }
+  }
+  // 묶음 checkboxes follow their 하위 할 일 (hub checkboxes, or calendar copies for assigned ones).
+  if(change.kind==="toggle"||(change.kind==="add"&&change.parentId)){
+   const cal=(await loadProjectTasks(host,p,text,true)).filter(x=>x.kind!=="hub"&&x.state!=="moved");
+   const flipped=change.kind==="toggle"&&change.task.kind!=="hub"?change.task:null;
+   const hub=hubTasks(edited,p.path,p.id);
+   edited=syncGroupChecks(edited,id=>{
+    const h=hub.find(x=>x.id===id);if(h)return h.state;
+    if(flipped?.id===id)return flipped.state==="done"?"scheduled":"done";
+    const c=cal.filter(x=>x.id===id);if(!c.length)return undefined;
+    return c.some(x=>x.state==="done")?"done":c.every(x=>x.state==="cancelled")?"cancelled":"scheduled";
+   });
   }
   const calendarFiles=new Map<string,string>();
   if(calendarIndexes.size)for(const f of host.app.vault.getMarkdownFiles())if(f.path.startsWith(deskRoot+"/")||f.path.startsWith(wallRoot+"/"))calendarFiles.set(f.path,await read(f.path)??"");

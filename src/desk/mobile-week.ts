@@ -18,7 +18,7 @@ import { actionSheet, type SheetAction } from "../ui/mobile.ts";
 import { isoWeekNo, type DeskItem } from "./model.ts";
 import { dayLabel, type DeskTarget } from "./mobile-targets.ts";
 import type { DeskMobileHost } from "./mobile.ts";
-import type { ProjectTask } from "../projects/tasks.ts";
+import { type ProjectTask, taskLabel } from "../projects/tasks.ts";
 import { touchDrag } from "./touch-drag.ts";
 
 /** A Daily Pad 「개인 할 일」 / 「회사 할 일」 line of one day. */
@@ -32,11 +32,8 @@ export interface PadTask {
 	side: Side;
 }
 
-/** One project's undated tasks (주 보기 배정 안 된 일). */
-export interface BacklogGroup {
-	project: string;
-	tasks: ProjectTask[];
-}
+import type { BacklogGroup } from "../projects/backlog.ts";
+export type { BacklogGroup };
 
 /** Month level (Desk 월 보기, 「할 일」 off): events, timed tasks (appointments) and #마감. Milestones are drawn separately. */
 export function monthLevel(it: DeskItem, showTasks: boolean): boolean {
@@ -70,7 +67,7 @@ type Loose =
 	| { kind: "project"; task: ProjectTask; project: string };
 
 function looseText(x: Loose): string {
-	return x.kind === "project" ? x.task.title : x.it.item.text;
+	return x.kind === "project" ? taskLabel(x.task) : x.it.item.text;
 }
 
 /** Drop / pick a day for an unassigned item: the same writes as the desktop and project screens. */

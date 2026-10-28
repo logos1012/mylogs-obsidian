@@ -265,3 +265,23 @@ test("background rollup: layout start, external edit and disposal",async()=>{
  await new Promise(r=>setTimeout(r,850));assert.equal(readGoal(v.data.get(v.sub.path)!,v.sub.path).progress,0);
  for(const dispose of disposers)dispose();
 });
+test("project tasks: 묶음 → 하위 할 일, assigned with the 묶음 name, 묶음 done when all 하위 are done",async()=>{
+ const v=await taskSetup();
+ await api.changeProjectTask(v.host,v.p,{kind:"add",text:"3강 만들기",id:"T-g"},TODAY);
+ await api.changeProjectTask(v.host,v.p,{kind:"add",text:"스크립트",id:"T-s",parentId:"T-g"},TODAY);
+ await api.changeProjectTask(v.host,v.p,{kind:"add",text:"녹화",id:"T-r",parentId:"T-g"},TODAY);
+ assert.match(v.data.get(v.path)!,/- \[ \] 3강 만들기 \(task:: T-g\)[^\n]*\n    - \[ \] 스크립트 \(task:: T-s\)[^\n]*\n    - \[ \] 녹화 \(task:: T-r\)/);
+ let ts=await getTasks(v);const g=ts.find((t:any)=>t.id==="T-g");assert.ok(g.group);assert.equal(ts.find((t:any)=>t.id==="T-s").parentTitle,"3강 만들기");
+ await assert.rejects(api.changeProjectTask(v.host,v.p,{kind:"schedule",task:g,target:{kind:"day",date:"2026-10-28"}},TODAY),/묶음은 배정하지 않아요/);
+ await assert.rejects(api.changeProjectTask(v.host,v.p,{kind:"toggle",task:g},TODAY),/저절로 완료/);
+ await api.changeProjectTask(v.host,v.p,{kind:"schedule",task:ts.find((t:any)=>t.id==="T-s"),target:{kind:"day",date:"2026-10-28"}},TODAY);
+ assert.match(v.data.get("03 Desk Calendar/2026/2026-10.md")!,/- \[ \] 3강 만들기 · 스크립트 \(task:: T-s\)/);
+ assert.match(v.data.get(v.path)!,/\n    - 스크립트 \(task:: T-s\)/);
+ ts=await getTasks(v);const s=ts.find((t:any)=>t.id==="T-s");assert.equal(s.kind,"desk");assert.equal(s.parentId,"T-g");
+ await api.changeProjectTask(v.host,v.p,{kind:"toggle",task:s},TODAY);
+ assert.match(v.data.get(v.path)!,/- \[ \] 3강 만들기/);
+ await api.changeProjectTask(v.host,v.p,{kind:"toggle",task:(await getTasks(v)).find((t:any)=>t.id==="T-r")},TODAY);
+ assert.match(v.data.get(v.path)!,/- \[x\] 3강 만들기/);
+ await api.changeProjectTask(v.host,v.p,{kind:"toggle",task:(await getTasks(v)).find((t:any)=>t.id==="T-r")},TODAY);
+ assert.match(v.data.get(v.path)!,/- \[ \] 3강 만들기/);
+});
