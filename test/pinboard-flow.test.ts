@@ -285,3 +285,16 @@ test("project tasks: 묶음 → 하위 할 일, assigned with the 묶음 name, �
  await api.changeProjectTask(v.host,v.p,{kind:"toggle",task:(await getTasks(v)).find((t:any)=>t.id==="T-r")},TODAY);
  assert.match(v.data.get(v.path)!,/- \[ \] 3강 만들기/);
 });
+test("project tasks: Tab / Shift+Tab through changeProjectTask, a 묶음's 하위 할 일 go to a month together",async()=>{
+ const v=await taskSetup();
+ for(const [t,id] of [["4강 만들기","T-g4"],["스크립트","T-a"],["녹화","T-b"]])await api.changeProjectTask(v.host,v.p,{kind:"add",text:t,id},TODAY);
+ await api.changeProjectTask(v.host,v.p,{kind:"level",id:"T-a",parentId:"T-g4"},TODAY);
+ await api.changeProjectTask(v.host,v.p,{kind:"level",id:"T-b",parentId:"T-g4"},TODAY);
+ assert.match(v.data.get(v.path)!,/- \[ \] 4강 만들기[^\n]*\n    - \[ \] 스크립트[^\n]*\n    - \[ \] 녹화/);
+ let ts=await getTasks(v);assert.ok(ts.find((t:any)=>t.id==="T-g4").group);
+ for(const k of ts.filter((t:any)=>t.parentId==="T-g4"))await api.changeProjectTask(v.host,v.p,{kind:"schedule",task:(await getTasks(v)).find((t:any)=>t.id===k.id),target:{kind:"month",month:"2026-10"}},TODAY);
+ const desk=v.data.get("03 Desk Calendar/2026/2026-10.md")!;
+ assert.match(desk,/4강 만들기 · 스크립트/);assert.match(desk,/4강 만들기 · 녹화/);
+ await api.changeProjectTask(v.host,v.p,{kind:"level",id:"T-b",parentId:null},TODAY);
+ assert.match(v.data.get(v.path)!,/\n- 녹화 \(task:: T-b\)/);
+});

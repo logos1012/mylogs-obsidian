@@ -196,7 +196,7 @@ export class WallCalendarView extends ItemView {
 		const text = f ? await this.app.vault.read(f) : null;
 		const milestones = await loadMilestoneCalendar(this.plugin);
 		// Both sides are read; the other side's tasks show as a count.
-		const all = await loadProjectBacklog(this.plugin, WALL_BACKLOG, "전체");
+		const all = await loadProjectBacklog(this.plugin, WALL_BACKLOG, "전체", true);
 		if (seq !== this.loadSeq) return;
 		const mode = this.plugin.settings.sideMode;
 		this.backlog = all.filter((g) => shows(g.scope, mode));
@@ -345,13 +345,13 @@ export class WallCalendarView extends ItemView {
 		if (!this.backlog.length && !this.backlogFolded) return;
 		const box = sheet.createDiv({ cls: "wc-backlog" });
 		const head = box.createDiv({ cls: "wc-backlog-head" });
-		tip(head.createEl("h3", { text: "배정 안 된 프로젝트 할 일" }), "후보 · 진행 · 대기 프로젝트에서 달도 날짜도 없는 할 일. 달 칸으로 끌어 놓거나, 할 일을 누른 뒤 달 칸을 눌러요. 휴대폰은 길게 눌러 끌어요");
+		tip(head.createEl("h3", { text: "인박스" }), "후보 · 진행 · 대기 프로젝트에서 아직 달이 없는 할 일(첫 단계만). 달 칸으로 끌거나, 누른 뒤 달 칸을 눌러요. 묶음을 놓으면 하위 할 일이 모두 그 달로 가요. 휴대폰은 길게 눌러 끌어요");
 		const mode = this.plugin.settings.sideMode;
 		if (this.backlogFolded && mode !== "전체") {
 			const other = mode === "개인" ? "회사" : "개인";
 			tip(head.createSpan({ cls: `ml-side-hidden is-${other === "회사" ? "work" : "personal"}`, text: `${other} ${this.backlogFolded}` }), `${other} 프로젝트의 할 일 ${this.backlogFolded}개는 ${mode} 모드에서 접어 두었어요`);
 		}
-		if (!this.backlog.length) box.createDiv({ cls: "wc-backlog-empty", text: `${mode} 프로젝트에는 배정 안 된 할 일이 없어요.` });
+		if (!this.backlog.length) box.createDiv({ cls: "wc-backlog-empty", text: `${mode} 인박스가 비었어요.` });
 		const chosen = selectedSchedule(this.plugin);
 		if (chosen?.kind === "task") {
 			const bar = head.createDiv({ cls: "wc-backlog-chosen" });
@@ -369,7 +369,8 @@ export class WallCalendarView extends ItemView {
 			const list = row.createDiv({ cls: "wc-backlog-tasks" });
 			for (const t of g.tasks) {
 				const item: ScheduleItem = { kind: "task", projectPath: g.projectPath, projectId: g.projectId, title: taskLabel(t), task: t };
-				const b = list.createEl("button", { cls: "wc-backlog-task", text: `□ ${taskLabel(t)}`, attr: { type: "button" } });
+				const kids = t.group ? this.groupSize(g, t) : 0;
+				const b = list.createEl("button", { cls: `wc-backlog-task${t.group ? " is-group" : ""}`, text: `□ ${taskLabel(t)}${kids ? ` · 하위 ${kids}` : ""}`, attr: { type: "button" } });
 				if (chosen?.kind === "task" && chosen.task.id === t.id) b.addClass("is-chosen");
 				b.addEventListener("click", () => {
 					selectSchedule(this.plugin, chosen?.kind === "task" && chosen.task.id === t.id ? null : item);
@@ -378,6 +379,11 @@ export class WallCalendarView extends ItemView {
 				scheduleSource(b, this.plugin, item);
 			}
 		}
+	}
+
+	/** How many 하위 할 일 a 묶음 in the 인박스 would take to the month. */
+	private groupSize(g: BacklogGroup, t: { id: string }): number {
+		return g.children?.[t.id] ?? 0;
 	}
 
 	private renderMonth(grid: HTMLElement, month: number, lines: WallLine[], hasHeading: boolean): void {
