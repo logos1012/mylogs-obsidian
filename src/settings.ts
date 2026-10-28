@@ -40,6 +40,8 @@ export interface MyLogsSettings {
 	sections: SectionNames;
 	/** Show `#test` markers on test data. */
 	showTestMarkers: boolean;
+	/** Desk Calendar: hide 완료 · 옮김 · 놓아줌 lines (screen only; remembered). */
+	deskHideClosed: boolean;
 	autosaveDelayMs: number;
 }
 
@@ -67,6 +69,7 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 		refs: "자료",
 	},
 	showTestMarkers: true,
+	deskHideClosed: false,
 	autosaveDelayMs: 800,
 };
 

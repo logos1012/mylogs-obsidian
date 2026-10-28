@@ -352,7 +352,19 @@ export class DeskCalendarView extends ItemView {
 		const now = btn("이번 달", "이번 달", () => void this.goTo(ctx.today.slice(0, 7)));
 		now.toggleClass("is-active", this.month === ctx.today.slice(0, 7));
 		btn("▶", "다음 달", () => void this.goTo(shiftMonth(this.month, 1)));
+		const hide = this.plugin.settings.deskHideClosed;
+		const hb = btn(hide ? "완료 숨김" : "모두 보기", "완료 · 옮김 · 놓아줌 항목 보이기/숨기기", () => {
+			this.plugin.settings.deskHideClosed = !this.plugin.settings.deskHideClosed;
+			void this.plugin.saveSettings();
+			this.rootEl.toggleClass("dc-hide-closed", this.plugin.settings.deskHideClosed);
+			this.render();
+		}, hide ? "eye-off" : "eye");
+		hb.addClass("dc-hide-toggle");
+		hb.createSpan({ cls: "dc-hide-label", text: hide ? "완료 숨김" : "모두 보기" });
+		hb.toggleClass("is-active", hide);
+		tip(hb, hide ? "완료 · 옮김 · 놓아줌 항목을 숨겼어요. 누르면 모두 보여요." : "누르면 완료 · 옮김 · 놓아줌 항목을 숨겨요. 파일은 그대로예요.");
 		btn("", "마크다운 파일 열기", (e) => void this.openAt(this.month, 0, e), "file-text");
+		this.rootEl.toggleClass("dc-hide-closed", hide);
 		renderMilestoneIssues(root, this.milestones.issues, path => void this.plugin.openProjectAt(path));
 	}
 
