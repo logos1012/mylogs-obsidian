@@ -10219,3 +10219,35 @@ button.lumi-fab.is-busy { animation: lumi-breathe 1.6s ease-in-out infinite; }
 body:not(.is-mobile) .mylogs-lumi .lumi-input { padding-bottom: 40px; }
 body:not(.is-mobile) button.lumi-fab { bottom: 44px; }
 body:not(.is-mobile) .has-lumi-fab > .view-content { padding-bottom: 112px; }
+
+/* 루미 탭 · 모델 · 지난 대화 · 복사 (0.21.0) */
+.mylogs-lumi button.lumi-head-btn { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 9px; border-radius: 8px; font-size: 12px; white-space: nowrap; }
+.mylogs-lumi button.lumi-head-btn.is-primary { background: var(--interactive-accent); color: var(--text-on-accent); border: 0; }
+.mylogs-lumi .lumi-btn-icon { display: inline-flex; }
+.mylogs-lumi .lumi-btn-icon svg { width: 14px; height: 14px; }
+.mylogs-lumi .lumi-tabs { display: flex; gap: 4px; padding: 6px 10px 0; overflow-x: auto; scrollbar-width: thin; border-bottom: 1px solid var(--background-modifier-border); }
+.mylogs-lumi .lumi-tab { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; max-width: 180px; height: 30px; padding: 0 6px 0 10px; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; color: var(--text-muted); font-size: 12px; cursor: pointer; }
+.mylogs-lumi .lumi-tab:hover { background: var(--background-modifier-hover); }
+.mylogs-lumi .lumi-tab.is-active { background: var(--background-primary); border-color: var(--background-modifier-border); color: var(--text-normal); font-weight: 600; margin-bottom: -1px; }
+.mylogs-lumi .lumi-tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mylogs-lumi .lumi-tab-dot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: #f2c14e; animation: lumi-dot 1.2s ease-in-out infinite; }
+@keyframes lumi-dot { 50% { opacity: 0.35; } }
+.mylogs-lumi button.lumi-tab-close { width: 18px; height: 18px; padding: 0; border: 0; background: transparent; box-shadow: none; opacity: 0.5; }
+.mylogs-lumi button.lumi-tab-close svg { width: 12px; height: 12px; }
+.mylogs-lumi .lumi-tab:hover button.lumi-tab-close { opacity: 1; }
+.mylogs-lumi .lumi-tools { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--background-modifier-border); }
+.mylogs-lumi select.lumi-model { height: 28px; max-width: 150px; font-size: 12px; }
+.mylogs-lumi button.lumi-more { margin-left: auto; }
+.mylogs-lumi .lumi-msg { position: relative; }
+.mylogs-lumi .lumi-bubble { user-select: text; -webkit-user-select: text; }
+.mylogs-lumi button.lumi-copy { align-self: flex-end; width: 24px; height: 24px; padding: 3px; opacity: 0; transition: opacity 0.12s; }
+.mylogs-lumi .lumi-msg:hover button.lumi-copy, .mylogs-lumi button.lumi-copy:focus-visible { opacity: 0.8; }
+.mylogs-lumi .is-user button.lumi-copy { order: -1; }
+.mylogs-lumi button.lumi-copy svg { width: 14px; height: 14px; }
+.lumi-history-modal .lumi-history-filter { width: 100%; margin-bottom: 10px; }
+.lumi-history-modal .lumi-history { display: flex; flex-direction: column; gap: 4px; max-height: 60vh; overflow-y: auto; }
+.lumi-history-modal button.lumi-history-item { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; height: auto; padding: 8px 10px; text-align: left; border: 0; box-shadow: none; background: transparent; border-radius: 8px; }
+.lumi-history-modal button.lumi-history-item:hover { background: var(--background-modifier-hover); }
+.lumi-history-modal .lumi-history-title { font-weight: 600; }
+.lumi-history-modal .lumi-history-meta, .lumi-history-modal .lumi-history-empty { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.lumi-rename { width: 100%; }

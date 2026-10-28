@@ -49,3 +49,18 @@ test("선택지 line becomes quick replies", () => {
 	assert.deepEqual(splitChoices("**선택지**: 예 | 아니오").choices, ["예", "아니오"]);
 	assert.deepEqual(splitChoices("그냥 답변").choices, []);
 });
+
+test("a saved session reopens: turns, engine thread, model", async () => {
+	const { parseSession } = await import("../src/lumi/session.ts");
+	const text = sessionText({ id: "S-1", sourceId: "lumi-codex-th1", tool: "codex", title: "운동 습관", engineSession: "th1", model: "gpt-6-astra" }, turns, { tornOffUntil: "", routedTo: [], project: "" });
+	const o = parseSession(text);
+	assert.equal(o.engine, "codex");
+	assert.equal(o.engineSession, "th1");
+	assert.equal(o.model, "gpt-6-astra");
+	assert.equal(o.title, "운동 습관");
+	assert.deepEqual(o.turns.map((t) => [t.role, t.text, t.at]), [
+		["user", "운동 습관 목표를 세우고 싶어", "2026-10-28T23:58:00"],
+		["lumi", "좋아요! 무엇이 달라지나요?\n선택지: 건강 / 체력", "2026-10-28T23:58:00"],
+		["user", "체력", "2026-10-29T00:01:00"],
+	]);
+});

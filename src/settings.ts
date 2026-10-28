@@ -50,6 +50,9 @@ export interface MyLogsSettings {
 	/** Model override ("" = the engine's default). */
 	lumiClaudeModel: string;
 	lumiCodexModel: string;
+	/** 루미 tabs open in the panel (restored on start); a tab's turns live in its session file. */
+	lumiTabs: { id: string; title: string; engine: "claude" | "codex"; model: string; path: string | null; engineSession: string | null }[];
+	lumiActiveTab: string;
 	autosaveDelayMs: number;
 }
 
@@ -83,6 +86,8 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	lumiCodexPath: "",
 	lumiClaudeModel: "",
 	lumiCodexModel: "",
+	lumiTabs: [],
+	lumiActiveTab: "",
 	autosaveDelayMs: 800,
 };
 

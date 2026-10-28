@@ -18,6 +18,9 @@ export interface SessionMeta {
 	sourceId: string;
 	tool: "claude-code" | "codex";
 	title: string;
+	/** Engine thread to continue when the session is reopened (lumi_session), and its model. */
+	engineSession?: string | null;
+	model?: string;
 }
 
 /** Fields Tear-off owns: carried over when the file is rewritten (「4-1」 2). */
@@ -92,6 +95,8 @@ export function sessionText(meta: SessionMeta, turns: LumiTurn[], carried: Carri
 		`torn_off: ${tornOff}`,
 		`routed_to: [${carried.routedTo.map((r) => JSON.stringify(r)).join(", ")}]`,
 		"saved_by: mylogs-lumi",
+		`lumi_session: ${meta.engineSession ?? ""}`,
+		`lumi_model: ${meta.model ?? ""}`,
 		`saved_at: ${localIso().slice(0, 16)}`,
 		"---",
 		"",
@@ -138,4 +143,37 @@ export function splitChoices(text: string): { body: string; choices: string[] } 
 	if (!m) return { body: text, choices: [] };
 	const choices = m[1].split(/\s*[\/|·]\s*/).map((c) => c.replace(/^[`"'「]|[`"'」]$/g, "").trim()).filter((c) => c && c.length <= 40).slice(0, 4);
 	return { body: lines.slice(0, -1).join("\n").replace(/\s+$/, ""), choices };
+}
+
+export interface OpenedSession {
+	title: string;
+	engine: "claude" | "codex";
+	engineSession: string | null;
+	model: string;
+	turns: LumiTurn[];
+}
+
+/** Read a 루미 session file back (frontmatter + 「3-3」 turns) to reopen it in a tab. */
+export function parseSession(text: string): OpenedSession {
+	const end = text.indexOf("\n---", 4);
+	const head = end > 0 ? text.slice(0, end) : "";
+	const get = (k: string) => new RegExp(`^${k}:\\s*(.*)$`, "m").exec(head)?.[1].trim().replace(/^"|"$/g, "") ?? "";
+	const date = get("date");
+	const tool = get("tool");
+	const body = end > 0 ? text.slice(end + 4) : text;
+	const turns: LumiTurn[] = [];
+	const re = /^---\n\*\*(사용자|AI) · (?:(\d{2}-\d{2}) )?(\d{2}:\d{2})\*\*\n\n/gm;
+	const marks = [...body.matchAll(re)];
+	marks.forEach((m, i) => {
+		const start = (m.index ?? 0) + m[0].length;
+		const stop = i + 1 < marks.length ? (marks[i + 1].index ?? body.length) : body.length;
+		const day = m[2] ? `${date.slice(0, 4)}-${m[2]}` : date;
+		turns.push({ role: m[1] === "사용자" ? "user" : "lumi", text: body.slice(start, stop).replace(/\s+$/, ""), at: `${day}T${m[3]}:00` });
+	});
+	return { title: get("title") || "루미와 대화", engine: tool === "codex" ? "codex" : "claude", engineSession: get("lumi_session") || null, model: get("lumi_model"), turns };
+}
+
+/** The conversation as markdown (「대화 전체 복사」). */
+export function transcript(turns: LumiTurn[]): string {
+	return turns.filter((t) => t.text.trim()).map((t) => `**${t.role === "user" ? "나" : "루미"}**\n\n${t.text.trim()}`).join("\n\n---\n\n");
 }
