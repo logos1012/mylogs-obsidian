@@ -338,7 +338,7 @@ export const LUMI_TOOLS: LumiTool[] = [
 				const e = findElement((await readWheel(ctx)).elements, String(a.link_flywheel));
 				execution = { mode: "flywheel" as const, id: e.id, previous: e.fields.goal ?? "" };
 			}
-			const g = await createGoalFlow(ctx.host, { input: i, execution }, Number(i.due.slice(0, 4)) || Number(ctx.today.slice(0, 4)), a.parent ? String(a.parent) : undefined, ctx.today);
+			const g = await createGoalFlow(ctx.host, { input: i, execution }, Number(ctx.today.slice(0, 4)), a.parent ? String(a.parent) : undefined, ctx.today);
 			return `목표를 만들었어요: ${g.id} 「${g.title}」`;
 		},
 	},

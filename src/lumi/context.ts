@@ -7,6 +7,7 @@
 import { type App, normalizePath, TFile } from "obsidian";
 import type { MyLogsSettings } from "../settings.ts";
 import { flywheelPath, parseFlywheel } from "../flywheel/model.ts";
+import { isGoalNotePath } from "../pinboard/model.ts";
 
 /** Where 루미 was called from: a MyLogs view and, when one is open, the item on it. */
 export interface LumiScreen {
@@ -67,10 +68,9 @@ function fm(app: App, f: TFile): Record<string, unknown> {
 /** The 현황 요약 appended to 루미's instructions on every turn (kept short). */
 export async function buildContext(app: App, s: MyLogsSettings, screen: LumiScreen | null): Promise<string> {
 	const date = today();
-	const year = date.slice(0, 4);
 	const files = app.vault.getMarkdownFiles();
 	const goals = files
-		.filter((f) => f.path.startsWith(`${s.pinboardFolder}/${year}/`))
+		.filter((f) => f.path.startsWith(`${s.pinboardFolder}/`) && isGoalNotePath(f.path.slice(s.pinboardFolder.length + 1)))
 		.map((f) => fm(app, f))
 		.filter((g) => g.type === "main-goal" || g.type === "sub-goal")
 		.map((g) => `${g.type === "sub-goal" ? "  - " : "- "}${String(g.id ?? "")} ${String(g.title ?? "")}${g.status && g.status !== "active" ? ` (${String(g.status)})` : ""}${g.scope === "회사" ? " [회사]" : ""}${g.progress !== undefined && g.progress !== null && g.progress !== "" ? ` · ${String(g.progress)}%` : ""}`)
@@ -89,7 +89,7 @@ export async function buildContext(app: App, s: MyLogsSettings, screen: LumiScre
 		"",
 		FOLDER_MAP,
 		"",
-		`${year}년 목표 (Pinboard):`,
+		"목표 (Pinboard):",
 		...(goals.length ? goals : ["- 아직 없음"]),
 		"",
 		"진행 중인 프로젝트:",

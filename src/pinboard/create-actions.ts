@@ -1,3 +1,4 @@
+import { isGoalNotePath } from "./model.ts";
 import { withProjectRollup } from "./project-rollup.ts";
 import { TFile, TFolder, normalizePath, type App } from "obsidian";
 import { cleanFolder } from "../settings.ts";
@@ -31,7 +32,7 @@ async function required(io:BatchIO,path:string):Promise<string>{const t=await io
 export async function strictTemplates(host:ProjectsHost):Promise<Templates>{const io=vaultIO(host.app),out={}as Templates;for(const k of Object.keys(TEMPLATE_FILES)as TemplateKey[])out[k]=await required(io,`${activeRoot(host)}/99 작업실/템플릿/${TEMPLATE_FILES[k]}`);return out;}
 export async function readGoals(host:ProjectsHost):Promise<{goal:Goal;text:string}[]> {
 	const root=cleanFolder(host.settings.pinboardFolder),out:{goal:Goal;text:string}[]=[];
-	for(const f of host.app.vault.getMarkdownFiles()){if(!f.path.startsWith(root+"/")||!/^\d{4}\//.test(f.path.slice(root.length+1)))continue;const text=await host.app.vault.read(f);try{out.push({goal:readGoal(text,f.path),text});}catch{/* Non-goal attachments are not goal notes. */}}
+	for(const f of host.app.vault.getMarkdownFiles()){if(!f.path.startsWith(root+"/")||!isGoalNotePath(f.path.slice(root.length+1)))continue;const text=await host.app.vault.read(f);try{out.push({goal:readGoal(text,f.path),text});}catch{/* Non-goal attachments are not goal notes. */}}
 	return out;
 }
 export async function readProject(host:ProjectsHost,path:string):Promise<{p:Project;text:string}>{

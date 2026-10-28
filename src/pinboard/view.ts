@@ -1,3 +1,4 @@
+import { goalIdYear, isGoalNotePath } from "./model.ts";
 import { asSide, inputSide, shows, type SideMode } from "../side.ts";
 import { loadProjectProgress, saveProgressSettings } from "./project-rollup.ts";
 import { mountAppNav } from "../ui/nav.ts";
@@ -15,7 +16,6 @@ import {
 	setIcon,
 	TAbstractFile,
 	TFile,
-	TFolder,
 	type ViewStateResult,
 	WorkspaceLeaf,
 } from "obsidian";
@@ -220,20 +220,12 @@ export class PinboardView extends ItemView {
 		return hubLocation(path, activeRoot(this.plugin), archiveRoot(this.plugin)) !== null;
 	}
 
-	private yearFolders(): number[] {
-		const root = this.app.vault.getAbstractFileByPath(normalizePath(this.folder()));
-		if (!(root instanceof TFolder)) return [];
-		return root.children
-			.filter((c): c is TFolder => c instanceof TFolder && /^\d{4}$/.test(c.name))
-			.map((c) => Number(c.name))
-			.sort((a, b) => a - b);
-	}
-
-	private goalFiles(year: number): TFile[] {
-		const prefix = normalizePath(`${this.folder()}/${year}`) + "/";
+	/** Every goal note: `Goals/` (and older year folders). Goals are not cut by year. */
+	private goalFiles(): TFile[] {
+		const prefix = normalizePath(this.folder()) + "/";
 		return this.app.vault
 			.getMarkdownFiles()
-			.filter((f) => f.path.startsWith(prefix) && !f.path.slice(prefix.length).split("/").some((p) => EXCLUDE_DIRS.has(p)));
+			.filter((f) => f.path.startsWith(prefix) && isGoalNotePath(f.path.slice(prefix.length)) && !f.path.slice(prefix.length).split("/").some((p) => EXCLUDE_DIRS.has(p)));
 	}
 
 	private indexFile(): TFile | null {
@@ -325,19 +317,16 @@ export class PinboardView extends ItemView {
 	}
 
 	private async loadData(): Promise<Loaded> {
-		const years = this.yearFolders();
-		const thisYear = new Date().getFullYear();
-		let year: number | null = this.year;
-		if (year === null || !years.includes(year)) {
-			year = years.includes(thisYear) ? thisYear : years.length ? years[years.length - 1] : null;
-		}
+		// The year is only the calendar's (the 「올해」 bar, new ids); goals run until they end.
+		const year: number | null = new Date().getFullYear();
+		const years: number[] = [];
 		const goals: Goal[] = [];
 		const files = new Map<string, TFile>();
 		const sections = new Map<string, Map<string, string>>();
 		const texts = new Map<string, string>();
 		const logs = new Map<string, LogItem[]>();
 		if (year !== null) {
-			for (const f of this.goalFiles(year)) {
+			for (const f of this.goalFiles()) {
 				const text = await this.app.vault.read(f);
 				const parsed = parseFrontmatterText(text);
 				const g = parseGoal(parsed.data, f.path);
@@ -358,7 +347,11 @@ export class PinboardView extends ItemView {
 		const mode = this.plugin.settings.sideMode;
 		const mainScope = new Map(goals.filter((g) => g.type === "main-goal").map((g) => [g.id, g.scope]));
 		const sideOf = (g: Goal) => asSide(g.type === "sub-goal" && mainScope.has(g.parent) ? mainScope.get(g.parent) : g.scope);
-		const board = buildBoard(goals.filter((g) => shows(sideOf(g), mode)));
+		// 끝난 목표: a Main that ended takes its Subs with it (unless 「끝난 목표」 is on).
+		const mainEnded = new Map(goals.filter((g) => g.type === "main-goal").map((g) => [g.id, isEnded(g.status)]));
+		const endedOf = (g: Goal) => (g.type === "main-goal" ? isEnded(g.status) : !!mainEnded.get(g.parent));
+		const showEnded = this.plugin.settings.pinboardShowEnded;
+		const board = buildBoard(goals.filter((g) => shows(sideOf(g), mode) && (showEnded || !endedOf(g))));
 		const projects = this.loadProjects();
 		const habits = await this.loadHabits();
 		const related = new Map<string, RelatedItem[]>();
@@ -452,19 +445,19 @@ export class PinboardView extends ItemView {
 		sw.addEventListener("click", () => {
 			if (this.canNavigate()) void this.plugin.setSideMode(other);
 		});
-		if (d.years.length > 1) {
-			const sel = titleEl.createEl("select", { cls: "dropdown pb-year-select", attr: { "aria-label": "연도 고르기" } });
-			for (const y of d.years) sel.createEl("option", { text: String(y), value: String(y) });
-			sel.value = String(year);
-			sel.addEventListener("change", () => {
-				if (!this.canNavigate()) { sel.value = String(d.year); return; }
-				this.year = Number(sel.value);
-				this.openId = null;
-				this.animateNext = true;
+		// 끝난 목표 (달성 · 부분 · 미달성 · 중단): hidden unless asked for.
+		const ended = d.goals.filter((g) => g.type === "main-goal" && isEnded(g.status)).length;
+		if (ended) {
+			const on = this.plugin.settings.pinboardShowEnded;
+			const b = titleEl.createEl("button", { cls: `pb-ended-toggle${on ? " is-on" : ""}`, text: `끝난 목표 ${ended}`, attr: { type: "button", "aria-pressed": String(on) } });
+			tip(b, on ? "끝난 목표를 숨겨요" : "끝난 목표도 보여요");
+			b.addEventListener("click", () => {
+				if (!this.canNavigate()) return;
+				this.plugin.settings.pinboardShowEnded = !on;
+				void this.plugin.saveSettingsQuiet();
 				void this.refresh();
-				this.app.workspace.requestSaveLayout();
 			});
-		} else titleEl.createSpan({ cls: "pb-year", text: String(year) });
+		}
 
 		const tabs = top.createDiv({ cls: "pb-tabs", attr: { role: "tablist" } });
 		const tabBtn = (id: Tab, label: string, icon: string) => {
@@ -549,7 +542,7 @@ export class PinboardView extends ItemView {
 		if (!d.board.cards.length && !d.board.orphans.length) {
 			list.createDiv({ cls: "pb-row is-placeholder" }).createDiv({
 				cls: "pb-cell pb-c-title pb-muted",
-				text: `${d.year}년 목표가 아직 없어요. 위의 「목표 추가」에서 시작하세요.`,
+				text: "진행 중인 목표가 없어요. 위의 「목표 추가」에서 시작하세요.",
 			});
 		}
 
@@ -765,8 +758,6 @@ export class PinboardView extends ItemView {
 
 	async openGoalAt(id: string): Promise<boolean> {
 		if (!this.canNavigate()) return false;
-		const year = /^G-(\d{4})-/.exec(id)?.[1];
-		if (year) this.year = Number(year);
 		await this.refresh();
 		if (!this.goalById(id)) return false;
 		this.openGoal(id); return true;
@@ -1593,9 +1584,10 @@ export class PinboardView extends ItemView {
 		}
 		const indexOK = await this.updateIndexWith(
 			(t) => {
-				let out = removeIndexRows(t, String(d.year), done).text;
+				const y = String(goalIdYear(done[0]));
+				let out = removeIndexRows(t, y, done).text;
 				out = removeUndecidedLines(out, done);
-				return mainRow ? setIndexCells(out, String(d.year), [mainRow]) : { text: out, missing: [] };
+				return mainRow ? setIndexCells(out, y, [mainRow]) : { text: out, missing: [] };
 			},
 			`${done.join(", ")} 삭제 (휴지통)${mainRow ? `, ${mainRow.id} ${mainRow.progress}` : ""} (플러그인)`,
 		);
@@ -1783,7 +1775,7 @@ export class PinboardView extends ItemView {
 		const today = todayIso();
 		try {
 			await this.app.vault.process(file, (t) => {
-				const r = fn(ensureHealthColumn(t, String(d.year), this.healthOf(changed)));
+				const r = fn(ensureHealthColumn(t, String(goalIdYear(changed?.id)), this.healthOf(changed)));
 				missing = r.missing;
 				return setFrontmatterScalar(prependChangeLog(r.text, today, log), "updated", today);
 			});
@@ -1807,7 +1799,8 @@ export class PinboardView extends ItemView {
 		let missing: string[] = [];
 		try {
 			await this.app.vault.process(file, (data) => {
-				const year = String(d.year);
+				// Index tables are by the year in the id (when the goal was made).
+				const year = String(goalIdYear(rows[0]?.id ?? changed?.id));
 				const r = applyIndexEdit(ensureHealthColumn(data, year, this.healthOf(changed)), { year, rows, log, today: todayIso() });
 				missing = r.missing;
 				return r.text;

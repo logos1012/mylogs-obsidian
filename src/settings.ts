@@ -17,6 +17,8 @@ export interface MyLogsSettings {
 	deskCalendarFolder: string;
 	/** Pinboard view: goal notes in `<folder>/<YYYY>/`, index at `<folder>/Pinboard Index.md`. */
 	pinboardFolder: string;
+	/** Pinboard: show 끝난 목표 (ended Main Goals and their Subs) too. Remembered. */
+	pinboardShowEnded: boolean;
 	/** Pinboard view: the last chosen view, 목록 (`list`) or 전략 맵 (`map`). */
 	pinboardTab: "list" | "map";
 	/** Wall Calendar year files: <folder>/<YYYY>.md and <folder>/Wall Calendar Index.md. */
@@ -71,6 +73,7 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	deskCalendarFolder: "03 Desk Calendar",
 	pinboardFolder: "01 Pinboard",
 	pinboardTab: "list",
+	pinboardShowEnded: false,
 	wallCalendarFolder: "02 Wall Calendar",
 	projectFoldersFolder: "05 Project Folders",
 	projectArchiveFolder: "10 Archive Box/Projects",
@@ -207,7 +210,7 @@ export class MyLogsSettingTab extends PluginSettingTab {
 				);
 		folder("Daily Pad 폴더", "하루 파일 위치: <폴더>/<YYYY>/<YYYY-MM-DD>.md", "dailyPadFolder");
 		folder("Desk Calendar 폴더", "달 파일 위치: <폴더>/<YYYY>/<YYYY-MM>.md", "deskCalendarFolder");
-		folder("Pinboard 폴더", "목표 노트 위치: <폴더>/<YYYY>/*.md · 인덱스: <폴더>/Pinboard Index.md", "pinboardFolder");
+		folder("Pinboard 폴더", "목표 노트 위치: <폴더>/Goals/*.md · 인덱스: <폴더>/Pinboard Index.md", "pinboardFolder");
 		folder("Wall Calendar 폴더", "연도 파일 위치: <폴더>/<YYYY>.md", "wallCalendarFolder");
 		folder("Project Folders 폴더", "프로젝트 위치: <폴더>/<개인|회사>/<프로젝트명>/ · 등록부·템플릿: <폴더>/99 작업실/", "projectFoldersFolder");
 		folder("완료 프로젝트 보관 폴더", "완료된 프로젝트를 옮기는 곳: <폴더>/<개인|회사>/<프로젝트명>/", "projectArchiveFolder");
