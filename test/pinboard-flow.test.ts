@@ -309,3 +309,10 @@ test("project tasks: delete removes the hub row, and an assigned task's calendar
  assert.doesNotMatch(v.data.get(v.path)!,/^\s*- [^\n]*\(task:: T-d\)/m);assert.doesNotMatch(v.data.get("03 Desk Calendar/2026/2026-10.md")!,/지울 일/);
  assert.deepEqual((await getTasks(v)).map((t:any)=>t.id),["T-e"]);
 });
+test("goal scope: a Main and its Subs move to 회사 together; the index logs it",async()=>{
+ const v=await start();
+ await api.saveGoalScope(v.host,v.sub.id,"회사",TODAY);
+ assert.match(v.data.get(v.main.path)!,/^scope: 회사$/m);assert.match(v.data.get(v.sub.path)!,/^scope: 회사$/m);
+ assert.match(v.data.get(`${ROOT}/Pinboard Index.md`)!,/회사 목표로/);
+ await api.saveGoalScope(v.host,v.main.id,"개인",TODAY);assert.match(v.data.get(v.sub.path)!,/^scope: 개인$/m);
+});

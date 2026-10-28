@@ -22,7 +22,8 @@ import { prependChangeLog, wallYearSkeleton } from "../desk/ops.ts";
 import { addIndexChange, formatNewLine, insertIntoDesk, insertIntoMonth } from "../wall/edit.ts";
 import { putIntoDrawer } from "../drawer/actions.ts";
 import { DRAWER_SECTIONS, type DrawerSection } from "../drawer/model.ts";
-import { createGoalFlow, readGoals, readProject } from "../pinboard/create-actions.ts";
+import { createGoalFlow, readGoals, readProject, saveGoalScope } from "../pinboard/create-actions.ts";
+import { inputSide, type Side } from "../side.ts";
 import { inputProblems, type GoalInput } from "../pinboard/create.ts";
 import { saveInlineGoal } from "../pinboard/inline-actions.ts";
 import { INLINE_LABELS, inlineToken, type InlineGoalField } from "../pinboard/inline-edit.ts";
@@ -310,6 +311,7 @@ export const LUMI_TOOLS: LumiTool[] = [
 			unit: z.string().default(""),
 			due: isoDate,
 			parent: z.string().optional().describe("상위 Main Goal id, 예: G-2026-01"),
+			scope: z.enum(SCOPES).optional().describe("개인 | 회사. 회사 일·회사 프로젝트의 목표면 회사. 비우면 지금 모드(전체면 개인). Sub Goal은 상위 Main을 따른다"),
 			link_project: z.string().optional(),
 			link_flywheel: z.string().optional(),
 		},
@@ -327,7 +329,7 @@ export const LUMI_TOOLS: LumiTool[] = [
 			const measure = i.measure === "metric" ? `${i.baseline || "?"} → ${i.target}${i.unit ? ` ${i.unit}` : ""}` : i.target;
 			return {
 				title: `${sub ? "Sub Goal" : "Main Goal"} 만들기: ${i.title}`,
-				lines: [`영역 · ${i.area}`, `왜 · ${i.why}`, `기준 · ${measure}`, `기한 · ${i.due}`, ...(parent ? [`상위 · ${parent.goal.title}`] : []), ...(project ? [`실행 · 프로젝트 「${project}」`] : []), ...(element ? [`실행 · Flywheel 「${element}」`] : [])],
+				lines: [`${parent ? parent.goal.scope || "개인" : a.scope ? String(a.scope) : inputSide(ctx.host.settings.sideMode)} 목표 · 영역 ${i.area}`, `왜 · ${i.why}`, `기준 · ${measure}`, `기한 · ${i.due}`, ...(parent ? [`상위 · ${parent.goal.title}`] : []), ...(project ? [`실행 · 프로젝트 「${project}」`] : []), ...(element ? [`실행 · Flywheel 「${element}」`] : [])],
 			};
 		},
 		async run(ctx, a) {
@@ -338,8 +340,9 @@ export const LUMI_TOOLS: LumiTool[] = [
 				const e = findElement((await readWheel(ctx)).elements, String(a.link_flywheel));
 				execution = { mode: "flywheel" as const, id: e.id, previous: e.fields.goal ?? "" };
 			}
+			if (!a.parent) i.scope = a.scope ? String(a.scope) : inputSide(ctx.host.settings.sideMode);
 			const g = await createGoalFlow(ctx.host, { input: i, execution }, Number(ctx.today.slice(0, 4)), a.parent ? String(a.parent) : undefined, ctx.today);
-			return `목표를 만들었어요: ${g.id} 「${g.title}」`;
+			return `목표를 만들었어요: ${g.id} 「${g.title}」 (${g.scope || "개인"})`;
 		},
 	},
 	{
@@ -354,6 +357,15 @@ export const LUMI_TOOLS: LumiTool[] = [
 			const field = a.field as InlineGoalField;
 			const g = await saveInlineGoal(ctx.host, found.goal, field, inlineToken(found.text, field), String(a.value), ctx.today);
 			return `${g.id} 「${g.title}」 ${INLINE_LABELS[field]}을(를) 고쳤어요: ${short(oneLine(String(a.value)))}`;
+		},
+	},
+	{
+		name: "goal_scope",
+		description: "목표를 개인 / 회사로 바꾸기. Main Goal과 그 Sub Goal이 함께 바뀐다(Sub Goal id를 줘도 그 Main 묶음 전체). 영역(area)과는 다르다.",
+		shape: { goal_id: z.string(), scope: z.enum(SCOPES) },
+		async run(ctx, a) {
+			const g = await saveGoalScope(ctx.host, String(a.goal_id).trim(), a.scope as Side, ctx.today);
+			return `${g.id} 「${g.title}」을(를) ${String(a.scope)} 목표로 바꿨어요 (하위 목표 포함).`;
 		},
 	},
 	{
