@@ -13,7 +13,7 @@ import { splitWallBody } from "../wall/parse.ts";
 import { replaceContent, setFields, TIME_LEAD_RE } from "../line-edit.ts";
 import { WALL_DATE_RE } from "../wall/parse.ts";
 import { validMilestoneDate } from "./milestones.ts";
-import { annotateGroups, appendChildTask, appendHubTask, calendarTasks, executionTasks, hubTasks, replaceTaskLine, syncGroupChecks, taskLabel, taskTitle, type ProjectTask } from "./tasks.ts";
+import { annotateGroups, appendChildTask, placeTask, appendHubTask, calendarTasks, executionTasks, hubTasks, replaceTaskLine, syncGroupChecks, taskLabel, taskTitle, type ProjectTask } from "./tasks.ts";
 
 export type ScheduleTarget = { kind:"day"; date:string } | { kind:"month"; month:string } | { kind:"week"; monday:string };
 export async function loadProjectTasks(host:ProjectsHost,p:Project,text:string, includeParents=false):Promise<ProjectTask[]> {
@@ -26,7 +26,7 @@ export async function loadProjectTasks(host:ProjectsHost,p:Project,text:string, 
  annotateGroups(tasks,text);
  return includeParents ? tasks : executionTasks(tasks).sort((a,b)=>Number(a.state!=="scheduled")-Number(b.state!=="scheduled")||(a.date??a.month??"").localeCompare(b.date??b.month??""));
 }
-export type TaskChange = {kind:"add";text:string;id:string;/** 하위 할 일 of this 묶음 / top-level task */parentId?:string} | {kind:"toggle";task:ProjectTask} | {kind:"edit";task:ProjectTask;text:string} | {kind:"schedule";task:ProjectTask;target:ScheduleTarget;reviewed?:string};
+export type TaskChange = {kind:"add";text:string;id:string;/** 하위 할 일 of this 묶음 / top-level task */parentId?:string} | {kind:"toggle";task:ProjectTask} | {kind:"edit";task:ProjectTask;text:string} | {kind:"schedule";task:ProjectTask;target:ScheduleTarget;reviewed?:string} | {kind:"level";id:string;/** null = out to the top level */parentId:string|null};
 export const newTaskId=():string=>`T-${crypto.randomUUID()}`;
 export function targetLabel(t:ScheduleTarget):string{return t.kind==="day"?t.date:t.kind==="month"?`${t.month} 이달 중`:`${t.monday} 주`}
 /** No goal writes. Scheduling, canonical source and audit records commit or roll back together. */
@@ -41,7 +41,11 @@ export async function changeProjectTask(host:ProjectsHost,displayed:Project,chan
   const dp=(ym:string)=>`${deskRoot}/${ym.slice(0,4)}/${ym}.md`;
   let edited=text,detail="";
   const logCalendar=(kind:"desk"|"wall")=>calendarIndexes.add(kind==="desk"?`${deskRoot}/Desk Calendar Index.md`:`${wallRoot}/Wall Calendar Index.md`);
-  if(change.kind==="add") {
+  if(change.kind==="level") {
+   edited=placeTask(text,change.id,change.parentId);if(edited===text)return;
+   const t=hubTasks(text,p.path,p.id).find(x=>x.id===change.id)?.title??change.id;
+   detail=change.parentId?`할 일 위계: ${t} → ${hubTasks(text,p.path,p.id).find(x=>x.id===change.parentId)?.title??change.parentId} 아래로`:`할 일 위계: ${t} → 위 단계로`;
+  }else if(change.kind==="add") {
    const title=taskTitle(change.text); if(!/^T-[a-zA-Z0-9-]+$/.test(change.id))throw Error("할 일 식별자를 확인해 주세요.");
    const all=await loadProjectTasks(host,p,text);if(all.some(t=>t.id===change.id))return;
    const row=`- [ ] ${title} (task:: ${change.id}) (project:: ${p.id})`;
@@ -122,7 +126,7 @@ export async function changeProjectTask(host:ProjectsHost,displayed:Project,chan
    }
   }
   // 묶음 checkboxes follow their 하위 할 일 (hub checkboxes, or calendar copies for assigned ones).
-  if(change.kind==="toggle"||(change.kind==="add"&&change.parentId)){
+  if(change.kind==="toggle"||change.kind==="level"||(change.kind==="add"&&change.parentId)){
    const cal=(await loadProjectTasks(host,p,text,true)).filter(x=>x.kind!=="hub"&&x.state!=="moved");
    const flipped=change.kind==="toggle"&&change.task.kind!=="hub"?change.task:null;
    const hub=hubTasks(edited,p.path,p.id);
