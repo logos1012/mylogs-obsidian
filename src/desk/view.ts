@@ -544,7 +544,7 @@ export class DeskCalendarView extends ItemView {
 			const open = head.createEl("button", { cls: "dc-wk-open", attr: { type: "button", "aria-label": "주 보기" } });
 			open.createSpan({ text: "주 보기" });
 			setIcon(open.createSpan({ cls: "dc-wk-open-ic" }), "chevron-right");
-			tip(open, "이 주의 할 일을 모두 보고, 배정 안 된 일을 날짜에 끌어 놓아요");
+			tip(open, "이 주의 할 일을 모두 보고, 아직 날짜 없는 일을 날짜에 끌어 놓아요");
 			open.addEventListener("click", (e) => {
 				e.stopPropagation();
 				this.openWeek(monday);
@@ -1128,7 +1128,7 @@ export class DeskCalendarView extends ItemView {
 	}
 
 	/**
-	 * Desktop 주 보기 (계획 「할 일의 레벨」): 배정 안 된 일 on the left (이번 주 할 일 without a date,
+	 * Desktop 주 보기 (계획 「할 일의 레벨」): 아직 날짜 없는 일 on the left (이번 주 할 일 without a date,
 	 * 이달 중, 진행 · 대기 projects' undated tasks — all draggable onto a day), the seven day cells on
 	 * the right with each day's Daily Pad 「오늘 할 일」 under it.
 	 */
@@ -1155,7 +1155,7 @@ export class DeskCalendarView extends ItemView {
 
 		const wrap = root.createDiv({ cls: "dc-wkv" });
 		const loose = wrap.createEl("aside", { cls: "dc-wkv-loose" });
-		tip(loose.createDiv({ cls: "dc-lbl", text: "배정 안 된 일" }), "날짜 칸으로 끌어 놓으면 그날로 배정돼요");
+		tip(loose.createDiv({ cls: "dc-lbl", text: "아직 날짜 없는 일" }), "이번 주 할 일 · 인박스 · 프로젝트에서 날짜가 없는 일. 날짜 칸으로 끌어 놓으면 그날로 배정돼요");
 		const group = (label: string, hint: string) => {
 			const g = loose.createDiv({ cls: "dc-wkv-group" });
 			tip(g.createDiv({ cls: "dc-wkv-glabel", text: label }), hint);
@@ -1167,9 +1167,10 @@ export class DeskCalendarView extends ItemView {
 			const ul = group(`이번 주 할 일 ${alloc.length}`, "이번 주에 하기로 한 일 중 날짜를 아직 정하지 않은 일");
 			for (const it of alloc) this.renderAllocItem(ul, it, ctx);
 		}
-		const during = cur.during.filter((it) => isOpenTask(it));
+		// 인박스 = not in any week yet. A task already put in a week shows once, as 이번 주 할 일 (or on its day).
+		const during = cur.during.filter((it) => isOpenTask(it) && !it.item.assignWeek.length);
 		if (during.length) {
-			const ul = group(`인박스 ${during.length}`, "이달 안에 할 일. 날짜에 놓으면 이번 주 할 일을 거쳐 그날로 배정돼요");
+			const ul = group(`인박스 ${during.length}`, "이달 안에 할 일, 아직 주를 정하지 않은 일. 날짜에 놓으면 이번 주 할 일을 거쳐 그날로 배정돼요");
 			for (const it of during) this.renderDuringItem(ul, it, ctx);
 		}
 		const projects = loose.createDiv({ cls: "dc-wkv-projects" });
@@ -1200,7 +1201,7 @@ export class DeskCalendarView extends ItemView {
 					scheduleSource(li, this.plugin, { kind: "task", projectPath: t.path, projectId: t.projectId, title: taskLabel(t), task: t });
 				}
 			}
-			if (!loose.querySelector("li.dc-it")) loose.createDiv({ cls: "dc-empty-note", text: "배정 안 된 일이 없어요" });
+			if (!loose.querySelector("li.dc-it")) loose.createDiv({ cls: "dc-empty-note", text: "모두 날짜가 정해졌어요" });
 		})();
 		void (async () => {
 			for (const iso of days) {
@@ -1264,7 +1265,7 @@ export class DeskCalendarView extends ItemView {
 		if (!ok) new Notice("Daily Pad에서 이 줄을 찾지 못했어요. 파일이 바뀌었어요.");
 	}
 
-	/** 진행 · 대기 projects' undated hub tasks (주 보기 배정 안 된 일), the shown side only. */
+	/** 진행 · 대기 projects' undated hub tasks (주 보기 아직 날짜 없는 일), the shown side only. */
 	private async projectBacklog(): Promise<BacklogGroup[]> {
 		return loadProjectBacklog(this.plugin);
 	}

@@ -203,7 +203,7 @@ function weekCard(h: DeskMobileHost, root: HTMLElement, s: State, w: WeekSlot, t
 	const open = head.createEl("button", { cls: "dc-m-wk-open", attr: { type: "button", "aria-label": "주 보기" } });
 	open.createSpan({ text: "주 보기" });
 	setIcon(open.createSpan(), "chevron-right");
-	tip(open, "이 주의 할 일을 모두 보고, 배정 안 된 일을 날짜에 놓아요");
+	tip(open, "이 주의 할 일을 모두 보고, 아직 날짜 없는 일을 날짜에 놓아요");
 	open.addEventListener("click", (e) => {
 		e.preventDefault();
 		e.stopPropagation();

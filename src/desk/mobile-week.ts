@@ -1,7 +1,7 @@
 /**
  * Phone Desk Calendar 주 보기 (계획 「할 일의 레벨」): every piece of work in one week.
  *
- *   배정 안 된 일   이번 주 할 일 without a date · 이달 중 · 진행 중 프로젝트의 날짜 없는 할 일
+ *   아직 날짜 없는 일   이번 주 할 일 without a date · 인박스 (no week yet) · 진행 중 프로젝트의 날짜 없는 할 일
  *                  (long-press and drop on a day, or tap → which day)
  *   월 … 일        the desktop day cell (◆, events, dated tasks: project tasks included) and that
  *                  day's Daily Pad 「오늘 할 일」 (checked there; it stays the Daily Pad's line)
@@ -104,7 +104,7 @@ export function renderWeekScreen(h: DeskMobileHost, root: HTMLElement, w: WeekSt
 	next.addEventListener("click", () => go(addDays(monday, 7)));
 
 	const loose = root.createDiv({ cls: "dc-wk-loose" });
-	const lhead = loose.createDiv({ cls: "dc-m-sec-title", text: "배정 안 된 일" });
+	const lhead = loose.createDiv({ cls: "dc-m-sec-title", text: "아직 날짜 없는 일" });
 	tip(lhead, "길게 눌러 아래 날짜에 놓으면 그날로 배정돼요. 눌러서 날짜를 골라도 돼요.");
 	const looseBody = loose.createDiv({ cls: "dc-wk-loose-body" });
 
@@ -146,8 +146,9 @@ export function renderWeekScreen(h: DeskMobileHost, root: HTMLElement, w: WeekSt
 
 	const alloc = h.allocItems(monday).filter((it) => h.isOpenTask(it) && !it.assign.length);
 	group("이번 주 할 일", alloc.map((it) => ({ kind: "alloc" as const, it })), "이번 주에 하기로 한 일 중 날짜를 아직 정하지 않은 일");
-	const during = h.duringItems().filter((it) => h.isOpenTask(it));
-	group("인박스", during.map((it) => ({ kind: "during" as const, it })), "이달 안에 할 일. 날짜에 놓으면 이번 주 할 일을 거쳐 그날로 배정돼요");
+	// 인박스 = not in any week yet (a task in a week shows once, as 이번 주 할 일).
+	const during = h.duringItems().filter((it) => h.isOpenTask(it) && !it.item.assignWeek.length);
+	group("인박스", during.map((it) => ({ kind: "during" as const, it })), "이달 안에 할 일, 아직 주를 정하지 않은 일. 날짜에 놓으면 이번 주 할 일을 거쳐 그날로 배정돼요");
 	const projectsBox = looseBody.createDiv({ cls: "dc-wk-loose-projects" });
 	projectsBox.createDiv({ cls: "dc-m-muted", text: "프로젝트 할 일 불러오는 중…" });
 
@@ -163,7 +164,7 @@ export function renderWeekScreen(h: DeskMobileHost, root: HTMLElement, w: WeekSt
 			const ul = el.createEl("ul");
 			for (const t of g.tasks) looseItem(ul, { kind: "project", task: t, project: g.project });
 		}
-		if (!looseBody.querySelector(".dc-wk-loose-it")) looseBody.createDiv({ cls: "dc-m-muted", text: "배정 안 된 일이 없어요" });
+		if (!looseBody.querySelector(".dc-wk-loose-it")) looseBody.createDiv({ cls: "dc-m-muted", text: "모두 날짜가 정해졌어요" });
 	})();
 	void (async () => {
 		for (const iso of days) {
