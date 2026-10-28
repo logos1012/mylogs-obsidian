@@ -11090,3 +11090,9 @@ button.vb-nav-btn:hover { color: var(--text-normal); transform: scale(1.06); }
 .pf-schedule-side .pf-schedule-calendar { width: 100%; }
 .pf-schedule-side .pf-schedule-day { min-height: 56px; }
 .pf-schedule-side .pf-schedule-day button { font-size: 10.5px; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+/* Day cells: marks only (0.32.2) — the calendar places dates; names show on hover. */
+.pf-schedule-marks { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 2px; }
+.pf-schedule-day button.pf-schedule-mark { min-height: 0; height: 18px; min-width: 18px; padding: 0 3px; border: 0; border-radius: 4px; background: var(--background-modifier-hover); box-shadow: none; font-size: 11px; line-height: 18px; color: var(--text-muted); }
+.pf-schedule-day button.pf-schedule-mark.is-milestone { color: var(--color-purple); }
+.pf-schedule-day button.pf-schedule-mark.is-done { opacity: 0.6; }
+.pf-schedule-side .pf-schedule-day { min-height: 0; height: 54px; overflow: hidden; }
