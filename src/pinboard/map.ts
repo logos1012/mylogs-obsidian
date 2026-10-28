@@ -1,7 +1,7 @@
 /**
  * Pinboard 전략 맵 (Pinboard 개편 스펙 「2. 전략 맵」, 「1-5. 연결」).
  *
- * A left → right tree: {year} 목표 → Main Goal → Sub Goal → 관련 업무 (projects, habits, memos).
+ * A left → right tree: 목표 → Main Goal → Sub Goal → 관련 업무 (projects, habits, memos).
  * Cards are absolutely positioned HTML inside a transformed canvas; edges are an SVG layer under
  * them. Solid edge = Sub → Main (counts toward progress). Dashed edge = 관련 업무 → Sub (no
  * progress contribution).
@@ -43,6 +43,8 @@ export interface MapMain {
 }
 export interface MapInput {
 	year: number;
+	/** The root node's name (goals are not cut by year): 「개인 목표」 · 「회사 목표」 · 「내 목표」. */
+	title?: string;
 	mains: MapMain[];
 	orphans: MapSub[];
 }
@@ -396,7 +398,7 @@ export function renderStrategyMap(parent: HTMLElement, input: MapInput, cb: MapC
 	if (isEmptyMap(input)) {
 		const empty = root.createDiv({ cls: "pbm-empty" });
 		icon(empty, "target", "pbm-empty-icon");
-		empty.createDiv({ cls: "pbm-empty-title", text: `${input.year}년 목표가 아직 없어요`, attr: { title: "목표를 만들면 Main → Sub → 관련 업무가 지도로 이어져요." } });
+		empty.createDiv({ cls: "pbm-empty-title", text: `${input.title ?? "목표"}가 아직 없어요`, attr: { title: "목표를 만들면 Main → Sub → 관련 업무가 지도로 이어져요." } });
 		return {
 			destroy() {
 				ac.abort();
@@ -415,7 +417,7 @@ export function renderStrategyMap(parent: HTMLElement, input: MapInput, cb: MapC
 	let showMini = !mobile;
 
 	const viewport = root.createDiv({ cls: "pbm-viewport" });
-	viewport.setAttr("aria-label", `${input.year} 전략 맵`);
+	viewport.setAttr("aria-label", `${input.title ?? "목표"} 전략 맵`);
 	const canvas = viewport.createDiv({ cls: "pbm-canvas" });
 	const edgeSvg = svgEl(doc, "svg", { class: "pbm-edges", "aria-hidden": "true" });
 	canvas.appendChild(edgeSvg);
@@ -523,7 +525,7 @@ export function renderStrategyMap(parent: HTMLElement, input: MapInput, cb: MapC
 		if (n.kind === "root") {
 			icon(el, "target", "pbm-root-icon");
 			const t = el.createDiv({ cls: "pbm-root-text" });
-			t.createDiv({ cls: "pbm-root-title", text: `${input.year} 목표` });
+			t.createDiv({ cls: "pbm-root-title", text: input.title ?? "목표" });
 			t.createDiv({ cls: "pbm-root-sub", text: `Main ${n.childCount}개` });
 		} else if (n.kind === "group") {
 			icon(el, "inbox", "pbm-root-icon");

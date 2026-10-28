@@ -519,7 +519,7 @@ export class PinboardView extends ItemView {
 	private renderList(page: HTMLElement, d: Loaded): void {
 		const today = todayIso();
 		if (this.showMissing) this.renderMissing(page, d);
-		const list = page.createDiv({ cls: "pb-list", attr: { role: "treegrid", "aria-label": `${d.year} 목표` } });
+		const list = page.createDiv({ cls: "pb-list", attr: { role: "treegrid", "aria-label": "목표" } });
 		const head = list.createDiv({ cls: "pb-row is-head", attr: { role: "row" } });
 		for (const [cls, label] of [
 			["pb-c-title", "목표"],
@@ -673,6 +673,7 @@ export class PinboardView extends ItemView {
 		};
 		return {
 			year: d.year!,
+			title: this.plugin.settings.sideMode === "전체" ? "내 목표" : `${this.plugin.settings.sideMode} 목표`,
 			mains: d.board.cards.map(({ main, subs }) => ({
 				id: main.id,
 				title: main.title,
