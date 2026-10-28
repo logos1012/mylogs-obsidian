@@ -202,7 +202,8 @@ export class WallCalendarView extends ItemView {
 		const milestones = await loadMilestoneCalendar(this.plugin);
 		// Both sides are read; the other side's tasks show as a count.
 		const all = await loadProjectBacklog(this.plugin, WALL_BACKLOG, "전체", true);
-		const deskTasks = this.plugin.settings.wallShow.task ? await this.loadDeskTasks(milestones.scopeOf) : new Map<number, DeskItem[]>();
+		// Read even while 「할 일」 is off, so the toggle redraws at once.
+		const deskTasks = await this.loadDeskTasks(milestones.scopeOf);
 		if (seq !== this.loadSeq) return;
 		const mode = this.plugin.settings.sideMode;
 		this.backlog = all.filter((g) => shows(g.scope, mode));
@@ -241,6 +242,7 @@ export class WallCalendarView extends ItemView {
 		for (let i = 0; i < 30; i++) binding.createEl("i");
 		this.renderHead(sheet);
 		renderMilestoneIssues(sheet, this.milestones.issues, path => void this.plugin.openProjectAt(path));
+		this.renderShowToggles(sheet);
 		if (this.text !== null) this.renderBacklog(sheet);
 
 		if (this.text === null) {
@@ -254,13 +256,20 @@ export class WallCalendarView extends ItemView {
 		const grid = sheet.createDiv({ cls: "wc-months" });
 		const mode = this.plugin.settings.sideMode;
 		const scopeOf = this.milestones.scopeOf;
+		const show = this.plugin.settings.wallShow;
+		const hidePast = this.plugin.settings.wallHidePast;
+		let drawn = 0;
 		for (const sec of wy.months) {
 			for (const l of sec.lines) this.sides.set(l.index, lineSide(l.line, scopeOf));
-			const show = this.plugin.settings.wallShow;
-			const shown = sec.lines.filter((l) => shows(this.sides.get(l.index)!, mode) && (l.item.kind === "event" ? show.event : l.item.kind === "task" ? show.task : true));
-			this.hidden.set(sec.month, sec.lines.filter((l) => l.item.status === "scheduled").length - shown.filter((l) => l.item.status === "scheduled").length);
+			if (hidePast && this.monthState(sec.month) === "past") continue;
+			const side = sec.lines.filter((l) => shows(this.sides.get(l.index)!, mode));
+			// The folded count is the other side's lines only (not what 보기 turned off).
+			this.hidden.set(sec.month, sec.lines.filter((l) => l.item.status === "scheduled").length - side.filter((l) => l.item.status === "scheduled").length);
+			const shown = side.filter((l) => (l.item.kind === "event" ? show.event : l.item.kind === "task" ? show.task : true));
 			this.renderMonth(grid, sec.month, shown, sec.headingIndex !== -1);
+			drawn++;
 		}
+		if (!drawn) grid.createDiv({ cls: "wc-empty", text: "이 해의 달은 모두 지났어요. 「지난 달」을 켜면 보여요." });
 
 		const global = wy.issues.filter((x) => x.month === undefined);
 		if (global.length) {
@@ -324,25 +333,29 @@ export class WallCalendarView extends ItemView {
 			const b = tb.createEl("button", { cls: "wc-linkbtn", text: "올해로", attr: { type: "button" } });
 			b.addEventListener("click", () => void this.goTo(thisYear));
 		}
-		this.renderShowToggles(head);
 
 	}
 
 	/** 보기: 마일스톤 · 이벤트 · 할 일 on or off (remembered). */
+	/** 보기 bar under the year: what months show, and whether past months do. Redraws here only (no reload). */
 	private renderShowToggles(parent: HTMLElement): void {
 		const box = parent.createDiv({ cls: "wc-show", attr: { role: "group", "aria-label": "보기" } });
-		const show = this.plugin.settings.wallShow;
-		const toggle = (key: keyof typeof show, label: string, help: string) => {
-			const b = box.createEl("button", { cls: `wc-show-btn${show[key] ? " is-on" : ""}`, text: label, attr: { type: "button", "aria-pressed": String(show[key]) } });
+		const s = this.plugin.settings;
+		const button = (on: boolean, label: string, help: string, flip: () => void) => {
+			const b = box.createEl("button", { cls: `wc-show-btn${on ? " is-on" : ""}`, text: label, attr: { type: "button", "aria-pressed": String(on) } });
 			tip(b, help);
-			b.addEventListener("click", async () => {
-				show[key] = !show[key];
-				await this.plugin.saveSettings();
+			b.addEventListener("click", () => {
+				flip();
+				this.render();
+				void this.plugin.saveSettingsQuiet();
 			});
 		};
+		const toggle = (key: keyof typeof s.wallShow, label: string, help: string) => button(s.wallShow[key], label, help, () => (s.wallShow[key] = !s.wallShow[key]));
 		toggle("milestone", "◆ 마일스톤", "프로젝트 마일스톤");
 		toggle("event", "● 이벤트", "일정 · 약속 · 행사");
 		toggle("task", "□ 할 일", "할 일. Desk가 있는 달은 Desk의 인박스 · 이번 주 · 날짜 할 일도 보여요");
+		box.createSpan({ cls: "wc-show-sep" });
+		button(!s.wallHidePast, "지난 달", "지난 달을 보이거나 숨겨요", () => (s.wallHidePast = !s.wallHidePast));
 	}
 
 	/** The month's tasks kept in its Desk file (read only here; open Desk to plan them). */
@@ -494,7 +507,7 @@ export class WallCalendarView extends ItemView {
 
 		const body = cell.createDiv({ cls: "wc-mbody" });
 		const milestones = this.plugin.settings.wallShow.milestone ? this.milestones.markers.filter(m => m.date.startsWith(`${this.year}-${pad2(month)}-`)) : [];
-		const desk = this.deskTasks.get(month) ?? [];
+		const desk = this.plugin.settings.wallShow.task ? (this.deskTasks.get(month) ?? []) : [];
 		renderMilestoneMarkers(body, milestones, todayIso(), path => void this.plugin.openProjectAt(path), true, this.plugin);
 		if (this.addOpen === month) this.renderAddForm(body, month);
 		const dated = lines.filter((l) => l.item.start !== null && l.item.ok).sort((a, b) => (itemSortKey(a.item) < itemSortKey(b.item) ? -1 : itemSortKey(a.item) > itemSortKey(b.item) ? 1 : a.index - b.index));
