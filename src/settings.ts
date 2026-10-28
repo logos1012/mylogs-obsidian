@@ -42,6 +42,8 @@ export interface MyLogsSettings {
 	showTestMarkers: boolean;
 	/** Desk Calendar: hide 완료 · 옮김 · 놓아줌 lines (screen only; remembered). */
 	deskHideClosed: boolean;
+	/** Desk month level (phone 흐름 · 달력): show every task, not only milestones · events · #마감 (remembered). */
+	deskShowTasks: boolean;
 	/** 루미 (desktop AI): which local agent runs — the user's own Claude Code or Codex login. */
 	lumiEngine: "claude" | "codex";
 	/** Full path to the `claude` / `codex` executable ("" = look in the usual places). */
@@ -81,6 +83,7 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	},
 	showTestMarkers: true,
 	deskHideClosed: false,
+	deskShowTasks: false,
 	lumiEngine: "claude",
 	lumiClaudePath: "",
 	lumiCodexPath: "",
