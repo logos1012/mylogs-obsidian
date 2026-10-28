@@ -10543,3 +10543,118 @@ button.pb-board-switch.is-personal {
 .mylogs-wall-calendar button.wc-backlog-task.is-group {
 	font-weight: 600;
 }
+
+/* ───────────────────────── 프로젝트 할 일 개요 (0.28.0): reads like a note, not a form ───────────────────────── */
+
+.pf-outline {
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+	margin: 2px 0 8px;
+}
+.pf-ol-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 30px;
+	padding: 0 4px;
+	border-radius: var(--radius-s);
+}
+.pf-ol-row.is-child {
+	padding-left: 26px;
+}
+.pf-ol-row:hover,
+.pf-ol-row:focus-within {
+	background: var(--background-modifier-hover);
+}
+.pf-ol-check,
+.pf-ol-box {
+	flex: 0 0 auto;
+	width: 16px;
+	height: 16px;
+	margin: 0;
+}
+.pf-ol-box {
+	border: 1px dashed var(--background-modifier-border);
+	border-radius: 3px;
+}
+input.pf-ol-text {
+	flex: 1 1 auto;
+	min-width: 0;
+	height: 28px;
+	padding: 0 2px;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-normal);
+	font-size: var(--font-text-size, 15px);
+}
+input.pf-ol-text:focus {
+	box-shadow: none;
+	outline: none;
+}
+.pf-ol-row.is-group input.pf-ol-text {
+	font-weight: 600;
+}
+.pf-ol-row.is-done input.pf-ol-text {
+	color: var(--text-muted);
+	text-decoration: line-through;
+}
+.pf-ol-row.is-assigned input.pf-ol-text {
+	color: var(--text-muted);
+}
+.pf-ol-meta {
+	flex: 0 0 auto;
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+}
+.pf-ol-handle {
+	flex: 0 0 auto;
+	padding: 0 2px;
+	color: var(--text-faint);
+	cursor: grab;
+	user-select: none;
+}
+button.pf-ol-del {
+	flex: 0 0 auto;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-faint);
+	cursor: pointer;
+}
+button.pf-ol-del:hover:not(:disabled) {
+	color: var(--text-error);
+}
+.pf-ol-handle,
+button.pf-ol-del {
+	opacity: 0;
+}
+.pf-ol-row:hover .pf-ol-handle,
+.pf-ol-row:focus-within .pf-ol-handle,
+.pf-ol-row:hover button.pf-ol-del,
+.pf-ol-row:focus-within button.pf-ol-del {
+	opacity: 1;
+}
+@media (hover: none) {
+	.pf-ol-handle,
+	button.pf-ol-del {
+		opacity: 1;
+	}
+	.pf-ol-row {
+		min-height: 40px;
+	}
+	button.pf-ol-del {
+		width: 36px;
+		height: 36px;
+	}
+}
+.pf-ol-add {
+	color: var(--text-faint);
+	cursor: text;
+}

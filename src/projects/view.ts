@@ -357,7 +357,8 @@ export class ProjectFoldersView extends ItemView {
 
 	// ── rendering ──
 
-	private scheduleLocked(): boolean { return [...this.scheduleStates.values()].some(s => s.busy || !!s.draft || !!s.editing); }
+	/** The outline saves as you go (`./outline-ui.ts`): only a save in flight holds a refresh back. */
+	private scheduleLocked(): boolean { return [...this.scheduleStates.values()].some(s => s.busy); }
 
 	canNavigate(): boolean {
 		if (this.scheduleLocked() || this.busy || [...this.milestoneStates.values()].some(s => s.busy || s.editor || s.removing)) {
@@ -407,7 +408,7 @@ export class ProjectFoldersView extends ItemView {
 		root.empty();
 		this.workspaceComponent = this.addChild(new Component());
 		let schedule = this.scheduleStates.get(p.id);
-		if (!schedule) { schedule = { month: todayIso().slice(0, 7), draft: "" }; this.scheduleStates.set(p.id, schedule); }
+		if (!schedule) { schedule = { month: todayIso().slice(0, 7) }; this.scheduleStates.set(p.id, schedule); }
 		const choose = (item: ScheduleItem) => schedule?.select?.(item);
 		const navigate = (fn: () => void) => { if (this.canNavigate()) fn(); };
 		renderWorkspace(root, p, {

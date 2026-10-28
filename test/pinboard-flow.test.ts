@@ -298,3 +298,14 @@ test("project tasks: Tab / Shift+Tab through changeProjectTask, a 묶음's 하�
  await api.changeProjectTask(v.host,v.p,{kind:"level",id:"T-b",parentId:null},TODAY);
  assert.match(v.data.get(v.path)!,/\n- 녹화 \(task:: T-b\)/);
 });
+test("project tasks: delete removes the hub row, and an assigned task's calendar copies",async()=>{
+ const v=await taskSetup();
+ await api.changeProjectTask(v.host,v.p,{kind:"add",text:"지울 일",id:"T-d"},TODAY);
+ await api.changeProjectTask(v.host,v.p,{kind:"add",text:"그 다음",id:"T-e",after:"T-d",child:false},TODAY);
+ assert.match(v.data.get(v.path)!,/지울 일[^\n]*\n- \[ \] 그 다음/);
+ await api.changeProjectTask(v.host,v.p,{kind:"schedule",task:(await getTasks(v)).find((t:any)=>t.id==="T-d"),target:{kind:"day",date:"2026-10-28"}},TODAY);
+ assert.match(v.data.get("03 Desk Calendar/2026/2026-10.md")!,/지울 일/);
+ await api.changeProjectTask(v.host,v.p,{kind:"delete",id:"T-d"},TODAY);
+ assert.doesNotMatch(v.data.get(v.path)!,/^\s*- [^\n]*\(task:: T-d\)/m);assert.doesNotMatch(v.data.get("03 Desk Calendar/2026/2026-10.md")!,/지울 일/);
+ assert.deepEqual((await getTasks(v)).map((t:any)=>t.id),["T-e"]);
+});
