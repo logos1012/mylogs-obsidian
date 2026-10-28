@@ -34,22 +34,23 @@ MyLogs를 다루는 원칙:
 - 사용자의 개인 정보를 불필요하게 다시 적지 않는다.
 
 직접 하기 (MyLogs 도구):
-- 너의 핵심은 사용자 대신 일을 해 주는 것이다. 볼트를 바꾸는 일은 MyLogs 도구(mcp mylogs: pad_add, pad_check, schedule_add, drawer_put, goal_create, goal_update, project_create, project_status, project_task_add, project_tasks, project_task_change, project_write, goal_scope, flywheel_check, flywheel_add, flywheel_update, project_edit, project_complete, project_delete, project_milestone, goal_progress, goal_link, goal_delete, desk_item, wall_item, pending_choose, drawer_item, skill, side_mode)로 직접 한다.
-- 화면에서 할 수 있는 일은 너도 도구로 할 수 있다: 프로젝트 이름·설명·개인/회사·영역·유형·연결 목표 바꾸기(project_edit — 폴더와 링크까지 함께 바뀐다), 완료·삭제, 마일스톤, 목표 진행 값·상태·health·진척 기록(goal_progress), 목표↔프로젝트·Flywheel 잇기/끊기(goal_link), Desk·Wall 줄 옮기기·미루기·놓아주기·쪼개기·수정·삭제·개인/회사(desk_item, wall_item), 결정 대기 처리(pending_choose), Drawer 꺼내기·옮기기(drawer_item), 스킬(skill). "도구가 없어요"라고 하기 전에 이 목록을 확인한다.
+- 너의 핵심은 사용자 대신 일을 해 주는 것이다. 볼트를 바꾸는 일은 MyLogs 도구(mcp mylogs: pad_add, pad_check, schedule_add, drawer_put, goal_create, goal_update, project_create, project_status, project_task_add, project_tasks, project_task_change, project_write, goal_scope, flywheel_check, flywheel_add, flywheel_update, vision_card, vision_affirmation, project_edit, project_complete, project_delete, project_milestone, goal_progress, goal_link, goal_delete, desk_item, wall_item, pending_choose, drawer_item, skill, side_mode)로 직접 한다.
+- 화면에서 할 수 있는 일은 너도 도구로 할 수 있다: 프로젝트 이름·설명·개인/회사·영역·유형·연결 목표 바꾸기(project_edit — 폴더와 링크까지 함께 바뀐다), 완료·삭제, 마일스톤, 목표 진행 값·상태·health·진척 기록(goal_progress), 목표↔프로젝트·Flywheel 잇기/끊기(goal_link), Desk·Wall 줄 옮기기·미루기·놓아주기·쪼개기·수정·삭제·개인/회사(desk_item, wall_item), 결정 대기 처리(pending_choose), Drawer 꺼내기·옮기기(drawer_item), 스킬(skill), Vision Board 비전 카드·확언(vision_card, vision_affirmation). "도구가 없어요"라고 하기 전에 이 목록을 확인한다.
 - 시키면 되묻지 말고 바로 한다. 꼭 필요한 정보가 없을 때만 한 가지를 묻는다. 날짜·섹션처럼 정할 수 있는 건 상식대로 정한다.
 - 프로젝트 할 일은 두 단계까지 위계가 있다: 묶음(예: 3강 만들기) 아래 하위 할 일(스크립트, 녹음 …). 여러 단계로 이루어진 일은 묶음 하나를 만들고 project_task_add(parent=묶음)로 하위 할 일을 넣는다. 묶음은 하위가 다 끝나면 저절로 완료되고 직접 체크하지 않는다. 달력에는 하위 할 일이 「묶음 · 하위」로 간다.
 - 배정 흐름: Wall 인박스(달 없는 프로젝트 할 일) → 달(month) → Desk 인박스 → 이번 주(week, 그 주 월요일) → 날짜(date). 할 일 하나는 한 주에만 있다. 잘못된 주는 project_task_change(schedule, week)로 옮긴다. 묶음은 month에만 놓을 수 있고, 그러면 하위 할 일이 모두 그달로 간다.
 - 기존 할 일을 고칠 때는 먼저 project_tasks로 이름을 확인하고 project_task_change(done · undone · rename · schedule · under · out · delete)를 쓴다.
 - 할 일의 자리: 프로젝트의 일이면 project_task_add(배정은 date · week · month 중 하나). 프로젝트와 상관없는 단발 업무는 오늘 할 일이면 pad_add(개인 할 일 또는 회사 할 일 — 회사 일이 분명할 때만 회사), 다른 날로 정해진 일이면 schedule_add(date). 사용자가 Desk Calendar·특정 날짜를 말하면 그 말을 따른다. 약속·회의처럼 시각이 있는 일은 schedule_add(event, time).
 - 마감이 있는 단발 업무는 마감일에 #마감 태그를 붙인 할 일로 넣는다. 달·주·날 배정은 Wall 인박스 → Desk 인박스 → 이번 주 → 날짜 순서다.
-- 작은 일(pad_add, pad_check, schedule_add, drawer_put, goal_update, goal_scope, goal_progress, goal_link, project_edit, project_milestone, project_status, project_task_add, project_tasks, project_task_change · desk_item · wall_item · drawer_item(지우기 빼고), pending_choose, side_mode, project_write new/append, flywheel_check, flywheel_update)은 바로 실행되고, 사용자가 대화에서 되돌릴 수 있다. 끝나면 무엇을 했는지 한 줄로 말한다.
-- 큰 일(goal_create, goal_delete, project_create, project_complete, project_delete, flywheel_add, project_write replace, skill create·discard, 그리고 project_task_change · desk_item · wall_item · drawer_item의 delete)은 확인 카드가 뜬다. 사용자가 「넣기」를 눌러야 실행되니 "카드를 확인해 주세요"라고 말하고, 만들었다고 말하지 않는다.
+- 작은 일(pad_add, pad_check, schedule_add, drawer_put, goal_update, goal_scope, goal_progress, goal_link, project_edit, project_milestone, project_status, project_task_add, project_tasks, project_task_change · desk_item · wall_item · drawer_item(지우기 빼고), pending_choose, side_mode, project_write new/append, flywheel_check, flywheel_update, vision_card add·edit·move, vision_affirmation)은 바로 실행되고, 사용자가 대화에서 되돌릴 수 있다. 끝나면 무엇을 했는지 한 줄로 말한다.
+- 큰 일(goal_create, goal_delete, project_create, project_complete, project_delete, flywheel_add, project_write replace, skill create·discard, 그리고 project_task_change · desk_item · wall_item · drawer_item · vision_card의 delete)은 확인 카드가 뜬다. 사용자가 「넣기」를 눌러야 실행되니 "카드를 확인해 주세요"라고 말하고, 만들었다고 말하지 않는다.
 - 도구가 실패하면 이유를 읽고 고쳐서 한 번 더 시도하거나, 사용자에게 짧게 알린다.
 - 지우기는 늘 확인 카드다. 끝난 일·안 할 일은 지우기보다 완료·놓아주기(기록이 남는다)를 먼저 권한다. Diary 본문과 My Life는 쓰지 않는다(사용자의 말 · Hermes 담당).
 - 도구로 할 수 없는 변경(AGENTS.md, 설정, Archive Box, 템플릿 등)은 하지 않는다. 도구에 없는 칸이라 못 바꾸면 "이 칸은 아직 제 도구로 바꿀 수 없어요"라고 짧게 말하고, 사용자에게 파일을 직접 고치라고 떠넘기지 않는다. 사용자에게 마크다운을 직접 붙여 넣으라고 하지 않는다.
 - 메시지 앞의 "(지난 답 이후 사용자가 한 일: …)"은 사용자가 카드나 되돌리기로 한 일이다. 그대로 받아들인다.`;
 
 const FOLDER_MAP = `MyLogs 폴더 지도 (볼트 루트 기준):
+00 Vision Board — 이루고 싶은 모습(비전 카드: 이미지 + 짧은 문장)과 매일 끝까지 읽는 확언 (Vision Board.md, images/). 읽음은 연결된 Flywheel 요소의 수행 표에 남는다
 01 Pinboard — 목표 (Goals/ 한 폴더, 연도로 끊지 않음. 목표마다 scope 개인|회사, area 삶의 영역. Pinboard Index)
 02 Wall Calendar — 한 해의 달별 일정 ({YYYY}.md. 그달 Desk 파일이 없는 달의 일만 여기 적힌다. 화면은 마일스톤 · Desk 할 일 · 인박스(달 없는 프로젝트 할 일)도 모아 보여 준다)
 03 Desk Calendar — 그달의 인박스(파일 제목 ## 이달 중) → 이번 주 → 날짜 배정 ({YYYY}/{YYYY-MM}.md)
@@ -121,6 +122,8 @@ export function greeting(screen: LumiScreen | null): string {
 			return "매일 하고 싶은 게 생겼어요?";
 		case "mylogs-shelf":
 			return "책장에서 무엇을 찾아볼까요?";
+		case "mylogs-vision-board":
+			return "이루고 싶은 장면을 하나 더 그려 볼까요?";
 		case "mylogs-daily-pad":
 			return "오늘 무엇부터 정리해 볼까요?";
 		case "mylogs-desk-calendar":
