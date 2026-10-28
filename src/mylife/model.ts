@@ -48,7 +48,7 @@ export const UNIT_LABEL: Record<MyLifeUnit, string> = {
 
 /** Section names of `_Templates/{Daily,Weekly,Monthly,Yearly}.md`, in template order. */
 export const TEMPLATE_SECTIONS: Record<MyLifeUnit, readonly string[]> = {
-	daily: ["하루", "한 일", "결정", INSIGHT_SECTION, "열린 질문", "보낸 곳", "놓아준 일", LOG_SECTION, "끼적임", DIARY_LINKS_SECTION, "세션"],
+	daily: ["하루", "한 일", "결정", INSIGHT_SECTION, "열린 질문", "보낸 곳", "놓아준 일", LOG_SECTION, "메모", DIARY_LINKS_SECTION, "세션"],
 	weekly: ["한 주", "진전 (Pinboard 대조)", "한 일", "결정", INSIGHT_SECTION, "계획과 실제", "놓아준 일", "반복 주제", USER_NOTE_SECTION, "날짜"],
 	monthly: [
 		"한 달",

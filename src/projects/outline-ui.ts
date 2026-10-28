@@ -292,10 +292,10 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 		const meta = line.createSpan({ cls: "pf-ol-meta" });
 		if (t.group) meta.setText(`하위 ${rows.filter((x) => x.task.parentId === r.id && x.task.state === "done").length}/${r.kids}`);
 		else if (t.state === "cancelled") meta.setText("놓아줌");
-		else if (t.date || t.month || t.desk) meta.setText(t.date ?? (t.desk?.section === "alloc" ? `${t.desk.monday} 주` : `${t.month} 이달 중`));
+		else if (t.date || t.month || t.desk) meta.setText(t.date ?? (t.desk?.section === "alloc" ? `${t.desk.monday} 주` : `${+(t.month ?? "").slice(5, 7)}월 인박스`));
 		if (!p.archived && t.state !== "cancelled") {
 			const handle = line.createSpan({ cls: "pf-ol-handle", text: "⋮⋮", attr: { "aria-label": `${t.title} 끌기`, role: "button", tabindex: "-1" } });
-			tip(handle, t.group ? "끌어서 다른 할 일 아래로, 또는 달력 「이달 중」에 놓아 하위 할 일을 그 달로" : "끌어서 달력 날짜·주·이달 중에 배정하거나, 다른 할 일 위에 놓아 그 아래로");
+			tip(handle, t.group ? "끌어서 다른 할 일 아래로, 또는 달력 「인박스」에 놓아 하위 할 일을 그 달로" : "끌어서 달력 날짜·주·인박스에 배정하거나, 다른 할 일 위에 놓아 그 아래로");
 			scheduleSource(handle, host, item(t));
 			handle.addEventListener("click", () => {
 				if (t.state === "scheduled" && !t.group) select(item(t));

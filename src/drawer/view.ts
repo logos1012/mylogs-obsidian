@@ -465,7 +465,7 @@ export class DrawerView extends ItemView {
 		};
 		const ym = todayIsoLocal().slice(0, 7);
 		target("today", "sun", "오늘", "Daily Pad 오늘 할 일");
-		target("month", "calendar-days", "이달 Desk", `${ym} 이달 중 (Desk 파일이 없으면 Wall)`);
+		target("month", "calendar-days", "이달 Desk", `${ym} 인박스 (Desk 파일이 없으면 Wall)`);
 		target("wall", "calendar-range", "Wall · 달 선택", "미래의 달 (그 달 Desk 파일이 있으면 Desk)");
 		target("project", "folder-kanban", "프로젝트로", "새 프로젝트 창을 이름·출처로 채워 열기");
 
@@ -610,7 +610,7 @@ export class DrawerView extends ItemView {
 		if (target === "today") return this.run(() => takeOutToday(this.plugin, it));
 		if (target === "month") return this.run(() => takeOutMonth(this.plugin, it, todayIsoLocal().slice(0, 7)));
 		if (target === "wall") {
-			const ym = await pickMonth(this.app, "Wall Calendar · 달 고르기", shiftMonth(todayIsoLocal().slice(0, 7), 1), `「${it.text}」을(를) 보낼 달을 골라요. 그 달의 Desk Calendar 파일이 있으면 거기 「이달 중」에 적어요.`);
+			const ym = await pickMonth(this.app, "Wall Calendar · 달 고르기", shiftMonth(todayIsoLocal().slice(0, 7), 1), `「${it.text}」을(를) 보낼 달을 골라요. 그 달의 Desk Calendar 파일이 있으면 거기 「인박스」에 적어요.`);
 			if (!ym) return;
 			return this.run(() => takeOutMonth(this.plugin, it, ym));
 		}

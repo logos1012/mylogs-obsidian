@@ -41,7 +41,7 @@ export function renderProjectSchedule(parent:HTMLElement,host:ProjectsHost,p:Pro
   button(nav,"›",()=>{state.month=shiftMonth(state.month,1);paint();}).setAttr("aria-label","다음 달");
   if(chosen)calendar.createDiv({cls:"pf-schedule-chosen",text:`${chosen.kind==="milestone"?"◆":"□"} ${chosen.title} — 날짜 선택`});
   const slots=calendar.createDiv({cls:"pf-schedule-slots"});
-  const month=button(slots,"이달 중",()=>{});if(!p.archived)scheduleTarget(month,host,{kind:"month",month:state.month},refresh);
+  const month=button(slots,"인박스",()=>{});if(!p.archived)scheduleTarget(month,host,{kind:"month",month:state.month},refresh);
   for(const monday of weekMondays(+state.month.slice(0,4),+state.month.slice(5,7)).filter(d=>d.startsWith(state.month))){const b=button(slots,`${monday.slice(5).replace("-","/")} 주`,()=>{});if(!p.archived)scheduleTarget(b,host,{kind:"week",monday},refresh);}
   const grid=calendar.createDiv({cls:"pf-schedule-grid",attr:{"aria-label":`${state.month} 배정 달력`}});
   for(const day of ["월","화","수","목","금","토","일"])grid.createDiv({cls:"pf-schedule-weekday",text:day});

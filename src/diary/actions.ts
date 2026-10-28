@@ -323,7 +323,7 @@ export interface MaterialSection {
 }
 
 export interface Material {
-	/** 오늘 Daily Pad `## 끼적임` / `## 메모` / `## 로그` (only sections with content). */
+	/** 오늘 Daily Pad `## 메모` / `## 로그` (only sections with content). */
 	todayPad: MaterialSection[];
 	todayPadPath: string;
 	/** 어제 My Life Daily `## 깨달음·감상` / `## 열린 질문`. */
@@ -351,7 +351,7 @@ export async function loadMaterial(host: DiaryHost, date: string): Promise<Mater
 	const life = normalizePath(myLifeDailyPath(settings.myLifePath, yesterday));
 	const s = settings.sections;
 	return {
-		todayPad: await sectionsOf(app, pad, [s.scribble, s.memo, s.log]),
+		todayPad: await sectionsOf(app, pad, [s.memo, s.log]),
 		todayPadPath: pad,
 		yesterdayLife: await sectionsOf(app, life, [INSIGHT_SECTION, "열린 질문"]),
 		yesterdayLifePath: life,

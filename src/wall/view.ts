@@ -1,7 +1,8 @@
 import { loadProjectBacklog, type BacklogGroup } from "../projects/backlog.ts";
 import { isPicked, pickedSchedule, scheduleSource, scheduleTarget, selectSchedule, selectedSchedule, togglePicked, type ScheduleItem } from "../projects/schedule-dnd.ts";
 import { taskLabel } from "../projects/tasks.ts";
-import { asSide, inputSide, lineSide, projectRef, setSide, shows, type Side } from "../side.ts";
+import { asSide, inputSide, lineSide, projectRef, type ScopeLookup, setSide, shows, type Side } from "../side.ts";
+import { type DeskItem, isoWeekNo, parseMonthFile } from "../desk/model.ts";
 import { toggleLinkedProjectTask } from "../projects/task-actions.ts";
 import { mountAppNav } from "../ui/nav.ts";
 import { ItemPopover } from "../ui/popover.ts";
@@ -82,6 +83,8 @@ export class WallCalendarView extends ItemView {
 	private sides = new Map<number, Side>();
 	/** 배정 안 된 프로젝트 할 일 (to put on a month). */
 	private backlog: BacklogGroup[] = [];
+	/** Per month (1–12) with a Desk file: its tasks, each once (날짜 > 이번 주 > 인박스), on the shown side. */
+	private deskTasks = new Map<number, DeskItem[]>();
 	/** Tasks of the other side's projects (개인 / 회사 mode), shown as a count. */
 	private backlogFolded = 0;
 
@@ -163,7 +166,9 @@ export class WallCalendarView extends ItemView {
 		if (Platform.isMobile) this.register(enableTouchMenus(this.contentEl));
 		const onFile = (f: TAbstractFile, old?: string) => {
 			const p = this.yearPath();
-			if (f.path === p || old === p || watchesMilestoneProjects(this.plugin, f.path) || (old && watchesMilestoneProjects(this.plugin, old))) this.scheduleReload();
+			// Desk month files too: their tasks show under 「할 일」 and leave the 인박스 when assigned.
+			const desk = normalizePath(this.plugin.settings.deskCalendarFolder) + "/";
+			if (f.path === p || old === p || f.path.startsWith(desk) || watchesMilestoneProjects(this.plugin, f.path) || (old && watchesMilestoneProjects(this.plugin, old))) this.scheduleReload();
 		};
 		this.registerEvent(this.app.vault.on("modify", (f) => onFile(f)));
 		this.registerEvent(this.app.vault.on("create", (f) => onFile(f)));
@@ -197,9 +202,11 @@ export class WallCalendarView extends ItemView {
 		const milestones = await loadMilestoneCalendar(this.plugin);
 		// Both sides are read; the other side's tasks show as a count.
 		const all = await loadProjectBacklog(this.plugin, WALL_BACKLOG, "전체", true);
+		const deskTasks = this.plugin.settings.wallShow.task ? await this.loadDeskTasks(milestones.scopeOf) : new Map<number, DeskItem[]>();
 		if (seq !== this.loadSeq) return;
 		const mode = this.plugin.settings.sideMode;
 		this.backlog = all.filter((g) => shows(g.scope, mode));
+		this.deskTasks = deskTasks;
 		this.backlogFolded = all.filter((g) => !this.backlog.includes(g)).reduce((n, g) => n + g.tasks.length, 0);
 		this.text = text;
 		this.milestones = { ...milestones, markers: milestones.markers.filter((m) => shows(asSide(m.scope), mode)) };
@@ -249,7 +256,8 @@ export class WallCalendarView extends ItemView {
 		const scopeOf = this.milestones.scopeOf;
 		for (const sec of wy.months) {
 			for (const l of sec.lines) this.sides.set(l.index, lineSide(l.line, scopeOf));
-			const shown = sec.lines.filter((l) => shows(this.sides.get(l.index)!, mode));
+			const show = this.plugin.settings.wallShow;
+			const shown = sec.lines.filter((l) => shows(this.sides.get(l.index)!, mode) && (l.item.kind === "event" ? show.event : l.item.kind === "task" ? show.task : true));
 			this.hidden.set(sec.month, sec.lines.filter((l) => l.item.status === "scheduled").length - shown.filter((l) => l.item.status === "scheduled").length);
 			this.renderMonth(grid, sec.month, shown, sec.headingIndex !== -1);
 		}
@@ -316,7 +324,66 @@ export class WallCalendarView extends ItemView {
 			const b = tb.createEl("button", { cls: "wc-linkbtn", text: "올해로", attr: { type: "button" } });
 			b.addEventListener("click", () => void this.goTo(thisYear));
 		}
+		this.renderShowToggles(head);
 
+	}
+
+	/** 보기: 마일스톤 · 이벤트 · 할 일 on or off (remembered). */
+	private renderShowToggles(parent: HTMLElement): void {
+		const box = parent.createDiv({ cls: "wc-show", attr: { role: "group", "aria-label": "보기" } });
+		const show = this.plugin.settings.wallShow;
+		const toggle = (key: keyof typeof show, label: string, help: string) => {
+			const b = box.createEl("button", { cls: `wc-show-btn${show[key] ? " is-on" : ""}`, text: label, attr: { type: "button", "aria-pressed": String(show[key]) } });
+			tip(b, help);
+			b.addEventListener("click", async () => {
+				show[key] = !show[key];
+				await this.plugin.saveSettings();
+			});
+		};
+		toggle("milestone", "◆ 마일스톤", "프로젝트 마일스톤");
+		toggle("event", "● 이벤트", "일정 · 약속 · 행사");
+		toggle("task", "□ 할 일", "할 일. Desk가 있는 달은 Desk의 인박스 · 이번 주 · 날짜 할 일도 보여요");
+	}
+
+	/** The month's tasks kept in its Desk file (read only here; open Desk to plan them). */
+	private renderDeskTasks(body: HTMLElement, month: number, items: DeskItem[]): void {
+		const sub = body.createDiv({ cls: "wc-sub" });
+		tip(sub.createSpan({ text: `Desk 할 일 ${items.length}` }), "이 달 Desk Calendar의 할 일 · 누르면 Desk를 열어요");
+		const ol = body.createEl("ol", { cls: "wc-items is-undated wc-desk-tasks" });
+		for (const it of items) {
+			const li = ol.createEl("li", { cls: `wc-item k-task s-${it.item.status}${it.side === "회사" ? " is-work" : ""}` });
+			li.createSpan({ cls: "wc-sym" });
+			const t = li.createSpan({ cls: "wc-t" });
+			const where = it.date ? `${+it.date.slice(5, 7)}/${+it.date.slice(8, 10)}` : it.monday ? `W${String(isoWeekNo(it.monday)).padStart(2, "0")}` : "";
+			if (where) t.createSpan({ cls: "wc-d", text: `${where} ` });
+			t.appendText(it.item.text);
+			li.addEventListener("click", () => void this.plugin.openDeskMonth(this.ym(month)));
+		}
+	}
+
+	/** Desk month files of this year: each task once, the most planned copy (날짜 > 이번 주 > 인박스). */
+	private async loadDeskTasks(scopeOf: ScopeLookup | undefined): Promise<Map<number, DeskItem[]>> {
+		const out = new Map<number, DeskItem[]>();
+		const mode = this.plugin.settings.sideMode;
+		for (let m = 1; m <= 12; m++) {
+			const ym = this.ym(m);
+			const f = this.file(normalizePath(`${this.plugin.settings.deskCalendarFolder}/${this.year}/${ym}.md`));
+			if (!f) continue;
+			const md = parseMonthFile(await this.app.vault.cachedRead(f), this.year, m);
+			const rank = (it: DeskItem) => (it.section === "day" ? 0 : it.section === "alloc" ? 1 : 2);
+			const best = new Map<string, DeskItem>();
+			const all = [...[...md.days.values()].flat(), ...[...md.weeks.values()].flatMap((w) => w.alloc ?? []), ...md.during];
+			for (const it of all) {
+				if (it.item.kind !== "task" || (it.item.status !== "scheduled" && it.item.status !== "done")) continue;
+				it.side = lineSide(it.item.raw, scopeOf);
+				if (!shows(it.side, mode)) continue;
+				const k = it.key;
+				const cur = best.get(k);
+				if (!cur || rank(it) < rank(cur)) best.set(k, it);
+			}
+			if (best.size) out.set(m, [...best.values()].sort((a, b) => (a.date ?? a.monday ?? "9").localeCompare(b.date ?? b.monday ?? "9")));
+		}
+		return out;
 	}
 
 	/** Symbol legend, at the bottom of the sheet: reference, not something to read first. */
@@ -399,7 +466,7 @@ export class WallCalendarView extends ItemView {
 			scheduleTarget(cell, this.plugin, { kind: "month", month: this.ym(month) }, () => this.reload(), (it) => {
 				const ym = this.ym(month);
 				const desk = this.file(normalizePath(`${this.plugin.settings.deskCalendarFolder}/${ym.slice(0, 4)}/${ym}.md`));
-				new Notice(`「${it.title}」 → ${month}월${desk ? " (Desk Calendar 이달 중)" : ""}`, 2500);
+				new Notice(`「${it.title}」 → ${month}월${desk ? " (Desk 인박스)" : ""}`, 2500);
 			});
 		if (state === "now") cell.addClass("is-upcoming");
 		const head = cell.createDiv({ cls: "wc-mhead" });
@@ -426,13 +493,14 @@ export class WallCalendarView extends ItemView {
 		this.renderMini(head, month, lines);
 
 		const body = cell.createDiv({ cls: "wc-mbody" });
-		const milestones = this.milestones.markers.filter(m => m.date.startsWith(`${this.year}-${pad2(month)}-`));
+		const milestones = this.plugin.settings.wallShow.milestone ? this.milestones.markers.filter(m => m.date.startsWith(`${this.year}-${pad2(month)}-`)) : [];
+		const desk = this.deskTasks.get(month) ?? [];
 		renderMilestoneMarkers(body, milestones, todayIso(), path => void this.plugin.openProjectAt(path), true, this.plugin);
 		if (this.addOpen === month) this.renderAddForm(body, month);
 		const dated = lines.filter((l) => l.item.start !== null && l.item.ok).sort((a, b) => (itemSortKey(a.item) < itemSortKey(b.item) ? -1 : itemSortKey(a.item) > itemSortKey(b.item) ? 1 : a.index - b.index));
 		const undated = lines.filter((l) => l.item.start === null && l.item.ok);
 		const broken = lines.filter((l) => !l.item.ok);
-		if (!lines.length && !milestones.length && this.addOpen !== month) {
+		if (!lines.length && !milestones.length && !desk.length && this.addOpen !== month) {
 			const e = body.createDiv({ cls: "wc-empty" });
 			e.createSpan({ text: !hasHeading ? `## ${this.year}-${pad2(month)} 제목이 없어요` : state === "past" ? "적힌 일이 없던 달" : "아직 비어 있어요" });
 		}
@@ -441,6 +509,7 @@ export class WallCalendarView extends ItemView {
 			body.createDiv({ cls: "wc-sub" }).createSpan({ text: "이달 중" });
 			this.renderItems(body.createEl("ol", { cls: "wc-items is-undated" }), month, undated);
 		}
+		if (desk.length) this.renderDeskTasks(body, month, desk);
 		if (broken.length) {
 			body.createDiv({ cls: "wc-sub is-warn" }).createSpan({ text: "형식 확인 필요" });
 			this.renderItems(body.createEl("ol", { cls: "wc-items is-undated" }), month, broken);

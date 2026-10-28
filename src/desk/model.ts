@@ -18,6 +18,7 @@ export const ALLOC_LINK_RE = /^\(\s*분배\s*칸\s*:\s*\[\[([^\]|]+)(?:\|[^\]]*)
 const GOAL_ID_RE = /^(G-\d{4}-\d{2}(?:\.\d+)?)\s*(.*)$/;
 const LIST_BODY_RE = /^[-*+]\s+(.*)$/;
 export const ALLOC_HEADING = "이번 주";
+/** Older month files may still have it (read, not shown, not written since 2026-10-28). */
 export const FOCUS_HEADING = "이달의 초점";
 export const DURING_HEADING = "이달 중";
 
@@ -234,7 +235,7 @@ export function parseMonthFile(text: string, year: number, month: number): Month
 				const wm = WEEK_HEAD_RE.exec(s);
 				if (!wm) {
 					section = null;
-					issue(idx, s, "알 수 없는 ## 제목이에요 (이달의 초점 / 이달 중 / W주차 만 씁니다)");
+					issue(idx, s, "알 수 없는 ## 제목이에요 (이달 중 / W주차 만 씁니다)");
 					continue;
 				}
 				const sm = +wm[2];
@@ -530,7 +531,7 @@ export function mondayOfWeekNo(year: number, month: number, no: number): string 
 /** Exactly `render()` from `03 Desk Calendar/_build/new_month.py`. */
 export function newMonthSkeleton(year: number, month: number, todayIso: string): string {
 	const key = monthKey(year, month);
-	const lines = ["---", "type: desk-calendar", `month: ${key}`, `updated: ${todayIso}`, "---", "", `# ${key} Desk Calendar`, "", `## ${FOCUS_HEADING}`, "", `## ${DURING_HEADING}`, ""];
+	const lines = ["---", "type: desk-calendar", `month: ${key}`, `updated: ${todayIso}`, "---", "", `# ${key} Desk Calendar`, "", `## ${DURING_HEADING}`, ""];
 	for (const monday of weekMondays(year, month)) {
 		const sunday = addDays(monday, 6);
 		lines.push(`## W${pad2(isoWeekNo(monday))} (${mmdd(monday)}~${mmdd(sunday)})`);
