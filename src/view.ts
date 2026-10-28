@@ -600,6 +600,8 @@ export class DailyPadView extends ItemView {
 	private loadSeq = 0;
 	/** This ISO week's Flywheel completions per element id (`n/7` badges). */
 	flywheelWeek: Map<string, number> = new Map();
+	/** 결정 대기: show the lines already checked done (to uncheck a mistake). */
+	private showDonePending = false;
 
 	constructor(leaf: WorkspaceLeaf, plugin: MyLogsPlugin) {
 		super(leaf);
@@ -1022,12 +1024,26 @@ export class DailyPadView extends ItemView {
 			"지난날 못 한 일이에요. 항목마다 갈 곳을 하나 골라 주세요 — 다른 날 · 미래로 · 서랍에 · 쪼개기 · 놓아주기. 고를 때까지 여기 남아요.",
 		);
 		const open = lines.filter((sl) => sl.indent === 0 && sl.item?.kind === "task" && sl.item.status === "scheduled").length;
+		// Done here stays in the file (`[x]`, and done on its original day too) but leaves the screen;
+		// 「완료 n · 보기」 brings it back to uncheck a mistake.
+		const isDone = (sl: SourceLine) => sl.indent === 0 && sl.item?.kind === "task" && sl.item.status === "done";
+		const done = lines.filter(isDone).length;
 		if (open) titles.createSpan({ cls: "ml-pending-count", text: String(open) });
-		const body = el.createDiv({ cls: "ml-panel-body" });
-		if (!lines.length) {
-			this.gentle(body, "결정을 기다리는 일이 없어요.");
+		el.toggleClass("is-all-done", !open && done > 0);
+		if (done) {
+			const t = head.createEl("button", { cls: "ml-btn ml-btn-ghost ml-pending-done", text: this.showDonePending ? `완료 ${done} · 숨기기` : `완료 ${done} · 보기`, attr: { type: "button" } });
+			tip(t, "결정 대기에서 완료한 일이에요. 펼쳐서 체크를 풀 수 있어요.");
+			t.addEventListener("click", () => {
+				this.showDonePending = !this.showDonePending;
+				this.renderPending(padText);
+			});
+		}
+		if (!open && !done) {
+			el.toggle(false);
 			return;
 		}
+		if (!open && !this.showDonePending) return;
+		const body = el.createDiv({ cls: "ml-panel-body" });
 		const candidates = new Map(extractCandidates(padText, name).map((c) => [c.index, c]));
 		const date = this.date;
 		const decidable = (sl: SourceLine) => sl.indent === 0 && sl.item?.kind === "task" && sl.item.status === "scheduled" && !isFlywheelLine(sl.line);
@@ -1061,6 +1077,7 @@ export class DailyPadView extends ItemView {
 				addChoices(sl, pop);
 			},
 			decorate: (sl, li) => {
+				if (isDone(sl) && !this.showDonePending) li.addClass("ml-hidden-done");
 				if (!decidable(sl)) return;
 				const b = li.createEl("button", { cls: "ml-btn ml-decide", text: "갈 곳 정하기", attr: { type: "button" } });
 				b.addEventListener("click", (e) => {
@@ -1085,9 +1102,26 @@ export class DailyPadView extends ItemView {
 						if (!state) {
 							new Notice("Daily Pad에서 이 줄을 찾지 못했어요. 파일이 바뀌어서 다시 불러왔어요.");
 							this.renderPending(await this.readPad());
+							return;
 						}
+						if (state === "done") this.undoNotice(date, { ...sl, line: sl.line.replace(/\[ \]/, "[x]") });
 					});
 			},
+		});
+	}
+
+	/** 「완료했어요 · 되돌리기」 for 8 s after a 결정 대기 check (the original day is reopened too). */
+	private undoNotice(date: string, doneLine: SourceLine): void {
+		const frag = createFragment();
+		frag.appendText(`「${doneLine.item?.text ?? ""}」 완료했어요 `);
+		const b = frag.createEl("button", { cls: "ml-undo-btn", text: "되돌리기", attr: { type: "button" } });
+		const n = new Notice(frag, 8000);
+		b.addEventListener("click", (e) => {
+			e.stopPropagation();
+			n.hide();
+			void togglePending(this.plugin, date, doneLine, todayIso()).then((s) => {
+				if (s !== "open") new Notice("되돌리지 못했어요. 결정 대기의 「완료 · 보기」에서 체크를 풀어 주세요.");
+			});
 		});
 	}
 
