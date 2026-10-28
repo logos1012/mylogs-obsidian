@@ -96,6 +96,60 @@ export function placeTask(text: string, id: string, parentId: string | null): st
  return lines.join("");
 }
 
+/**
+ * Insert a new hub row right after the row `afterId` (null: at the end). `child`: as a 하위 할 일 —
+ * of `afterId` itself when it is top-level, else of its 묶음. Not child: after the whole block.
+ */
+export function insertTaskAfter(text: string, afterId: string | null, line: string, child: boolean): string {
+ const row=line.replace(/^\s+/,"");
+ const sec=findSection(text,"할 일");
+ if(!sec||afterId===null){
+  if(!child)return appendHubTask(text,row);
+  const last=lastTopLevel(text);if(!last)throw Error("하위로 넣을 위 단계 할 일이 없어요.");
+  return insertTaskAfter(text,last,row,true);
+ }
+ const lines=splitLinesKeepEol(text),eol=detectEol(text);
+ let end=sec.headingIndex+1;while(end<lines.length&&!/^#{1,2}\s/.test(stripEol(lines[end])))end++;
+ const idOf=(i:number)=>/\(task::\s*([^)]*)\)/.exec(stripEol(lines[i]))?.[1]?.trim()??"";
+ const isChild=(i:number)=>/^\s+[-*+]\s/.test(stripEol(lines[i]));
+ const at=lines.findIndex((_,i)=>i>sec.headingIndex&&i<end&&/^\s*[-*+]\s/.test(stripEol(lines[i]))&&idOf(i)===afterId);
+ if(at<0)throw Error("할 일을 찾을 수 없어요. 다시 열어 주세요.");
+ let top=at;while(top>sec.headingIndex&&isChild(top))top--;
+ let j:number;
+ if(child){
+  if(!/^[-*+]\s+\[[ xX]\]/.test(stripEol(lines[top])))throw Error("배정한 할 일 아래에는 넣을 수 없어요.");
+  if(!isChild(at)&&at!==top)throw Error("위계는 두 단계까지예요.");
+  j=at+1;
+  lines[top]=lines[top].replace(/^([-*+]\s+\[)[xX](\])/,"$1 $2");
+ }else{j=top+1;while(j<end&&isChild(j))j++;}
+ if(j>0&&!lines[j-1].endsWith("\n"))lines[j-1]+=eol;
+ lines.splice(j,0,(child?"    ":"")+row+eol);
+ return lines.join("");
+}
+
+/** Remove the hub row of task `id` (a 묶음 only once it has no 하위 할 일). */
+export function removeHubRow(text: string, id: string): string {
+ const lines=splitLinesKeepEol(text),sec=findSection(text,"할 일");if(!sec)throw Error("할 일 섹션이 없어요.");
+ let end=sec.headingIndex+1;while(end<lines.length&&!/^#{1,2}\s/.test(stripEol(lines[end])))end++;
+ const at=lines.findIndex((l,i)=>i>sec.headingIndex&&i<end&&/^\s*[-*+]\s/.test(stripEol(l))&&/\(task::\s*([^)]*)\)/.exec(stripEol(l))?.[1]?.trim()===id);
+ if(at<0)throw Error("할 일을 찾을 수 없어요. 다시 열어 주세요.");
+ if(!/^\s/.test(stripEol(lines[at]))&&at+1<end&&/^\s+[-*+]\s/.test(stripEol(lines[at+1])))throw Error("하위 할 일이 있어요. 하위 할 일을 먼저 옮기거나 지워 주세요.");
+ lines.splice(at,1);return lines.join("");
+}
+
+/** Hub rows in file order (checkbox or reference), with their level. */
+export function hubRows(text: string): { id: string; depth: 0 | 1; ref: boolean; index: number }[] {
+ const sec=findSection(text,"할 일");if(!sec)return [];
+ const lines=splitLinesKeepEol(text).map(stripEol),out:{ id: string; depth: 0 | 1; ref: boolean; index: number }[]=[];
+ for(let i=sec.headingIndex+1;i<lines.length;i++){
+  if(/^#{1,2}\s/.test(lines[i]))break;
+  const m=/^(\s*)[-*+]\s+(.*)$/.exec(lines[i]);if(!m)continue;
+  const id=/\(task::\s*([^)]*)\)/.exec(m[2])?.[1]?.trim()??"";if(!id)continue;
+  out.push({id,depth:m[1].length?1:0,ref:!/^\[.\]/.test(m[2]),index:i});
+ }
+ return out;
+}
+
 /** The top-level row right above this one in the hub (where Tab puts it), or null. */
 export function previousTopLevel(text: string, id: string): string | null {
  const sec=findSection(text,"할 일");if(!sec)return null;

@@ -1,5 +1,5 @@
 import { loadProjectBacklog, type BacklogGroup } from "../projects/backlog.ts";
-import { scheduleSource, scheduleTarget, selectSchedule, selectedSchedule, type ScheduleItem } from "../projects/schedule-dnd.ts";
+import { isPicked, pickedSchedule, scheduleSource, scheduleTarget, selectSchedule, selectedSchedule, togglePicked, type ScheduleItem } from "../projects/schedule-dnd.ts";
 import { taskLabel } from "../projects/tasks.ts";
 import { asSide, inputSide, lineSide, projectRef, setSide, shows, type Side } from "../side.ts";
 import { toggleLinkedProjectTask } from "../projects/task-actions.ts";
@@ -345,7 +345,7 @@ export class WallCalendarView extends ItemView {
 		if (!this.backlog.length && !this.backlogFolded) return;
 		const box = sheet.createDiv({ cls: "wc-backlog" });
 		const head = box.createDiv({ cls: "wc-backlog-head" });
-		tip(head.createEl("h3", { text: "인박스" }), "후보 · 진행 · 대기 프로젝트에서 아직 달이 없는 할 일(첫 단계만). 달 칸으로 끌거나, 누른 뒤 달 칸을 눌러요. 묶음을 놓으면 하위 할 일이 모두 그 달로 가요. 휴대폰은 길게 눌러 끌어요");
+		tip(head.createEl("h3", { text: "인박스" }), "후보 · 진행 · 대기 프로젝트에서 아직 달이 없는 할 일(첫 단계만). 달 칸으로 끌거나, 누른 뒤 달 칸을 눌러요. Shift(휴대폰은 탭)로 여러 개를 골라 한 번에 옮겨요. 묶음을 놓으면 하위 할 일이 모두 그 달로 가요. 휴대폰은 길게 눌러 끌어요");
 		const mode = this.plugin.settings.sideMode;
 		if (this.backlogFolded && mode !== "전체") {
 			const other = mode === "개인" ? "회사" : "개인";
@@ -353,9 +353,10 @@ export class WallCalendarView extends ItemView {
 		}
 		if (!this.backlog.length) box.createDiv({ cls: "wc-backlog-empty", text: `${mode} 인박스가 비었어요.` });
 		const chosen = selectedSchedule(this.plugin);
+		const picked = pickedSchedule(this.plugin);
 		if (chosen?.kind === "task") {
 			const bar = head.createDiv({ cls: "wc-backlog-chosen" });
-			bar.createSpan({ text: `「${chosen.title}」 — 달을 고르세요` });
+			bar.createSpan({ text: picked.length > 1 ? `${picked.length}개 — 달을 고르세요` : `「${chosen.title}」 — 달을 고르세요` });
 			const x = bar.createEl("button", { text: "취소", attr: { type: "button" } });
 			x.addEventListener("click", () => {
 				selectSchedule(this.plugin, null);
@@ -371,9 +372,14 @@ export class WallCalendarView extends ItemView {
 				const item: ScheduleItem = { kind: "task", projectPath: g.projectPath, projectId: g.projectId, title: taskLabel(t), task: t };
 				const kids = t.group ? this.groupSize(g, t) : 0;
 				const b = list.createEl("button", { cls: `wc-backlog-task${t.group ? " is-group" : ""}`, text: `□ ${taskLabel(t)}${kids ? ` · 하위 ${kids}` : ""}`, attr: { type: "button" } });
-				if (chosen?.kind === "task" && chosen.task.id === t.id) b.addClass("is-chosen");
-				b.addEventListener("click", () => {
-					selectSchedule(this.plugin, chosen?.kind === "task" && chosen.task.id === t.id ? null : item);
+				const on = picked.length ? isPicked(this.plugin, item) : chosen?.kind === "task" && chosen.task.id === t.id;
+				if (on) b.addClass("is-chosen");
+				// Shift / ⌘ click (a tap on a phone) adds to the pick; a plain click picks just this one.
+				b.addEventListener("click", (e) => {
+					if (e.shiftKey || e.metaKey || e.ctrlKey || Platform.isMobile) {
+						if (!picked.length && chosen?.kind === "task" && chosen.task.id !== t.id) togglePicked(this.plugin, chosen);
+						togglePicked(this.plugin, item);
+					} else selectSchedule(this.plugin, on ? null : item);
 					this.render();
 				});
 				scheduleSource(b, this.plugin, item);
@@ -393,7 +399,7 @@ export class WallCalendarView extends ItemView {
 			scheduleTarget(cell, this.plugin, { kind: "month", month: this.ym(month) }, () => this.reload(), (it) => {
 				const ym = this.ym(month);
 				const desk = this.file(normalizePath(`${this.plugin.settings.deskCalendarFolder}/${ym.slice(0, 4)}/${ym}.md`));
-				new Notice(`「${it.title}」 → ${month}월${desk ? " (Desk Calendar 이달 중)" : ""}`);
+				new Notice(`「${it.title}」 → ${month}월${desk ? " (Desk Calendar 이달 중)" : ""}`, 2500);
 			});
 		if (state === "now") cell.addClass("is-upcoming");
 		const head = cell.createDiv({ cls: "wc-mhead" });
