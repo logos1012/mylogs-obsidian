@@ -39,6 +39,8 @@ export interface MyLogsSettings {
 	diaryPath: string;
 	/** Diary view: the material pane is folded away (remembered). */
 	diaryMaterialCollapsed: boolean;
+	/** Shelf folder: wikis `<folder>/<위키>/wiki/`, map `<folder>/Shelf.md` (read only). */
+	shelfPath: string;
 	/** Flywheel folder: `<folder>/Flywheel.md` (read only; its `status:: 사용` elements open each new Daily Pad). */
 	flywheelPath: string;
 	sections: SectionNames;
@@ -83,6 +85,7 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	toolboxPath: "11 Toolbox",
 	diaryPath: "09 Diary",
 	diaryMaterialCollapsed: false,
+	shelfPath: "07 Shelf",
 	flywheelPath: "12 Flywheel",
 	sections: {
 		pending: "결정 대기",
@@ -260,6 +263,18 @@ export class MyLogsSettingTab extends PluginSettingTab {
 					.setValue(s.diaryPath)
 					.onChange(async (v) => {
 						s.diaryPath = cleanFolder(v) || DEFAULT_SETTINGS.diaryPath;
+						await this.plugin.saveSettings();
+					}),
+			);
+		new Setting(containerEl)
+			.setName("Shelf 폴더")
+			.setDesc("위키 위치: <폴더>/<위키>/wiki/ · 지도: <폴더>/Shelf.md · 읽기만 함")
+			.addText((t) =>
+				t
+					.setPlaceholder(DEFAULT_SETTINGS.shelfPath)
+					.setValue(s.shelfPath)
+					.onChange(async (v) => {
+						s.shelfPath = cleanFolder(v) || DEFAULT_SETTINGS.shelfPath;
 						await this.plugin.saveSettings();
 					}),
 			);

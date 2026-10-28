@@ -119,6 +119,8 @@ export function greeting(screen: LumiScreen | null): string {
 			return "새로 시작할 일이 생겼나요?";
 		case "mylogs-flywheel":
 			return "매일 하고 싶은 게 생겼어요?";
+		case "mylogs-shelf":
+			return "책장에서 무엇을 찾아볼까요?";
 		case "mylogs-daily-pad":
 			return "오늘 무엇부터 정리해 볼까요?";
 		case "mylogs-desk-calendar":

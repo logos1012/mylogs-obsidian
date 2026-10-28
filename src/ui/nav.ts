@@ -12,6 +12,7 @@ export const APP_VIEWS: { type: string; label: string; icon: string; desc: strin
 	{ type: "mylogs-daily-pad", label: "Daily Pad", icon: "notebook-pen", desc: "오늘 할 일과 기록" },
 	{ type: "mylogs-project-folders", label: "Projects", icon: "folder-kanban", desc: "Project Folders · 프로젝트 칸반" },
 	{ type: "mylogs-drawer", label: "Drawer", icon: "archive", desc: "지금은 아니지만 꺼낼 조건이 있는 일" },
+	{ type: "mylogs-shelf", label: "Shelf", icon: "library", desc: "지식 책장 · 위키별 칸, 주제별 책" },
 	{ type: "mylogs-my-life", label: "My Life", icon: "book-open", desc: "하루·주·달·해의 정리" },
 	{ type: "mylogs-diary", label: "Diary", icon: "feather", desc: "일기" },
 	{ type: "mylogs-toolbox", label: "Toolbox", icon: "wrench", desc: "AI 스킬 등록부" },
