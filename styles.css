@@ -10433,3 +10433,12 @@ button.pb-board-switch.is-personal {
 .wc-addside {
 	margin-left: auto;
 }
+
+/* Daily Pad 「Desk Calendar에서 온 일」: a done line is struck through and faded (0.25.3). */
+.mylogs-daily-pad .ml-desk .s-done {
+	opacity: 0.55;
+}
+.mylogs-daily-pad .ml-desk .s-done .ml-txt,
+.mylogs-daily-pad .ml-desk .s-done .ml-time {
+	text-decoration: line-through;
+}
