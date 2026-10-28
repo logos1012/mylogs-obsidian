@@ -116,10 +116,18 @@ function scanTopHeadings(text: string): { index: number; level: number; name: st
 	return out;
 }
 
+/** Older names a section is still read under: Daily Pads before 2026-10-28 have 「오늘 할 일」 (= 개인 할 일). */
+export const SECTION_FALLBACK: Record<string, string> = { "개인 할 일": "오늘 할 일" };
+
+/** Where a missing section goes when first written (else: the end of the file). */
+export const SECTION_AFTER: Record<string, string> = { "회사 할 일": "개인 할 일" };
+
 /** Find a `## name` section. The body ends at the next `#` or `##` heading (or EOF). */
 export function findSection(text: string, name: string): SectionRange | null {
 	const heads = scanTopHeadings(text);
-	const k = heads.findIndex((h) => h.level === 2 && h.name === name.trim());
+	let k = heads.findIndex((h) => h.level === 2 && h.name === name.trim());
+	const old = SECTION_FALLBACK[name.trim()];
+	if (k === -1 && old) k = heads.findIndex((h) => h.level === 2 && h.name === old);
 	if (k === -1) return null;
 	const h = heads[k];
 	const next = heads[k + 1];
@@ -185,6 +193,14 @@ export function replaceSectionContent(text: string, name: string, content: strin
 	const r = findSection(text, name);
 	if (!r) {
 		if (!newCore) return text;
+		const after = SECTION_AFTER[name.trim()] ? findSection(text, SECTION_AFTER[name.trim()]) : null;
+		if (after) {
+			// A Daily Pad without 「회사 할 일」 (older pages): put it right under 「개인 할 일」.
+			let before = text.slice(0, after.bodyEnd);
+			if (!before.endsWith("\n")) before += eol;
+			if (!/\n[ \t]*\n$/.test(before)) before += eol;
+			return before + `## ${name}` + eol + newCore + eol + (after.hasNext ? eol : "") + text.slice(after.bodyEnd);
+		}
 		let base = text;
 		if (base.length && !base.endsWith("\n")) base += eol;
 		return base + eol + `## ${name}` + eol + newCore + eol;

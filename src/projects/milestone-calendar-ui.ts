@@ -8,9 +8,11 @@ import { todayIsoLocal } from "../desk/model.ts";
 import { parseFrontmatterText } from "../pinboard/model.ts";
 import { activeRoot, archiveRoot, type ProjectsHost } from "./actions.ts";
 import { hubLocation, parseProject } from "./model.ts";
+import { scopeLookup, type ScopeLookup } from "../side.ts";
 import { milestoneMarkers, markerState, type MilestoneMarker } from "./milestone-calendar.ts";
 
-export interface MilestoneCalendar { markers: MilestoneMarker[]; issues: { path: string; message: string }[] }
+/** `scopeOf`: project id / name → 개인 / 회사, for lines linked with `(project:: …)` (`../side.ts`). */
+export interface MilestoneCalendar { markers: MilestoneMarker[]; issues: { path: string; message: string }[]; scopeOf?: ScopeLookup }
 export function watchesMilestoneProjects(host: ProjectsHost, path: string): boolean {
 	return [activeRoot(host), archiveRoot(host)].some(root => path === root || path.startsWith(root + "/"));
 }
@@ -27,7 +29,7 @@ export async function loadMilestoneCalendar(host: ProjectsHost): Promise<Milesto
 			projects.push(p);
 		} catch { issues.push({ path: f.path, message: "프로젝트를 읽지 못했어요. 동기화·파일 상태를 확인해 주세요." }); }
 	}
-	return { markers: milestoneMarkers(projects), issues };
+	return { markers: milestoneMarkers(projects), issues, scopeOf: scopeLookup(projects) };
 }
 
 /** Color + diamond + label, separate from checkbox lists and their counters/drag handlers. */

@@ -222,7 +222,7 @@ function weekCard(h: DeskMobileHost, root: HTMLElement, s: State, w: WeekSlot, t
 		rows.sort((a, b) => a.d.localeCompare(b.d));
 		for (const row of rows) {
 			if (row.p) {
-				const li = ul.createEl("li", { cls: `dc-m-flow-it k-task s-${row.p.done ? "done" : "scheduled"} is-pad` });
+				const li = ul.createEl("li", { cls: `dc-m-flow-it k-task s-${row.p.done ? "done" : "scheduled"} is-pad${row.p.side === "회사" ? " is-work" : ""}` });
 				li.createSpan({ cls: "dc-m-flow-d", text: `${+row.d.slice(5, 7)}/${+row.d.slice(8, 10)}` });
 				li.createSpan({ cls: "dc-m-flow-sym" });
 				li.createSpan({ cls: "dc-m-flow-t", text: row.p.text });
@@ -236,7 +236,7 @@ function weekCard(h: DeskMobileHost, root: HTMLElement, s: State, w: WeekSlot, t
 				continue;
 			}
 			const { d, it } = row;
-			const li = ul.createEl("li", { cls: `dc-m-flow-it k-${it.item.kind} s-${it.item.status}` });
+			const li = ul.createEl("li", { cls: `dc-m-flow-it k-${it.item.kind} s-${it.item.status}${it.side === "회사" ? " is-work" : ""}` });
 			li.createSpan({ cls: "dc-m-flow-d", text: `${+d.slice(5, 7)}/${+d.slice(8, 10)}` });
 			li.createSpan({ cls: "dc-m-flow-sym" });
 			const t = li.createSpan({ cls: "dc-m-flow-t" });

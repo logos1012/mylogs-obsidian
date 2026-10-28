@@ -51,7 +51,7 @@ class CreateModal extends Modal {
 		}
 		const errors=el.createEl("ul",{cls:"mylogs-form-errors",attr:{role:"alert"}});
 		new Setting(el).addButton(b=>b.setButtonText("취소").onClick(()=>this.finish(null))).addButton(b=>b.setButtonText(sub?"하위 목표와 실행 공간 저장":"목표 저장").setCta().onClick(()=>{
-			for(const k of Object.keys(i) as (keyof GoalInput)[]) (i as unknown as Record<string,string>)[k]=i[k].trim();
+			for(const k of Object.keys(i) as (keyof GoalInput)[]) (i as unknown as Record<string,string>)[k]=(i[k] ?? "").trim();
 			const problems=inputProblems(i,sub);let execution:Execution|undefined;
 			if(sub){
 				if(mode==="new"){p.name=p.name.trim();p.summary=p.summary.trim();p.area=i.area;problems.push(...validateInput(p,o.taken));execution={mode,project:p};}

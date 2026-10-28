@@ -5,6 +5,7 @@
  * `vault.process` (atomic read-modify-write); a stale line fails instead of guessing.
  */
 
+import { hasWorkTag, withoutWorkTag } from "../side.ts";
 import { type App, moment, normalizePath, Notice, TFile } from "obsidian";
 import { deskMonthPath, logDeskChange } from "../desk/actions.ts";
 import { appendUnderWallMonth, wallYearSkeleton } from "../desk/ops.ts";
@@ -180,13 +181,17 @@ function linkOf(path: string): string {
 	return `[[${path.replace(/\.md$/, "")}]]`;
 }
 
-/** 오늘 → Daily Pad 오늘 파일 `## 오늘 할 일` (created like 「3-1」 when missing). */
+/** 오늘 → Daily Pad 오늘 파일 `## 개인 할 일` / `## 회사 할 일` by the line's side (created like 「3-1」 when missing). */
 export async function takeOutToday(host: DrawerHost, it: DrawerItem): Promise<boolean> {
 	if (!(await canMark(host, it))) return false;
 	const today = todayIsoLocal();
 	const path = dailyPadPath(host, today);
 	const s = host.settings;
-	const line = destinationLine(it);
+	const raw = destinationLine(it);
+	// A #회사 line goes to 회사 할 일 without its tag (the section is the mark there).
+	const work = hasWorkTag(raw);
+	const line = work ? withoutWorkTag(raw) : raw;
+	const section = work ? s.sections.work : s.sections.today;
 	try {
 		let f = fileAt(host.app, path);
 		if (!f) {
@@ -200,7 +205,7 @@ export async function takeOutToday(host: DrawerHost, it: DrawerItem): Promise<bo
 			f = await host.app.vault.create(path, skeleton);
 			// TODO(04 Daily Pad 「7. 인덱스 규칙」): add the 「최근 날짜」 row in Daily Pad Index.md (index logic not built yet).
 		}
-		await host.app.vault.process(f, (t) => setFrontmatterScalar(appendToSection(t, s.sections.today, line), "updated", today));
+		await host.app.vault.process(f, (t) => setFrontmatterScalar(appendToSection(t, section, line), "updated", today));
 	} catch (err) {
 		console.error("[MyLogs] Drawer → Daily Pad failed", err);
 		new Notice(`MyLogs: ${path}에 쓰지 못했어요. Drawer는 바꾸지 않았어요.`);
