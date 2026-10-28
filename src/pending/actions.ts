@@ -4,6 +4,8 @@
  * Rules: 04 Daily Pad AGENTS 「3-6」「3-7」; pure edits in `./ops.ts`.
  */
 
+import { appendToSection } from "../writer.ts";
+import { hasWorkTag, withoutWorkTag } from "../side.ts";
 import { type App, normalizePath, Notice } from "obsidian";
 import type { MyLogsSettings } from "../settings.ts";
 import { addDays, type SourceLine } from "../parser.ts";
@@ -124,8 +126,43 @@ export async function choosePending(
 	return true;
 }
 
+/**
+ * Which 할 일 section a 결정 대기 line came from: `#회사` → 회사; else the day it came from — found in
+ * that Daily Pad's 회사 할 일 → 회사; otherwise 개인 (the side we protect).
+ */
+export async function pendingSide(host: PendingHost, padDate: string, sl: SourceLine): Promise<"개인" | "회사"> {
+	if (hasWorkTag(sl.line)) return "회사";
+	const src = sourceDateOf(sl.line) ?? addDays(padDate, -1);
+	const t = await vaultIO(host.app).read(padPath(host, src));
+	if (t === null) return "개인";
+	const key = taskKey(sl.line);
+	return markInPadSection(t, host.settings.sections.work, key, (l) => l).count ? "회사" : "개인";
+}
+
+/** 오늘 하기 in one tap (or a drop on 개인 / 회사 할 일): third postpone still asks first. */
+export async function chooseToday(host: PendingHost, padDate: string, sl: SourceLine, side: "개인" | "회사", today: string): Promise<boolean> {
+	const text = sl.item?.text ?? sl.line.trim();
+	if (movedCount(sl.line) >= 2) {
+		const a = await askThirdMove(host.app, text, movedCount(sl.line));
+		if (a === "cancel") return false;
+		if (a !== "proceed") return choosePending(host, padDate, sl, a === "letgo" ? "letgo" : "split", today);
+	}
+	const choice: PendingChoice = { kind: "today", date: padDate, side };
+	try {
+		await exclusive(host, () => applyPending(host, padDate, sl, choice, today));
+	} catch (err) {
+		console.error("[MyLogs] 결정 대기 처리 실패", err);
+		new Notice(err instanceof Error ? err.message : String(err));
+		return false;
+	}
+	new Notice(doneNotice(text, choice));
+	return true;
+}
+
 function doneNotice(text: string, c: PendingChoice): string {
 	switch (c.kind) {
+		case "today":
+			return `「${text}」을(를) 오늘 ${c.side} 할 일로 옮겼어요.`;
 		case "day":
 			return `「${text}」을(를) ${+c.date.slice(5, 7)}월 ${+c.date.slice(8, 10)}일로 옮겼어요.`;
 		case "future":
@@ -166,7 +203,10 @@ export async function applyPending(host: PendingHost, padDate: string, sl: Sourc
 	if (padText === null) throw new Error(`Daily Pad 파일이 없어요: ${pad}`);
 	const removed = removePendingLine(padText, { index: sl.index, line: sl.line }, today, s.sections.pending);
 	if (!removed.ok) throw new Error("결정 대기 줄이 그새 바뀌었어요. 화면을 다시 그렸어요.");
-	put(pad, c.kind === "split" ? appendSplitParts(removed.text, s.sections.today, c.parts) : removed.text);
+	let padAfter = c.kind === "split" ? appendSplitParts(removed.text, s.sections.today, c.parts) : removed.text;
+	// 오늘 하기: the copy goes into this Daily Pad's 개인 / 회사 할 일 (the section is the side: no #회사).
+	if (c.kind === "today") padAfter = appendToSection(padAfter, c.side === "회사" ? s.sections.work : s.sections.today, withoutWorkTag(forwardCopy(sl.line).replace(/\s*\(from::[^)]*\)/, "")));
+	put(pad, padAfter);
 
 	// 2. Destination.
 	if (c.kind === "day") {

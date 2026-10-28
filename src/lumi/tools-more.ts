@@ -31,12 +31,12 @@ import { removeGoalsFromProjects } from "../projects/actions.ts";
 import { parseFrontmatterText, type Goal, ENDED_STATUSES } from "../pinboard/model.ts";
 import { flywheelPath, parseFlywheel } from "../flywheel/model.ts";
 import { type DeskItem, findPairAlloc, isoWeekNo, mondayOf, type MonthData, parseMonthFile, parseMonthKey, shiftMonth } from "../desk/model.ts";
-import { pairedCopies, planAssignWeek, planCancelEvent, planDelete, planDrawer, planEdit, planFuture, planLetGo, planMoveDay, planMoveWeek, planSetSide, planSplit, planToggle, runPlan, type Plan } from "../desk/ops.ts";
-import { deskMonthPath, logDeskChange } from "../desk/actions.ts";
+import { pairedCopies, planAssignWeek, planCancelEvent, planDelete, planDrawer, planEdit, planFuture, planLetGo, planMoveDay, planMoveWeek, planSetSide, planSplit, planToggle, type Plan } from "../desk/ops.ts";
+import { deskMonthPath, runDeskPlan } from "../desk/actions.ts";
 import { toggleLinkedProjectTask } from "../projects/task-actions.ts";
 import { parseWallYear, type WallLine } from "../wall/parse.ts";
 import { cancelWallEvent, cancelWallTask, deleteWallItem, deskLineFor, deskLink, editWallItem, type EditResult, insertIntoDesk, markSentToDesk, moveWallItem, setWallSide, toggleWallTask, type WallTarget } from "../wall/edit.ts";
-import { applyPending } from "../pending/actions.ts";
+import { applyPending, pendingSide } from "../pending/actions.ts";
 import { parseBodyLines, splitLinesKeepEol, type SourceLine } from "../parser.ts";
 import { findSection, sectionLineRange, setFrontmatterScalar } from "../writer.ts";
 import { parseDrawer, type DrawerItem, type DrawerSection } from "../drawer/model.ts";
@@ -86,39 +86,8 @@ async function goalBy(ctx: ToolCtx, want: string): Promise<{ goal: Goal; text: s
 
 // ───────────────────────── Desk / Wall plan runner ─────────────────────────
 
-/** Run a Desk plan like the Desk view does: dry run on every file first, then write, then log. */
 async function execDesk(ctx: ToolCtx, plan: Plan): Promise<void> {
-	const app = ctx.host.app;
-	const pathOf = (file: string, month: boolean) => (month ? deskMonthPath(ctx.host, file) : normalizePath(file));
-	const texts: Record<string, string | undefined> = {};
-	for (const e of plan.edits) {
-		const f = app.vault.getAbstractFileByPath(pathOf(e.file, e.month));
-		if (f instanceof TFile) texts[e.file] = await app.vault.read(f);
-		else if (e.month) throw new Error(`${e.file} Desk Calendar 파일이 없어요.`);
-	}
-	const dry = runPlan(plan, texts);
-	if (!dry.ok) throw new Error(dry.reason === "assigned-days" ? "날짜에 배정한 일이에요. 날짜에서 먼저 이번 주 할 일로 되돌려 주세요." : `Desk Calendar가 바뀌었거나 그 줄을 찾지 못했어요 (${dry.reason}).`);
-	for (const e of plan.edits) {
-		const path = pathOf(e.file, e.month);
-		const f = app.vault.getAbstractFileByPath(path);
-		if (!(f instanceof TFile)) {
-			const r = e.apply(e.create!());
-			if (!r.ok) throw new Error(r.reason);
-			await app.vault.create(path, r.text);
-			continue;
-		}
-		let failed = "";
-		await app.vault.process(f, (t) => {
-			const r = e.apply(t);
-			if (!r.ok) {
-				failed = r.reason;
-				return t;
-			}
-			return r.text;
-		});
-		if (failed) throw new Error(`Desk Calendar 저장 중 원본이 바뀌었어요 (${failed}).`);
-	}
-	await logDeskChange(ctx.host, `루미: ${plan.what}`);
+	await runDeskPlan(ctx.host, plan, "루미");
 }
 
 /** The Desk months around `month` (the view's -1 / 0 / +1). */
@@ -447,8 +416,8 @@ export const MORE_TOOLS: LumiTool[] = [
 	// ── Daily Pad 결정 대기 ──
 	{
 		name: "pending_choose",
-		description: "Daily Pad 「결정 대기」(지난날 못 한 일) 하나의 갈 곳 정하기. date(그 Daily Pad 날짜, 비우면 오늘), text(줄 일부). choice: day(to_date) | future(to_month) | drawer(when) | split(parts: 줄바꿈) | letgo(why).",
-		shape: { date: isoDate.optional(), text: z.string(), choice: z.enum(["day", "future", "drawer", "split", "letgo"]), to_date: isoDate.optional(), to_month: ym.optional(), when: z.string().optional(), parts: z.string().optional(), why: z.string().optional() },
+		description: "Daily Pad 「결정 대기」(지난날 못 한 일) 하나의 갈 곳 정하기. date(그 Daily Pad 날짜, 비우면 오늘), text(줄 일부). choice: today(오늘 할 일로 — side 개인|회사, 비우면 원래 있던 칸) | day(to_date) | future(to_month) | drawer(when) | split(parts: 줄바꿈) | letgo(why).",
+		shape: { date: isoDate.optional(), text: z.string(), choice: z.enum(["today", "day", "future", "drawer", "split", "letgo"]), side: z.enum(SCOPES).optional(), to_date: isoDate.optional(), to_month: ym.optional(), when: z.string().optional(), parts: z.string().optional(), why: z.string().optional() },
 		async run(ctx, a) {
 			const date = String(a.date ?? ctx.today);
 			const path = normalizePath(`${ctx.host.settings.dailyPadFolder}/${date.slice(0, 4)}/${date}.md`);
@@ -462,7 +431,8 @@ export const MORE_TOOLS: LumiTool[] = [
 			const sl = pick(lines, String(a.text), (x) => x.item!.text, "결정 대기 할 일");
 			const c = String(a.choice);
 			const choice =
-				c === "day" ? { kind: "day" as const, date: String(a.to_date ?? "") }
+				c === "today" ? { kind: "today" as const, date, side: (a.side ? String(a.side) : await pendingSide(ctx.host, date, sl)) as "개인" | "회사" }
+				: c === "day" ? { kind: "day" as const, date: String(a.to_date ?? "") }
 				: c === "future" ? { kind: "future" as const, month: String(a.to_month ?? "") }
 				: c === "drawer" ? { kind: "drawer" as const, when: String(a.when ?? "") }
 				: c === "split" ? { kind: "split" as const, parts: String(a.parts ?? "").split(/\r?\n|·/).map((x) => x.trim()).filter(Boolean) }

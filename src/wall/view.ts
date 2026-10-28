@@ -2,7 +2,9 @@ import { loadProjectBacklog, type BacklogGroup } from "../projects/backlog.ts";
 import { isPicked, pickedSchedule, scheduleSource, scheduleTarget, selectSchedule, selectedSchedule, togglePicked, type ScheduleItem } from "../projects/schedule-dnd.ts";
 import { taskLabel } from "../projects/tasks.ts";
 import { asSide, inputSide, lineSide, projectRef, type ScopeLookup, setSide, shows, type Side } from "../side.ts";
-import { type DeskItem, isoWeekNo, parseMonthFile } from "../desk/model.ts";
+import { type DeskItem, isoWeekNo, mondayOf, type MonthData, parseMonthFile } from "../desk/model.ts";
+import { planDelete, planLetGo, planToggle } from "../desk/ops.ts";
+import { runDeskPlan } from "../desk/actions.ts";
 import { toggleLinkedProjectTask } from "../projects/task-actions.ts";
 import { mountAppNav } from "../ui/nav.ts";
 import { ItemPopover } from "../ui/popover.ts";
@@ -85,6 +87,8 @@ export class WallCalendarView extends ItemView {
 	private backlog: BacklogGroup[] = [];
 	/** Per month (1–12) with a Desk file: its tasks, each once (날짜 > 이번 주 > 인박스), on the shown side. */
 	private deskTasks = new Map<number, DeskItem[]>();
+	/** The Desk month files read for them (a delete also clears the → marks pointing at the line). */
+	private deskMonths = new Map<number, MonthData>();
 	/** Tasks of the other side's projects (개인 / 회사 mode), shown as a count. */
 	private backlogFolded = 0;
 
@@ -365,8 +369,59 @@ export class WallCalendarView extends ItemView {
 			const where = it.date ? `${+it.date.slice(5, 7)}/${+it.date.slice(8, 10)}` : it.monday ? `W${String(isoWeekNo(it.monday)).padStart(2, "0")}` : "";
 			if (where) t.createSpan({ cls: "wc-d", text: `${where} ` });
 			t.appendText(it.item.text);
-			li.addEventListener("click", () => void this.plugin.openDeskMonth(this.ym(month)));
+			li.addEventListener("click", () => this.openDeskTaskMenu(li, it));
 		}
+	}
+
+	/**
+	 * A Desk task shown on Wall: the same choices as on Desk (완료 · 놓아주기 · 삭제), and 「Desk에서
+	 * 보기」 opens its week (주 보기 shows every task; the month level hides plain tasks).
+	 */
+	private openDeskTaskMenu(anchor: HTMLElement, it: DeskItem): void {
+		const menu = new ItemPopover();
+		menu.title = it.item.text;
+		menu.badge = it.item.status === "done" ? "할 일 · 완료" : "할 일";
+		menu.row("자리", it.date ? `Desk ${it.date}` : it.monday ? `Desk W${String(isoWeekNo(it.monday)).padStart(2, "0")} 이번 주 할 일` : `Desk ${it.file} 인박스`);
+		const project = getField(it.line, "project");
+		if (project) menu.row("프로젝트", this.milestones.titleOf?.(project) ?? project, () => void this.plugin.openProjectAt(project));
+		const today = todayIso();
+		const run = async (fn: () => Promise<unknown>) => {
+			try {
+				await fn();
+			} catch (e) {
+				new Notice(e instanceof Error ? e.message : String(e));
+			}
+			await this.reload();
+		};
+		if (it.item.status === "scheduled" || it.item.status === "done") {
+			menu.addItem((i) =>
+				i.setTitle(it.item.status === "done" ? "완료 취소" : "완료").setIcon("check").onClick(() =>
+					void run(async () => {
+						const path = normalizePath(`${this.plugin.settings.deskCalendarFolder}/${it.file.slice(0, 4)}/${it.file}.md`);
+						if (!(await toggleLinkedProjectTask(this.plugin, path, it.index, it.line, today))) await runDeskPlan(this.plugin, planToggle(it, today));
+					}),
+				),
+			);
+		}
+		const week = it.date ? mondayOf(it.date) : (it.monday ?? null);
+		menu.addItem((i) => i.setTitle(week ? "Desk 주 보기에서 열기" : "Desk에서 열기").setIcon("calendar-days").onClick(() => void (week ? this.plugin.openDeskWeek(week) : this.plugin.openDeskMonth(it.file))));
+		if (it.item.status === "scheduled") {
+			menu.addSeparator();
+			menu.addItem((i) =>
+				i.setTitle("놓아주기…").setIcon("circle-slash").setHint("하지 않기로 해요. 이유를 한 줄 남겨요").onClick(async () => {
+					const v = await askForm(this.app, { title: `놓아주기 · ${it.item.text}`, fields: [{ key: "why", label: "이유", type: "text", value: "" }], validate: (x) => (x.why.trim() ? [] : ["이유를 한 줄 적어 주세요."]), cta: "놓아주기" });
+					if (v) await run(() => runDeskPlan(this.plugin, planLetGo(it, v.why.trim(), today)));
+				}),
+			);
+		}
+		menu.addItem((i) =>
+			i.setTitle("삭제…").setIcon("trash-2").setWarning(true).onClick(async () => {
+				const ans = await confirmDelete(this.app, { title: "할 일 삭제", removes: [`Desk ${it.file} · ${it.date ?? "이번 주 / 인박스"}`, it.line.trim()], notes: ["같은 할 일의 이번 주 · 인박스 줄에 남은 → 표시도 함께 정리해요."], footer: "잘못 넣은 줄, 중복, 테스트 데이터를 지울 때 써요." });
+				if (ans !== "delete") return;
+				await run(() => runDeskPlan(this.plugin, planDelete(it, [...this.deskMonths.values()], today)));
+			}),
+		);
+		menu.show(anchor);
 	}
 
 	/** Desk month files of this year: each task once, the most planned copy (날짜 > 이번 주 > 인박스). */
@@ -378,6 +433,7 @@ export class WallCalendarView extends ItemView {
 			const f = this.file(normalizePath(`${this.plugin.settings.deskCalendarFolder}/${this.year}/${ym}.md`));
 			if (!f) continue;
 			const md = parseMonthFile(await this.app.vault.cachedRead(f), this.year, m);
+			this.deskMonths.set(m, md);
 			const rank = (it: DeskItem) => (it.section === "day" ? 0 : it.section === "alloc" ? 1 : 2);
 			const best = new Map<string, DeskItem>();
 			const all = [...[...md.days.values()].flat(), ...[...md.weeks.values()].flatMap((w) => w.alloc ?? []), ...md.during];

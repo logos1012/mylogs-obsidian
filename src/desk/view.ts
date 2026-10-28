@@ -1120,6 +1120,11 @@ export class DeskCalendarView extends ItemView {
 	}
 
 	/** Desktop 주 보기 for the week starting `monday` (moving to the month holding its Thursday). */
+	/** Open 주 보기 at a week (from Wall's Desk rows: tasks show there even when the month level hides them). */
+	openWeekAt(monday: string): void {
+		this.openWeek(monday);
+	}
+
 	private openWeek(monday: string | null): void {
 		this.deskWeek = monday;
 		const month = monday ? addDays(monday, 3).slice(0, 7) : null;
