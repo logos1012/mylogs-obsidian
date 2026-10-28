@@ -30,7 +30,9 @@ export interface DeskMobileHost {
 	renderHeader(root: HTMLElement): void;
 	renderEmpty(root: HTMLElement): void;
 	renderBands(root: HTMLElement): void;
-	renderDayCell(row: HTMLElement, iso: string): void;
+	renderDayCell(row: HTMLElement, iso: string, withPads?: boolean): void;
+	/** That day's Daily Pad 「오늘 할 일」 while 「할 일」 is on (else none). */
+	padsOf(iso: string): PadTask[];
 	renderAllocCell(row: HTMLElement, monday: string): void;
 	/** Items of a date / a week's box in the order the cells draw them. */
 	dayItems(iso: string): DeskItem[];
@@ -139,10 +141,8 @@ export function renderDeskMobile(h: DeskMobileHost): void {
 	const show = h.showTasks();
 	const tasksBtn = segRow.createEl("button", { cls: `dc-m-tasks-toggle${show ? " is-on" : ""}`, text: "할 일", attr: { type: "button", "aria-pressed": String(show) } });
 	tip(tasksBtn, show ? "할 일까지 모두 보여요. 누르면 마일스톤 · 이벤트 · 마감만" : "마일스톤 · 이벤트 · 마감만 보여요. 누르면 할 일까지");
-	tasksBtn.addEventListener("click", () => {
-		h.setShowTasks(!show);
-		renderDeskMobile(h);
-	});
+	// Reloads (Daily Pad tasks are read only while 「할 일」 is on), then draws again.
+	tasksBtn.addEventListener("click", () => h.setShowTasks(!show));
 
 	if (st.mode === "flow") {
 		monthBand(h, root, cur);
@@ -151,7 +151,7 @@ export function renderDeskMobile(h: DeskMobileHost): void {
 		monthGrid(h, root, st, today, show);
 		const monday = addDays(st.day, -weekdayMon0(st.day));
 		const dayBox = root.createDiv({ cls: "dc-m-cell dc-m-day" });
-		h.renderDayCell(dayBox, st.day);
+		h.renderDayCell(dayBox, st.day, true);
 		wire(h, dayBox.querySelector<HTMLElement>(".dc-items"), h.dayItems(st.day), "day");
 		const weekBox = root.createDiv({ cls: "dc-m-cell dc-m-week" });
 		// The chosen day's ◆ are in its cell; the rest of the week shows ◆ on the grid (no second list).
@@ -214,9 +214,28 @@ function weekCard(h: DeskMobileHost, root: HTMLElement, s: State, w: WeekSlot, t
 	const body = card.createDiv({ cls: "dc-m-wk-body" });
 	h.renderMilestones(body, days[0] ?? w.monday, days[days.length - 1] ?? sunday);
 	const flow = dayItems.filter((x) => monthLevel(x.it, show));
-	if (flow.length) {
+	// 「할 일」 on: each day's Daily Pad 「오늘 할 일」 joins its day (shown, not copied).
+	const padRows = show ? days.flatMap((d) => h.padsOf(d).map((p) => ({ d, p }))) : [];
+	if (flow.length || padRows.length) {
 		const ul = body.createEl("ul", { cls: "dc-m-flow" });
-		for (const { d, it } of flow) {
+		const rows: ({ d: string; it: DeskItem; p?: undefined } | { d: string; p: PadTask; it?: undefined })[] = [...flow, ...padRows];
+		rows.sort((a, b) => a.d.localeCompare(b.d));
+		for (const row of rows) {
+			if (row.p) {
+				const li = ul.createEl("li", { cls: `dc-m-flow-it k-task s-${row.p.done ? "done" : "scheduled"} is-pad` });
+				li.createSpan({ cls: "dc-m-flow-d", text: `${+row.d.slice(5, 7)}/${+row.d.slice(8, 10)}` });
+				li.createSpan({ cls: "dc-m-flow-sym" });
+				li.createSpan({ cls: "dc-m-flow-t", text: row.p.text });
+				tip(li, "Daily Pad 「오늘 할 일」");
+				const d = row.d;
+				li.addEventListener("click", () => {
+					s.day = d;
+					s.mode = "grid";
+					renderDeskMobile(h);
+				});
+				continue;
+			}
+			const { d, it } = row;
 			const li = ul.createEl("li", { cls: `dc-m-flow-it k-${it.item.kind} s-${it.item.status}` });
 			li.createSpan({ cls: "dc-m-flow-d", text: `${+d.slice(5, 7)}/${+d.slice(8, 10)}` });
 			li.createSpan({ cls: "dc-m-flow-sym" });
@@ -277,8 +296,9 @@ function monthGrid(h: DeskMobileHost, root: HTMLElement, s: State, today: string
 			c.createSpan({ cls: "dc-m-num", text: String(+iso.slice(8, 10)) });
 			const dots = c.createSpan({ cls: "dc-m-dots" });
 			const items = inMonth ? h.dayItems(iso).filter((it) => monthLevel(it, show)) : [];
-			for (const it of items.slice(0, 4)) dots.createSpan({ cls: `dc-m-dot k-${it.item.kind ?? "note"} s-${it.item.status}` });
-			if (items.length > 4) dots.createSpan({ cls: "dc-m-more", text: "+" });
+			const kinds = [...items.map((it) => `k-${it.item.kind ?? "note"} s-${it.item.status}`), ...(inMonth ? h.padsOf(iso).map((p) => `k-task s-${p.done ? "done" : "scheduled"}`) : [])];
+			for (const k of kinds.slice(0, 4)) dots.createSpan({ cls: `dc-m-dot ${k}` });
+			if (kinds.length > 4) dots.createSpan({ cls: "dc-m-more", text: "+" });
 			if (inMonth && ms.has(iso)) c.createSpan({ cls: "dc-m-ms", text: "◆" });
 			c.addEventListener("click", () => {
 				s.day = iso;
