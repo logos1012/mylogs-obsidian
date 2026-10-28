@@ -14,7 +14,10 @@ export interface ShelfState {
 }
 
 export interface ShelfHandlers {
-	openFile(path: string): void;
+	/** Open a note in the 읽기 화면. */
+	read(path: string): void;
+	/** The note read last (이어 읽기). */
+	resume: { title: string; path: string } | null;
 	openMap(): void;
 	setState(patch: Partial<ShelfState>): void;
 	tip(el: HTMLElement, text: string): void;
@@ -42,6 +45,13 @@ export function renderShelf(root: HTMLElement, wikis: ShelfWiki[], state: ShelfS
 	const search = head.createEl("input", { cls: "mls-search", attr: { type: "search", placeholder: "책 찾기", "aria-label": "책 찾기" } });
 	search.value = state.query;
 	search.addEventListener("input", () => h.setState({ query: search.value }));
+	if (h.resume) {
+		const r = title.createEl("button", { cls: "mls-resume", attr: { type: "button" } });
+		r.createSpan({ cls: "mls-resume-k", text: "이어 읽기" });
+		r.createSpan({ cls: "mls-resume-t", text: h.resume.title });
+		const path = h.resume.path;
+		r.addEventListener("click", () => h.read(path));
+	}
 
 	const q = state.query.trim();
 	const caseEl = root.createDiv({ cls: "mls-case" });
@@ -147,7 +157,7 @@ function renderOpen(el: HTMLElement, b: ShelfBook, w: ShelfWiki, state: ShelfSta
 		li.createSpan({ cls: "mls-item-title", text: a.title });
 		if (withKind) li.createSpan({ cls: "mls-item-kind", text: KIND_LABEL[a.kind] });
 		li.createSpan({ cls: "mls-item-date", text: fmtDate(a.updated) });
-		li.addEventListener("click", () => h.openFile(a.path));
+		li.addEventListener("click", () => h.read(a.path));
 	};
 	if (state.all) {
 		for (const k of KIND_ORDER) {
@@ -162,7 +172,7 @@ function renderOpen(el: HTMLElement, b: ShelfBook, w: ShelfWiki, state: ShelfSta
 	}
 
 	const actions = body.createDiv({ cls: "mls-actions" });
-	actions.createEl("button", { cls: "mls-btn mls-btn-primary", text: "목차 펼치기", attr: { type: "button" } }).addEventListener("click", () => h.openFile(b.path));
+	actions.createEl("button", { cls: "mls-btn mls-btn-primary", text: "목차 펼치기", attr: { type: "button" } }).addEventListener("click", () => h.read(b.path));
 	if (sorted.length > RECENT || state.all) {
 		actions
 			.createEl("button", { cls: "mls-btn", text: state.all ? "최근 글만" : `모든 글 ${sorted.length}편`, attr: { type: "button" } })

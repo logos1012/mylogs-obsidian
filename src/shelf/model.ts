@@ -218,3 +218,33 @@ export function bookMatches(b: ShelfBook, query: string): boolean {
 export function sortArticles(a: ShelfArticle[]): ShelfArticle[] {
 	return [...a].sort((x, y) => (y.updated || "").localeCompare(x.updated || "") || x.title.localeCompare(y.title, "ko"));
 }
+
+/** The book's reading order: 개념 → 자료 → 인물·조직 → 분석, newest first in each (the 「모든 글」 list). */
+export function readingOrder(b: ShelfBook): ShelfArticle[] {
+	const sorted = sortArticles(b.articles);
+	return KIND_ORDER.flatMap((k) => sorted.filter((a) => a.kind === k));
+}
+
+/** Note text → body without frontmatter and without its leading H1 (the reader prints the title). */
+export function readerBody(text: string): { title: string; body: string } {
+	let body = text.replace(/^---\n[\s\S]*?\n---\n?/, "").replace(/^\s+/, "");
+	let title = "";
+	const m = /^#\s+(.+?)\s*#*\s*(\n|$)/.exec(body);
+	if (m) {
+		title = m[1].trim();
+		body = body.slice(m[0].length).replace(/^\s+/, "");
+	}
+	return { title, body };
+}
+
+/** `스펙 기반 자율 구현 루프 (Spec-Driven …)` → main title + subtitle in parentheses. */
+export function splitTitle(t: string): { main: string; sub: string } {
+	const m = /^(.+?)\s*\(([^()]+)\)\s*$/.exec(t);
+	return m && m[1].length >= 2 ? { main: m[1], sub: m[2] } : { main: t, sub: "" };
+}
+
+/** Frontmatter list (`[a, b]`, YAML list or one string) → names. */
+export function nameList(v: unknown): string[] {
+	const arr = Array.isArray(v) ? v : typeof v === "string" && v.trim() ? [v] : [];
+	return arr.map((x) => String(x).replace(/^\[\[|\]\]$/g, "").split("|")[0].trim()).filter(Boolean);
+}
