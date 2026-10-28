@@ -5,7 +5,7 @@ import { missingTaskRefs, type ProjectTask } from "./tasks.ts";
 import { changeProjectTask, newTaskId } from "./task-actions.ts";
 import { monthDays, weekdayMon0, shiftMonth, weekMondays, todayIsoLocal } from "../desk/model.ts";
 import { applySchedule, scheduleSource, scheduleTarget, selectSchedule, selectedSchedule, type ScheduleItem } from "./schedule-dnd.ts";
-export interface ScheduleState { month:string; draft:string; draftId?:string; editing?:ProjectTask; busy?:boolean; error?:string; select?:(item:ScheduleItem)=>void; calendar?:boolean }
+export interface ScheduleState { month:string; draft:string; draftId?:string; editing?:ProjectTask; busy?:boolean; error?:string; select?:(item:ScheduleItem)=>void; calendar?:boolean /** undefined = open (default) */ }
 export function renderProjectSchedule(parent:HTMLElement,host:ProjectsHost,p:Project,tasks:ProjectTask[],state:ScheduleState,refresh:()=>Promise<void>, hubText=""):void {
  const root=parent.createDiv({cls:"pf-schedule"});
  const ms:ScheduleItem[]=(p.milestones??[]).map(m=>({kind:"milestone",projectPath:p.path,projectId:p.id,line:m.line,title:m.text,source:p.milestoneSource??"",date:m.due}));
@@ -18,7 +18,8 @@ export function renderProjectSchedule(parent:HTMLElement,host:ProjectsHost,p:Pro
   const head=root.createDiv({cls:"pf-schedule-head"});
   tip(head.createEl("h2",{text:"할 일·일정"}),p.archived?"보관된 프로젝트 · 읽기 전용":"할 일은 □, 마일스톤은 ◆. 항목을 달력 날짜로 끌거나, 항목을 누른 뒤 날짜를 누르면 배정돼요.");
   const selected=selectedSchedule(host),chosen=selected?.projectId===p.id?selected:null;
-  const calOpen=!!state.calendar||!!chosen;
+  // Open by default (2026-10-28); 「달력 접기」 folds it until the view is reopened.
+  const calOpen=state.calendar!==false||!!chosen;
   button(head,calOpen?"달력 접기":"달력 펼치기",()=>{state.calendar=!calOpen;if(!state.calendar)selectSchedule(host,null);paint();},"pf-cal-toggle");
   const bar=root.createDiv({cls:"pf-schedule-selection",attr:{"aria-live":"polite"}});
   if(!chosen)bar.hide();
