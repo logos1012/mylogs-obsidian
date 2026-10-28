@@ -178,7 +178,7 @@ export class LumiChat {
 		const action: LumiAction = { id: `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, tool: name, status: "waiting", label: "", args };
 		if (def.big?.(args)) {
 			try {
-				const pv = await def.preview!({ host: recordingHost(plugin.app, plugin.settings), today: todayIsoNow() }, args);
+				const pv = await def.preview!({ host: recordingHost(plugin.app, plugin.settings), today: todayIsoNow(), plugin }, args);
 				action.label = pv.title;
 				action.lines = pv.lines;
 			} catch (err) {
@@ -200,7 +200,7 @@ export class LumiChat {
 		const plugin = this.owner.plugin;
 		const host = recordingHost(plugin.app, plugin.settings);
 		try {
-			const summary = await def.run({ host, today: todayIsoNow() }, args);
+			const summary = await def.run({ host, today: todayIsoNow(), plugin }, args);
 			action.status = "done";
 			action.label = summary;
 			action.changes = host.changes;

@@ -12,6 +12,7 @@
 import { moment, normalizePath, TFile } from "obsidian";
 import { z } from "zod";
 import type { RecordingHost } from "./recorder.ts";
+import { MORE_TOOLS } from "./tools-more.ts";
 import { MAIN_SECTION_KEYS } from "../settings.ts";
 import { findDaySection, parseBodyLines, splitLinesKeepEol, TASK_LINE_RE, toIsoDate } from "../parser.ts";
 import { appendToSection, dailyPadSkeleton, findSection, sectionLineRange, setFrontmatterScalar, toggleCheckbox } from "../writer.ts";
@@ -39,6 +40,8 @@ import { addElement, countActive, MAX_ELEMENTS, nextId, renameElement, REPLACEME
 export interface ToolCtx {
 	host: RecordingHost;
 	today: string;
+	/** The plugin, for the few things that are view state, not files (the 개인 / 회사 mode). */
+	plugin?: { setSideMode(m: string): Promise<void> };
 }
 
 export interface CardPreview {
@@ -616,6 +619,9 @@ export const LUMI_TOOLS: LumiTool[] = [
 		},
 	},
 ];
+
+// Everything else the screens can do (`./tools-more.ts`).
+LUMI_TOOLS.push(...MORE_TOOLS);
 
 function projectInput(a: Record<string, unknown>): NewProjectInput {
 	const s = (k: string) => String(a[k] ?? "").trim();
