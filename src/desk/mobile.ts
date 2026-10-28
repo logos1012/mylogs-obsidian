@@ -8,12 +8,15 @@
  * Reached only through `DeskCalendarView.render()`'s `Platform.isMobile` dispatch.
  */
 
-import type { App } from "obsidian";
+import { type App, setIcon } from "obsidian";
 import { addDays } from "../parser.ts";
 import { tip } from "../ui/tip.ts";
 import { actionSheet, enableTouchMenus, menuEventAt, pickTarget, type SheetAction } from "../ui/mobile.ts";
 import { type DeskItem, type MonthData, weekdayMon0 } from "./model.ts";
 import { type DaySlot, dayInMonth, dayLabel, defaultDay, type DeskDragKind, type DeskTarget, deskMoveTargets, type WeekSlot } from "./mobile-targets.ts";
+import { touchDrag } from "./touch-drag.ts";
+import { type BacklogGroup, type PadTask, renderWeekScreen, type WeekState } from "./mobile-week.ts";
+import type { ProjectTask } from "../projects/tasks.ts";
 
 
 export interface DeskMobileHost {
@@ -41,13 +44,38 @@ export interface DeskMobileHost {
 	renderMilestones(parent: HTMLElement, from: string, to: string): void;
 	/** Dates (ISO) that carry a project milestone ◆. */
 	milestoneDays(): Set<string>;
+	/** Month level: every task (true) or only milestones · events · #마감 (remembered). */
+	showTasks(): boolean;
+	setShowTasks(v: boolean): void;
+	/** 이달 중 of the shown month. */
+	duringItems(): DeskItem[];
+	/** 이달 중 → 이번 주 할 일 → that day, in one go (주 보기 drop). */
+	assignDuringToDay(it: DeskItem, iso: string): Promise<void>;
+	/** That day's Daily Pad 「오늘 할 일」. */
+	padTasks(iso: string): Promise<PadTask[]>;
+	togglePadTask(iso: string, t: PadTask): Promise<void>;
+	/** 진행 · 대기 projects' tasks with no date yet. */
+	projectBacklog(): Promise<BacklogGroup[]>;
+	scheduleProjectTask(t: ProjectTask, iso: string): Promise<void>;
+}
+
+/** Month level: an item shown without 「할 일」 on — milestones are drawn separately. */
+function monthLevel(it: DeskItem, showTasks: boolean): boolean {
+	if (it.item.kind === "event") return true;
+	if (it.item.kind !== "task") return false;
+	// A timed task is an appointment; #마감 is a deadline: both belong to the month.
+	return showTasks || !!it.item.time || it.item.tags.includes("마감");
 }
 
 interface State {
 	day: string;
 	installed: boolean;
-	/** 흐름 = this month's flow week by week (default); 달력 = the month grid + chosen day. */
-	mode: "flow" | "grid";
+	/** 흐름 = this month's flow week by week (default); 달력 = the month grid + chosen day; 주 = one week, all of it. */
+	mode: "flow" | "grid" | "week";
+	/** The week shown in 주 보기 (its Monday) and a render sequence for its async parts. */
+	week: WeekState;
+	/** Where 주 보기's 「달」 goes back to. */
+	from: "flow" | "grid";
 }
 
 const states = new WeakMap<HTMLElement, State>();
@@ -70,7 +98,7 @@ export function renderDeskMobile(h: DeskMobileHost): void {
 	const { cur, today } = h.begin();
 	let s = states.get(h.rootEl);
 	if (!s) {
-		s = { day: defaultDay(h.month, today), installed: false, mode: "flow" };
+		s = { day: defaultDay(h.month, today), installed: false, mode: "flow", week: { week: "", seq: 0 }, from: "flow" };
 		states.set(h.rootEl, s);
 	}
 	if (!s.installed) {
@@ -87,7 +115,24 @@ export function renderDeskMobile(h: DeskMobileHost): void {
 		h.renderEmpty(root);
 		return;
 	}
-	const seg = root.createDiv({ cls: "dc-m-seg", attr: { role: "tablist" } });
+	if (st.mode === "week") {
+		renderWeekScreen(
+			h,
+			root,
+			st.week,
+			today,
+			() => {
+				st.mode = st.from;
+				renderDeskMobile(h);
+			},
+			(monday) => openWeek(h, st, monday),
+			(ul, items) => wire(h, ul, items, "day"),
+		);
+		h.contentEl.scrollTop = 0;
+		return;
+	}
+	const segRow = root.createDiv({ cls: "dc-m-segrow" });
+	const seg = segRow.createDiv({ cls: "dc-m-seg", attr: { role: "tablist" } });
 	for (const [mode, label] of [["flow", "흐름"], ["grid", "달력"]] as const) {
 		const b = seg.createEl("button", { cls: `dc-m-seg-btn${st.mode === mode ? " is-active" : ""}`, text: label, attr: { type: "button", role: "tab", "aria-selected": String(st.mode === mode) } });
 		b.addEventListener("click", () => {
@@ -97,12 +142,19 @@ export function renderDeskMobile(h: DeskMobileHost): void {
 		});
 	}
 	tip(seg, "흐름: 이달과 주차별로 무엇이 이어지는지 · 달력: 날짜별로");
+	const show = h.showTasks();
+	const tasksBtn = segRow.createEl("button", { cls: `dc-m-tasks-toggle${show ? " is-on" : ""}`, text: "할 일", attr: { type: "button", "aria-pressed": String(show) } });
+	tip(tasksBtn, show ? "할 일까지 모두 보여요. 누르면 마일스톤 · 이벤트 · 마감만" : "마일스톤 · 이벤트 · 마감만 보여요. 누르면 할 일까지");
+	tasksBtn.addEventListener("click", () => {
+		h.setShowTasks(!show);
+		renderDeskMobile(h);
+	});
 
 	if (st.mode === "flow") {
 		monthBand(h, root, cur);
-		for (const w of h.weekSlots()) weekCard(h, root, st, w, today);
+		for (const w of h.weekSlots()) weekCard(h, root, st, w, today, show);
 	} else {
-		monthGrid(h, root, st, today);
+		monthGrid(h, root, st, today, show);
 		const monday = addDays(st.day, -weekdayMon0(st.day));
 		const dayBox = root.createDiv({ cls: "dc-m-cell dc-m-day" });
 		h.renderDayCell(dayBox, st.day);
@@ -134,7 +186,7 @@ function monthBand(h: DeskMobileHost, root: HTMLElement, cur: MonthData): void {
 }
 
 /** One week of the month: what happens in it, in date order, then its 이번 주 할 일. */
-function weekCard(h: DeskMobileHost, root: HTMLElement, s: State, w: WeekSlot, today: string): void {
+function weekCard(h: DeskMobileHost, root: HTMLElement, s: State, w: WeekSlot, today: string, show: boolean): void {
 	const sunday = addDays(w.monday, 6);
 	const past = sunday < today;
 	const now = w.monday <= today && today <= sunday;
@@ -154,10 +206,20 @@ function weekCard(h: DeskMobileHost, root: HTMLElement, s: State, w: WeekSlot, t
 	const stat = head.createSpan({ cls: "dc-m-wk-stat" });
 	if (tasks.length) stat.appendText(`${done}/${tasks.length}`);
 	if (unassigned) tip(stat.createSpan({ cls: "dc-m-wk-un", text: ` · 미배정 ${unassigned}` }), "이번 주 할 일 중 날짜를 아직 정하지 않은 일");
+	const open = head.createEl("button", { cls: "dc-m-wk-open", attr: { type: "button", "aria-label": "주 보기" } });
+	open.createSpan({ text: "주 보기" });
+	setIcon(open.createSpan(), "chevron-right");
+	tip(open, "이 주의 할 일을 모두 보고, 배정 안 된 일을 날짜에 놓아요");
+	open.addEventListener("click", (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		s.from = "flow";
+		openWeek(h, s, w.monday);
+	});
 
 	const body = card.createDiv({ cls: "dc-m-wk-body" });
 	h.renderMilestones(body, days[0] ?? w.monday, days[days.length - 1] ?? sunday);
-	const flow = dayItems.filter((x) => x.it.item.kind === "event" || x.it.item.kind === "task");
+	const flow = dayItems.filter((x) => monthLevel(x.it, show));
 	if (flow.length) {
 		const ul = body.createEl("ul", { cls: "dc-m-flow" });
 		for (const { d, it } of flow) {
@@ -173,8 +235,8 @@ function weekCard(h: DeskMobileHost, root: HTMLElement, s: State, w: WeekSlot, t
 				renderDeskMobile(h);
 			});
 		}
-	} else if (!body.childElementCount) body.createDiv({ cls: "dc-m-muted", text: "날짜가 정해진 일이 없어요" });
-	if (w.hasAlloc) {
+	} else if (!body.childElementCount) body.createDiv({ cls: "dc-m-muted", text: show ? "날짜가 정해진 일이 없어요" : tasks.length ? `마일스톤 · 이벤트 없음 · 할 일 ${tasks.length}` : "날짜가 정해진 일이 없어요" });
+	if (w.hasAlloc && show) {
 		const box = body.createDiv({ cls: "dc-m-wk-alloc" });
 		h.renderAllocCell(box, w.monday);
 		wire(h, box.querySelector<HTMLElement>(".dc-items"), alloc, "alloc");
@@ -183,77 +245,25 @@ function weekCard(h: DeskMobileHost, root: HTMLElement, s: State, w: WeekSlot, t
 
 /** Long-press an 이달 중 item, drag it onto a week card, lift: assigned to that week. */
 function dragToWeek(h: DeskMobileHost, li: HTMLElement, it: DeskItem): void {
-	let timer: number | null = null, ghost: HTMLElement | null = null, over: HTMLElement | null = null, sx = 0, sy = 0, dropped = 0;
-	const weekAt = (x: number, y: number) => (li.doc.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>(".dc-m-wk") ?? null;
-	const end = () => {
-		if (timer !== null) window.clearTimeout(timer);
-		timer = null;
-		ghost?.remove();
-		ghost = null;
-		over?.removeClass("is-drop");
-		over = null;
-		li.removeClass("is-dragging");
-	};
-	li.addEventListener("touchstart", (e) => {
-		if (e.touches.length !== 1) return;
-		e.stopPropagation(); // a long press here picks the item up instead of opening the menu
-		sx = e.touches[0].clientX;
-		sy = e.touches[0].clientY;
-		timer = window.setTimeout(() => {
-			timer = null;
-			li.addClass("is-dragging");
-			ghost = li.doc.body.createDiv({ cls: "ml-touch-ghost", text: it.item.text });
-			ghost.style.left = `${sx}px`;
-			ghost.style.top = `${sy}px`;
-			navigator.vibrate?.(10);
-		}, 350);
-	}, { passive: true });
-	li.addEventListener("touchmove", (e) => {
-		const p = e.touches[0];
-		if (!p) return;
-		if (!ghost) {
-			if (Math.abs(p.clientX - sx) > 8 || Math.abs(p.clientY - sy) > 8) end();
-			return;
-		}
-		e.preventDefault();
-		ghost.style.left = `${p.clientX}px`;
-		ghost.style.top = `${p.clientY}px`;
-		const w = weekAt(p.clientX, p.clientY);
-		if (w !== over) {
-			over?.removeClass("is-drop");
-			over = w;
-			over?.addClass("is-drop");
-		}
-		// Near the screen edges, scroll so far-away weeks can be reached.
-		const vh = li.doc.documentElement.clientHeight;
-		if (p.clientY > vh - 90) h.contentEl.scrollTop += 12;
-		else if (p.clientY < 160) h.contentEl.scrollTop -= 12;
-	}, { passive: false });
-	li.addEventListener("touchend", (e) => {
-		if (!ghost) {
-			end();
-			return;
-		}
-		const p = e.changedTouches[0];
-		const w = p ? weekAt(p.clientX, p.clientY) : null;
-		end();
-		dropped = Date.now();
-		const monday = w?.getAttr("data-monday");
+	touchDrag(h.contentEl, li, it.item.text, ".dc-m-wk", (w) => {
+		const monday = w.getAttr("data-monday");
 		if (!monday) return;
 		const t = deskMoveTargets({ kind: "during", open: true, assignWeek: it.item.assignWeek, assign: it.assign, monday: null, date: null }, h.weekSlots(), []).find((x) => x.op === "assignWeek" && x.monday === monday);
 		if (t) void h.move(t, it);
 	});
-	li.addEventListener("touchcancel", end);
-	li.addEventListener("click", (e) => {
-		if (Date.now() - dropped < 600) {
-			e.preventDefault();
-			e.stopImmediatePropagation();
-		}
-	}, { capture: true });
+}
+
+/** 주 보기 for the week starting `monday` (moving to its month when it lies outside the shown one). */
+function openWeek(h: DeskMobileHost, s: State, monday: string): void {
+	s.mode = "week";
+	s.week.week = monday;
+	const month = addDays(monday, 3).slice(0, 7);
+	if (month !== h.month) void h.goTo(month);
+	else renderDeskMobile(h);
 }
 
 /** 월~일 grid of the month; tap a day to show it (and its week) below. */
-function monthGrid(h: DeskMobileHost, root: HTMLElement, s: State, today: string): void {
+function monthGrid(h: DeskMobileHost, root: HTMLElement, s: State, today: string, show: boolean): void {
 	const grid = root.createDiv({ cls: "dc-m-grid", attr: { role: "grid", "aria-label": `${h.month} 달력` } });
 	for (const w of ["월", "화", "수", "목", "금", "토", "일"]) grid.createDiv({ cls: "dc-m-wd", text: w });
 	const ms = h.milestoneDays();
@@ -272,7 +282,7 @@ function monthGrid(h: DeskMobileHost, root: HTMLElement, s: State, today: string
 			if (monday === selMonday) c.addClass("is-week");
 			c.createSpan({ cls: "dc-m-num", text: String(+iso.slice(8, 10)) });
 			const dots = c.createSpan({ cls: "dc-m-dots" });
-			const items = inMonth ? h.dayItems(iso) : [];
+			const items = inMonth ? h.dayItems(iso).filter((it) => monthLevel(it, show)) : [];
 			for (const it of items.slice(0, 4)) dots.createSpan({ cls: `dc-m-dot k-${it.item.kind ?? "note"} s-${it.item.status}` });
 			if (items.length > 4) dots.createSpan({ cls: "dc-m-more", text: "+" });
 			if (inMonth && ms.has(iso)) c.createSpan({ cls: "dc-m-ms", text: "◆" });

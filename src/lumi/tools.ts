@@ -16,7 +16,7 @@ import { MAIN_SECTION_KEYS } from "../settings.ts";
 import { findDaySection, parseBodyLines, splitLinesKeepEol, TASK_LINE_RE, toIsoDate } from "../parser.ts";
 import { appendToSection, dailyPadSkeleton, findSection, sectionLineRange, setFrontmatterScalar, toggleCheckbox } from "../writer.ts";
 import { togglePending } from "../pending/actions.ts";
-import { toggleLinkedProjectTask } from "../projects/task-actions.ts";
+import { changeProjectTask, loadProjectTasks, newTaskId, toggleLinkedProjectTask } from "../projects/task-actions.ts";
 import { deskMonthPath, logDeskChange } from "../desk/actions.ts";
 import { prependChangeLog, wallYearSkeleton } from "../desk/ops.ts";
 import { addIndexChange, formatNewLine, insertIntoDesk, insertIntoMonth } from "../wall/edit.ts";
@@ -387,6 +387,25 @@ export const LUMI_TOOLS: LumiTool[] = [
 			if (p.status === a.status) return `「${p.title}」은(는) 이미 ${p.status}이에요`;
 			await changeStatus(ctx.host, p, String(a.status));
 			return `「${p.title}」 상태: ${p.status} → ${String(a.status)}`;
+		},
+	},
+	{
+		name: "project_task_add",
+		description:
+			"프로젝트에 할 일 추가. date(YYYY-MM-DD)를 주면 그날로 배정되어 Desk Calendar 그날 칸(주 보기)에 들어가고, 없으면 프로젝트 허브의 「할 일」에 날짜 없이 남는다(주 보기의 '배정 안 된 일').",
+		shape: { project: z.string().describe("프로젝트 id 또는 이름"), text: z.string().min(1), date: isoDate.optional() },
+		async run(ctx, a) {
+			const { p } = await findProject(ctx, String(a.project));
+			if (p.archived) throw new Error("보관된 프로젝트예요.");
+			const text = oneLine(String(a.text)).replace(/^[-*+]\s+(\[.\]\s+)?/, "");
+			const id = newTaskId();
+			await changeProjectTask(ctx.host, p, { kind: "add", text, id }, ctx.today);
+			if (!a.date) return `「${p.title}」 할 일에 넣었어요(날짜 없음): 「${short(text)}」`;
+			const fresh = await readProject(ctx.host, p.path);
+			const task = (await loadProjectTasks(ctx.host, fresh.p, fresh.text)).find((t) => t.id === id);
+			if (!task) throw new Error("방금 넣은 할 일을 찾지 못했어요.");
+			await changeProjectTask(ctx.host, fresh.p, { kind: "schedule", task, target: { kind: "day", date: String(a.date) } }, ctx.today);
+			return `「${p.title}」 할 일을 ${String(a.date).slice(5).replace("-", "/")}에 넣었어요: 「${short(text)}」`;
 		},
 	},
 	{

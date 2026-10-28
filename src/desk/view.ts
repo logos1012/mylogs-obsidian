@@ -1,10 +1,16 @@
-import { toggleLinkedProjectTask } from "../projects/task-actions.ts";
+import { changeProjectTask, loadProjectTasks, toggleLinkedProjectTask } from "../projects/task-actions.ts";
+import type { ProjectTask } from "../projects/tasks.ts";
+import { activeRoot, archiveRoot } from "../projects/actions.ts";
+import { hubLocation, parseProject } from "../projects/model.ts";
+import { parseFrontmatterText } from "../pinboard/model.ts";
+import { readProject, vaultIO } from "../pinboard/create-actions.ts";
+import { isFlywheelLine } from "../flywheel/model.ts";
+import type { BacklogGroup, PadTask } from "./mobile-week.ts";
 import { mountAppNav } from "../ui/nav.ts";
 import { parseWallYear, type WallLine } from "../wall/parse.ts";
 import { deskLineFor, deskLink, insertIntoDesk, markSentToDesk, type WallTarget } from "../wall/edit.ts";
 import { commitBatch } from "../pinboard/batch.ts";
-import { setFrontmatterScalar } from "../writer.ts";
-import { vaultIO } from "../pinboard/create-actions.ts";
+import { findSection, sectionLineRange, setFrontmatterScalar, toggleCheckbox } from "../writer.ts";
 import { actionSheet } from "../ui/mobile.ts";
 import { ItemPopover } from "../ui/popover.ts";
 import { tip } from "../ui/tip.ts";
@@ -12,7 +18,7 @@ import { scheduleTarget } from "../projects/schedule-dnd.ts";
 import { ItemView, Keymap, moment, normalizePath, Notice, Platform, setIcon, type TAbstractFile, TFile, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { loadMilestoneCalendar, renderMilestoneMarkers, renderMilestoneIssues, watchesMilestoneProjects, type MilestoneCalendar } from "../projects/milestone-calendar-ui.ts";
-import { addDays } from "../parser.ts";
+import { addDays, parseBodyLines, splitLinesKeepEol, TASK_LINE_RE } from "../parser.ts";
 import {
 	allocFileOf,
 	type DayIndex,
@@ -323,6 +329,23 @@ export class DeskCalendarView extends ItemView {
 			register: (cb) => this.register(cb),
 			renderMilestones: (parent, from, to) => this.renderMilestoneRange(parent, from, to, true),
 			milestoneDays: () => new Set(this.milestones.markers.map((m) => m.date)),
+			showTasks: () => this.plugin.settings.deskShowTasks,
+			setShowTasks: (v) => {
+				this.plugin.settings.deskShowTasks = v;
+				void this.plugin.saveSettings();
+			},
+			duringItems: () => cur().during,
+			assignDuringToDay: (it, iso) => this.assignDuringToDay(it, iso),
+			padTasks: (iso) => this.padTasks(iso),
+			togglePadTask: async (iso, pt) => {
+				await this.togglePadTask(iso, pt);
+				this.render();
+			},
+			projectBacklog: () => this.projectBacklog(),
+			scheduleProjectTask: async (task, iso) => {
+				await this.scheduleProjectTask(task, iso);
+				await this.reload();
+			},
 		};
 	}
 
@@ -979,6 +1002,89 @@ export class DeskCalendarView extends ItemView {
 		if (a === "letgo") await this.chooseLetGo(it);
 		else if (a === "split") await this.chooseSplit(it);
 		return false;
+	}
+
+	/** 주 보기: 이달 중 → that week's 이번 주 할 일 → the day (the two desktop drops in a row). */
+	private async assignDuringToDay(it: DeskItem, iso: string): Promise<void> {
+		const monday = addDays(iso, -weekdayMon0(iso));
+		if (!allocWeek(this.ctx!, monday)) {
+			new Notice("그 주의 「이번 주 할 일」 칸이 없어요. Desk Calendar 파일을 확인해 주세요.");
+			return;
+		}
+		if (!(await this.exec(planAssignWeek(it, monday, isoWeekNo(monday), allocFileOf(monday), this.ctx!.today)))) return;
+		await this.reload();
+		const a = allocWeek(this.ctx!, monday)?.alloc?.find((x) => isOpenTask(x) && !x.assign.length && x.item.text === it.item.text);
+		if (a) await this.exec(planAssignDay(a, iso, this.ctx!.today));
+		await this.reload();
+	}
+
+	private padPathOf(iso: string): string {
+		return normalizePath(`${this.plugin.settings.dailyPadFolder}/${iso.slice(0, 4)}/${iso}.md`);
+	}
+
+	/** That day's Daily Pad 「오늘 할 일」 checkboxes (주 보기). */
+	private async padTasks(iso: string): Promise<PadTask[]> {
+		const f = this.fileAt(this.padPathOf(iso));
+		if (!f) return [];
+		const text = await this.app.vault.cachedRead(f);
+		const r = findSection(text, this.plugin.settings.sections.today);
+		if (!r) return [];
+		const range = sectionLineRange(text, r);
+		const out: PadTask[] = [];
+		for (const sl of parseBodyLines(splitLinesKeepEol(text), range.start, range.end)) {
+			const m = TASK_LINE_RE.exec(sl.line);
+			if (!m || sl.indent > 0 || isFlywheelLine(sl.line)) continue;
+			out.push({ index: sl.index, line: sl.line, text: sl.item?.text ?? m[3].slice(1).trim(), done: m[2] !== " " });
+		}
+		return out;
+	}
+
+	private async togglePadTask(iso: string, pt: PadTask): Promise<void> {
+		const f = this.fileAt(this.padPathOf(iso));
+		if (!f) return;
+		let ok = false;
+		await this.app.vault.process(f, (data) => {
+			const r = findSection(data, this.plugin.settings.sections.today);
+			const res = toggleCheckbox(data, { index: pt.index, line: pt.line, scope: r ? sectionLineRange(data, r) : undefined });
+			if (!res.ok) return data;
+			ok = true;
+			return setFrontmatterScalar(res.text, "updated", todayIsoLocal());
+		});
+		if (!ok) new Notice("Daily Pad에서 이 줄을 찾지 못했어요. 파일이 바뀌었어요.");
+	}
+
+	/** 진행 · 대기 projects' undated hub tasks (주 보기 배정 안 된 일). */
+	private async projectBacklog(): Promise<BacklogGroup[]> {
+		const host = this.plugin;
+		const out: BacklogGroup[] = [];
+		for (const f of this.app.vault.getMarkdownFiles()) {
+			const loc = hubLocation(f.path, activeRoot(host), archiveRoot(host));
+			if (!loc || loc.archived) continue;
+			const text = await this.app.vault.cachedRead(f);
+			const fm = parseFrontmatterText(text);
+			const p = parseProject(fm.data, fm.body, loc, f.path);
+			if (!p || !["진행", "대기"].includes(p.status)) continue;
+			try {
+				const tasks = (await loadProjectTasks(host, p, text)).filter((t) => t.kind === "hub" && t.state === "scheduled" && !t.date && !t.month);
+				if (tasks.length) out.push({ project: p.title, tasks });
+			} catch (err) {
+				console.warn("[MyLogs] project tasks unreadable", p.path, err);
+			}
+		}
+		return out.sort((a, b) => a.project.localeCompare(b.project));
+	}
+
+	private async scheduleProjectTask(task: ProjectTask, iso: string): Promise<void> {
+		const host = this.plugin;
+		try {
+			const f = this.fileAt(task.path);
+			if (!f) throw new Error("프로젝트 허브를 찾지 못했어요.");
+			const { p } = await readProject(host, f.path);
+			const fresh = (await loadProjectTasks(host, p, await this.app.vault.read(f))).find((t) => t.id === task.id && t.kind === "hub") ?? task;
+			await changeProjectTask(host, p, { kind: "schedule", task: fresh, target: { kind: "day", date: iso } }, todayIsoLocal());
+		} catch (err) {
+			new Notice(err instanceof Error ? err.message : String(err));
+		}
 	}
 
 	private async moveToDay(it: DeskItem, date: string): Promise<void> {
