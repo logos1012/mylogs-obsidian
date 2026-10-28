@@ -47,6 +47,19 @@ export const NEED = "입력 필요";
 export const UNDECIDED = "미정";
 
 /** One goal note's frontmatter, normalised. Empty values are `""` (never invented). */
+/**
+ * Goal notes live in `<Pinboard>/Goals/` (2026-10-28): a goal runs until it ends, not per year. The
+ * id keeps the year it was made (`G-2026-01`). Older vaults' year folders (`2026/`) are still read.
+ */
+export const GOALS_DIR = "Goals";
+export function isGoalNotePath(rel: string): boolean {
+	return rel.startsWith(`${GOALS_DIR}/`) || /^\d{4}\//.test(rel);
+}
+/** The year in a goal id (`G-2026-01.2` → 2026): where its row sits in Pinboard Index.md. */
+export function goalIdYear(id: string | undefined): number {
+	return Number(/^G-(\d{4})-/.exec(id ?? "")?.[1]) || new Date().getFullYear();
+}
+
 export interface Goal {
 	path: string;
 	id: string;

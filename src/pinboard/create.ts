@@ -6,7 +6,7 @@ import { type NewProjectInput, nameProblem } from "../projects/model.ts";
 import { getFmList, setFmList, setFmValue, yamlScalar, upsertActiveRow, logRegistryChange } from "../projects/ops.ts";
 import { applyMainRollup, linkProject, removeUndecidedLines } from "./goal-edit.ts";
 import { INDEX_FILE, indexPathCell, prependChangeLog } from "./index-writer.ts";
-import { type Goal, parseFrontmatterText, parseGoal, rollupMain, displaySubProgress, isEnded, toNum } from "./model.ts";
+import { type Goal, GOALS_DIR, parseFrontmatterText, parseGoal, rollupMain, displaySubProgress, isEnded, toNum } from "./model.ts";
 import type { Write } from "./batch.ts";
 import { asSide } from "../side.ts";
 
@@ -77,11 +77,11 @@ export function planGoal(o: {root:string; year:number; input:GoalInput; template
 	if(parent && o.existing.filter(g=>g.parent===parent.goal.id&&g.status!=="dropped").length>=3)throw new Error("하위 목표는 3개 이하로 유지해 주세요.");
 	if(o.existing.some(g=>g.title===i.title.trim()))throw new Error("같은 이름의 목표가 있어요.");
 	const ids=[...o.existing.map(g=>g.id),...(o.index.match(/G-\d{4}-\d+(?:\.\d+)?/g)??[])];
-	const id=nextGoalId(o.year,ids,parent?.goal.id);const path=`${o.root}/${o.year}/${id} ${i.title.trim()}.md`;
+	const id=nextGoalId(o.year,ids,parent?.goal.id);const path=`${o.root}/${GOALS_DIR}/${id} ${i.title.trim()}.md`;
 	let text=o.template;
 	const fields:Record<string,string>={id,type:parent?"sub-goal":"main-goal",title:yamlScalar(i.title.trim()),scope:asSide(parent?parent.goal.scope:i.scope),area:yamlScalar(i.area.trim()),status:"active",health:"",progress:"0",updated:today};
 	if(parent)Object.assign(fields,{parent:parent.goal.id,measure:i.measure,kind:"outcome",baseline:i.measure==="metric"?i.baseline.replace(/,/g,""):"",current:i.measure==="metric"?i.current.replace(/,/g,""):"",target:yamlScalar(i.target),unit:yamlScalar(i.measure==="metric"?i.unit:""),due:i.due,weight:""});
-	else Object.assign(fields,{period:String(o.year),sub_total:"0",sub_achieved:"0"});
+	else Object.assign(fields,{sub_total:"0",sub_achieved:"0"});
 	for(const [k,v]of Object.entries(fields))text=setFmValue(text,k,v);
 	text=text.replace(/^# .*$/m,`# ${i.title.trim()}`);
 	if(parent){text=text.replace(/^상위 목표:.*$/m,`상위 목표: [[${parent.goal.path.replace(/\.md$/,"")}]]`);text=setFmList(setFmList(text,"projects",[]),"project_ids",[]);text=replaceSectionContent(text,"달성 기준",i.target?`- ${i.due||"기한 미정"}: ${i.target}${i.unit?` ${i.unit}`:""}`:"- 미정");}
@@ -92,7 +92,7 @@ export function planGoal(o: {root:string; year:number; input:GoalInput; template
 	if(parent){const r=rollupMain([...o.existing.filter(s=>s.parent===parent.goal.id),g]);const ptext=applyMainRollup(appendToSection(parent.text,"Sub Goal (측정 기준)",`- [[${path.replace(/\.md$/,"")}]]`),r,today);writes.push({path:parent.goal.path,before:parent.text,after:ptext});rows.push(readGoal(ptext,parent.goal.path));}
 	let index=upsertGoalRows(o.index,o.year,rows);index=updateUnknowns(index,g);index=setFmValue(prependChangeLog(index,today,`${id} ${parent?"하위 목표":"목표"} 생성 (플러그인)`),"updated",today);
 	writes.push({path:`${o.root}/${INDEX_FILE}`,before:o.index,after:index});
-	return {goal:g,writes,folders:[`${o.root}/${o.year}`]};
+	return {goal:g,writes,folders:[`${o.root}/${GOALS_DIR}`]};
 }
 export function attachNewProject(plan:GoalPlan,input:NewProjectInput,templates:Templates,o:{projectRoot:string;registryPath:string;registry:string;today:string}):GoalPlan {
 	const p=planNewProject(input,templates,{activeRoot:o.projectRoot,today:o.today});
