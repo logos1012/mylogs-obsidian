@@ -1,5 +1,7 @@
 import { type ItemView, setIcon } from "obsidian";
 import { tip } from "./tip.ts";
+import { mountLumiButton } from "../lumi/register.ts";
+import type MyLogsPlugin from "../main.ts";
 
 /** Every MyLogs view, in vault folder order (01 Pinboard … 12 Flywheel). */
 export const APP_VIEWS: { type: string; label: string; icon: string; desc: string }[] = [
@@ -40,6 +42,7 @@ export function mountAppNav(view: ItemView): void {
 	}
 	// Keep the current tab visible when the bar scrolls (phone width).
 	window.requestAnimationFrame(() => list.querySelector<HTMLElement>(".is-active")?.scrollIntoView({ block: "nearest", inline: "center" }));
+	mountLumiButton(view, (view as unknown as { plugin?: MyLogsPlugin }).plugin);
 }
 
 async function goToView(from: ItemView, type: string): Promise<void> {

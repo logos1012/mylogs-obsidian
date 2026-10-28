@@ -20,7 +20,11 @@ jobs:
           cache: npm
 
       - name: Install
-        run: npm ci
+        # 루미's agent SDKs list every platform's Claude/Codex binary as optional (~600 MB);
+        # the plugin uses the user's own installed CLIs, so skip them and add only esbuild's.
+        run: |
+          npm ci --omit=optional
+          npm i --no-save @esbuild/linux-x64@$(node -p "require('./node_modules/esbuild/package.json').version")
 
       - name: Check tag matches manifest version
         run: |

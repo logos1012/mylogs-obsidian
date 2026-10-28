@@ -10175,3 +10175,42 @@ button.ml-milestone-marker .ml-milestone-title { flex: 1; min-width: 0; white-sp
 .mylogs-daily-pad .ml-pending.is-all-done { padding-top: 8px; padding-bottom: 8px; opacity: 0.8; }
 .mylogs-daily-pad button.ml-pending-done { margin-left: auto; font-size: var(--font-ui-smaller); }
 button.ml-undo-btn { margin-left: 8px; padding: 2px 10px; height: auto; font-weight: 600; }
+
+/* ───────────────────────── 루미 (0.20.0) ───────────────────────── */
+.workspace-leaf-content.has-lumi-fab { position: relative; }
+button.lumi-fab { position: absolute; right: 22px; bottom: 22px; z-index: 30; width: 56px; height: 56px; padding: 0; border: 0; border-radius: 50%; background: transparent; box-shadow: 0 6px 20px rgba(29, 25, 64, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.08); cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease; }
+button.lumi-fab svg { width: 100%; height: 100%; display: block; border-radius: 50%; }
+button.lumi-fab:hover { transform: translateY(-2px) scale(1.04); box-shadow: 0 10px 26px rgba(29, 25, 64, 0.45), 0 0 18px rgba(255, 215, 106, 0.35); }
+button.lumi-fab.is-busy { animation: lumi-breathe 1.6s ease-in-out infinite; }
+@keyframes lumi-breathe { 0%, 100% { box-shadow: 0 6px 20px rgba(29, 25, 64, 0.35), 0 0 6px rgba(255, 215, 106, 0.25); } 50% { box-shadow: 0 6px 20px rgba(29, 25, 64, 0.35), 0 0 26px rgba(255, 215, 106, 0.75); } }
+.has-lumi-fab > .view-content { padding-bottom: 90px; }
+
+.mylogs-lumi { display: flex; flex-direction: column; height: 100%; padding: 0 !important; }
+.mylogs-lumi .lumi-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--background-modifier-border); }
+.mylogs-lumi .lumi-avatar { flex: 0 0 34px; width: 34px; height: 34px; }
+.mylogs-lumi .lumi-avatar svg, .mylogs-lumi .lumi-msg-avatar svg { width: 100%; height: 100%; display: block; }
+.mylogs-lumi .lumi-title { flex: 1; min-width: 0; }
+.mylogs-lumi .lumi-name { font-weight: 700; }
+.mylogs-lumi .lumi-screen { color: var(--text-muted); font-size: var(--font-ui-smaller); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mylogs-lumi .lumi-engine { display: flex; padding: 2px; border-radius: 8px; background: var(--background-secondary); }
+.mylogs-lumi button.lumi-engine-btn { height: 24px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; box-shadow: none; font-size: 11px; color: var(--text-muted); }
+.mylogs-lumi button.lumi-engine-btn.is-active { background: var(--background-primary); color: var(--text-normal); font-weight: 600; box-shadow: var(--shadow-s); }
+.mylogs-lumi .lumi-list { flex: 1; overflow-y: auto; padding: 14px 12px; display: flex; flex-direction: column; gap: 12px; }
+.mylogs-lumi .lumi-msg { display: flex; gap: 8px; align-items: flex-start; }
+.mylogs-lumi .lumi-msg.is-user { justify-content: flex-end; }
+.mylogs-lumi .lumi-msg-avatar { flex: 0 0 26px; width: 26px; height: 26px; margin-top: 2px; }
+.mylogs-lumi .lumi-bubble { max-width: 86%; padding: 8px 12px; border-radius: 14px; font-size: var(--font-ui-small); line-height: 1.55; overflow-wrap: anywhere; }
+.mylogs-lumi .is-lumi .lumi-bubble { background: var(--background-secondary); border-top-left-radius: 4px; }
+.mylogs-lumi .is-user .lumi-bubble { background: var(--interactive-accent); color: var(--text-on-accent); border-top-right-radius: 4px; white-space: pre-wrap; }
+.mylogs-lumi .lumi-md > :first-child { margin-top: 0; }
+.mylogs-lumi .lumi-md > :last-child { margin-bottom: 0; }
+.mylogs-lumi .lumi-plain { white-space: pre-wrap; }
+.mylogs-lumi .lumi-thinking { color: var(--text-muted); font-style: italic; }
+.mylogs-lumi .lumi-activity { margin-top: 6px; color: var(--text-faint); font-size: var(--font-ui-smaller); }
+.mylogs-lumi .lumi-error { margin-top: 6px; color: var(--text-error); font-size: var(--font-ui-smaller); }
+.mylogs-lumi .lumi-choices { display: flex; flex-wrap: wrap; gap: 6px; margin-left: 34px; }
+.mylogs-lumi button.lumi-choice { height: auto; min-height: 28px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--interactive-accent); background: transparent; box-shadow: none; color: var(--text-accent); font-size: var(--font-ui-smaller); }
+.mylogs-lumi button.lumi-choice:hover { background: color-mix(in srgb, var(--interactive-accent) 12%, transparent); }
+.mylogs-lumi .lumi-input { display: flex; gap: 8px; align-items: flex-end; padding: 10px 12px 12px; border-top: 1px solid var(--background-modifier-border); }
+.mylogs-lumi .lumi-input textarea { flex: 1; min-height: 40px; max-height: 160px; resize: none; border-radius: 10px; padding: 8px 10px; font-size: var(--font-ui-small); }
+.mylogs-lumi button.lumi-send { flex: 0 0 36px; width: 36px; height: 36px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }

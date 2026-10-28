@@ -396,6 +396,11 @@ export class ProjectFoldersView extends ItemView {
 		await this.run(() => connectProject(this.plugin, goal, p.path, link, todayIso()));
 	}
 
+	/** 루미: the project open in the workspace. */
+	lumiItem(): string | undefined {
+		return this.selectedId ? this.data?.projects.find((p) => p.id === this.selectedId)?.title : undefined;
+	}
+
 	private renderProject(root: HTMLElement, p: Project, d: Loaded): void {
 		root.empty();
 		this.workspaceComponent = this.addChild(new Component());
