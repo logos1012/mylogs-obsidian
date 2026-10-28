@@ -10716,3 +10716,15 @@ button.pf-ol-del {
 .mylogs-wall-calendar .wc-desk-tasks .wc-item {
 	cursor: pointer;
 }
+button.pb-ended-toggle {
+	margin-left: 8px;
+	height: 26px;
+	padding: 0 10px;
+	border-radius: 999px;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+button.pb-ended-toggle.is-on {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
