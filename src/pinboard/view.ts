@@ -768,6 +768,11 @@ export class PinboardView extends ItemView {
 		this.renderDetail(true);
 	}
 
+	/** 루미: the goal open in the detail panel. */
+	lumiItem(): string | undefined {
+		return this.openId ? this.goalById(this.openId)?.title : undefined;
+	}
+
 	private closeDetail(): void {
 		if (!this.canNavigate()) return;
 		this.openId = null;

@@ -1,0 +1,51 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { carriedFrom, sessionId, sessionPath, sessionText, splitChoices, titleFrom, upsertIndexRow, type LumiTurn } from "../src/lumi/session.ts";
+
+// 루미 sessions follow 10 Archive Box AGENTS 「3」. Fictional data only (김하루).
+const turns: LumiTurn[] = [
+	{ role: "user", text: "운동 습관 목표를 세우고 싶어", at: "2026-10-28T23:58:10" },
+	{ role: "lumi", text: "좋아요! 무엇이 달라지나요?\n선택지: 건강 / 체력", at: "2026-10-28T23:58:30" },
+	{ role: "user", text: "체력", at: "2026-10-29T00:01:05" },
+	{ role: "lumi", text: "", at: "2026-10-29T00:01:06" },
+];
+
+test("session file: name, id, frontmatter, day-change stamps, empty turns skipped", () => {
+	const title = titleFrom(turns[0].text);
+	assert.equal(title, "운동 습관 목표를 세우고 싶어");
+	assert.equal(titleFrom('a/b:c*d?"e<f>g|h'), "a b c d e f g h");
+	assert.equal(sessionPath("10 Archive Box/Sessions", turns[0].at, title), "10 Archive Box/Sessions/2026/2026-10-28 2358 운동 습관 목표를 세우고 싶어.md");
+	assert.equal(sessionId(turns[0].at), "S-2026-10-28-235810");
+	const t = sessionText({ id: "S-2026-10-28-235810", sourceId: "lumi-claude-abc", tool: "claude-code", title }, turns, { tornOffUntil: "", routedTo: [], project: "" });
+	assert.match(t, /^---\ntype: session\nid: S-2026-10-28-235810\nsource_id: lumi-claude-abc\ndate: 2026-10-28\nlast: 2026-10-29\ntool: claude-code\nchannel: app\nkind: chat\n/);
+	assert.match(t, /turns: 3\n/);
+	assert.match(t, /torn_off: false\nrouted_to: \[\]\nsaved_by: mylogs-lumi/);
+	assert.match(t, /---\n\*\*사용자 · 23:58\*\*\n\n운동 습관 목표를 세우고 싶어\n/);
+	assert.match(t, /\*\*사용자 · 10-29 00:01\*\*\n\n체력/);
+	assert.ok(!t.includes("**AI · 10-29"), "an empty answer is not written");
+});
+
+test("rewrite keeps what Tear-off wrote (torn_off_until, routed_to, project)", () => {
+	const old = sessionText({ id: "S-1", sourceId: "lumi-codex-x", tool: "codex", title: "t" }, turns.slice(0, 2), { tornOffUntil: "2026-10-28T23:58:30", routedTo: ["2026-10-28: My Life Daily", "2026-10-28: Drawer 보류"], project: "P-run" });
+	const c = carriedFrom(old);
+	assert.deepEqual(c, { tornOffUntil: "2026-10-28T23:58:30", routedTo: ["2026-10-28: My Life Daily", "2026-10-28: Drawer 보류"], project: "P-run" });
+	assert.match(old, /torn_off: true/);
+	assert.match(sessionText({ id: "S-1", sourceId: "lumi-codex-x", tool: "codex", title: "t" }, turns, c), /torn_off: false/, "new messages after the cursor reopen it");
+	assert.deepEqual(carriedFrom("---\ntype: session\nrouted_to:\n  - \"2026-10-27: Desk 10/28\"\n---\n").routedTo, ["2026-10-27: Desk 10/28"]);
+});
+
+test("Sessions Index row is added once, then replaced by source_id", () => {
+	const INDEX = "---\ntype: index\n---\n\n| id | source_id | date | last | title | kind | tool | turns | torn_off_until | torn_off | routed_to |\n|---|---|---|---|---|---|---|---|---|---|---|\n| S-0 | `old` | 2026-10-01 | 2026-10-01 | x | chat | hermes | 2 |  | false |  |\n\n## 변경 기록\n";
+	const meta = { id: "S-2026-10-28-235810", sourceId: "lumi-claude-abc", tool: "claude-code" as const, title: "운동 습관" };
+	const a = upsertIndexRow(INDEX, meta, "10 Archive Box/Sessions/2026/2026-10-28 2358 운동 습관.md", turns.slice(0, 2), { tornOffUntil: "", routedTo: [], project: "" });
+	assert.match(a, /\| S-0 .*\n\| S-2026-10-28-235810 \| `lumi-claude-abc` \| 2026-10-28 \| 2026-10-28 \| \[\[10 Archive Box\/Sessions\/2026\/2026-10-28 2358 운동 습관\\\|운동 습관\]\] \| chat \| claude-code \| 2 \|/);
+	const b = upsertIndexRow(a, meta, "10 Archive Box/Sessions/2026/2026-10-28 2358 운동 습관.md", turns, { tornOffUntil: "", routedTo: [], project: "" });
+	assert.equal(b.split("lumi-claude-abc").length, 2, "one row");
+	assert.match(b, /\| 2026-10-28 \| 2026-10-29 \|/);
+});
+
+test("선택지 line becomes quick replies", () => {
+	assert.deepEqual(splitChoices("무엇이 달라지나요?\n선택지: 건강해져요 / 체력이 늘어요 / 직접 쓸게요"), { body: "무엇이 달라지나요?", choices: ["건강해져요", "체력이 늘어요", "직접 쓸게요"] });
+	assert.deepEqual(splitChoices("**선택지**: 예 | 아니오").choices, ["예", "아니오"]);
+	assert.deepEqual(splitChoices("그냥 답변").choices, []);
+});

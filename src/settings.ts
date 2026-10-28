@@ -42,6 +42,14 @@ export interface MyLogsSettings {
 	showTestMarkers: boolean;
 	/** Desk Calendar: hide 완료 · 옮김 · 놓아줌 lines (screen only; remembered). */
 	deskHideClosed: boolean;
+	/** 루미 (desktop AI): which local agent runs — the user's own Claude Code or Codex login. */
+	lumiEngine: "claude" | "codex";
+	/** Full path to the `claude` / `codex` executable ("" = look in the usual places). */
+	lumiClaudePath: string;
+	lumiCodexPath: string;
+	/** Model override ("" = the engine's default). */
+	lumiClaudeModel: string;
+	lumiCodexModel: string;
 	autosaveDelayMs: number;
 }
 
@@ -70,6 +78,11 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	},
 	showTestMarkers: true,
 	deskHideClosed: false,
+	lumiEngine: "claude",
+	lumiClaudePath: "",
+	lumiCodexPath: "",
+	lumiClaudeModel: "",
+	lumiCodexModel: "",
 	autosaveDelayMs: 800,
 };
 
@@ -103,6 +116,51 @@ export class MyLogsSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 		const s = this.plugin.settings;
+
+		new Setting(containerEl).setName("루미 (AI)").setHeading();
+		new Setting(containerEl)
+			.setName("엔진")
+			.setDesc("내 구독으로 로그인된 Claude Code 또는 Codex를 데스크톱에서 실행해요. 루미 패널 위에서도 바꿀 수 있어요.")
+			.addDropdown((d) =>
+				d
+					.addOption("claude", "Claude Code")
+					.addOption("codex", "Codex")
+					.setValue(s.lumiEngine)
+					.onChange(async (v) => {
+						s.lumiEngine = v === "codex" ? "codex" : "claude";
+						await this.plugin.saveSettings();
+					}),
+			);
+		const exe = (name: string, key: "lumiClaudePath" | "lumiCodexPath", ph: string) =>
+			new Setting(containerEl)
+				.setName(name)
+				.setDesc("비워 두면 ~/.local/bin, /opt/homebrew/bin 등에서 찾아요.")
+				.addText((t) =>
+					t
+						.setPlaceholder(ph)
+						.setValue(s[key])
+						.onChange(async (v) => {
+							s[key] = v.trim();
+							await this.plugin.saveSettings();
+						}),
+				);
+		exe("claude 실행 파일 경로", "lumiClaudePath", "~/.local/bin/claude");
+		exe("codex 실행 파일 경로", "lumiCodexPath", "~/.local/bin/codex");
+		const model = (name: string, key: "lumiClaudeModel" | "lumiCodexModel", ph: string) =>
+			new Setting(containerEl)
+				.setName(name)
+				.setDesc("비워 두면 엔진의 기본 모델을 써요.")
+				.addText((t) =>
+					t
+						.setPlaceholder(ph)
+						.setValue(s[key])
+						.onChange(async (v) => {
+							s[key] = v.trim();
+							await this.plugin.saveSettings();
+						}),
+				);
+		model("Claude 모델", "lumiClaudeModel", "예: opus, sonnet");
+		model("Codex 모델", "lumiCodexModel", "예: gpt-5.5");
 
 		new Setting(containerEl).setName("폴더").setHeading();
 		const folder = (name: string, desc: string, key: "dailyPadFolder" | "deskCalendarFolder" | "pinboardFolder" | "wallCalendarFolder" | "projectFoldersFolder" | "projectArchiveFolder") =>

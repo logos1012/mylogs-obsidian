@@ -11,6 +11,8 @@ import { activateMyLife, refreshMyLife, registerMyLife } from "./mylife/register
 import { refreshToolbox, registerToolbox } from "./toolbox/register.ts";
 import { activateDiary, refreshDiaries, registerDiary } from "./diary/register.ts";
 import { refreshFlywheel, registerFlywheel } from "./flywheel/register.ts";
+import { LumiController } from "./lumi/controller.ts";
+import { registerLumi } from "./lumi/register.ts";
 
 /*
  * MyLogs — Daily Pad, Pinboard, Wall Calendar, Desk Calendar, Project Folders, Drawer, My Life, Toolbox, Diary views.
@@ -40,6 +42,8 @@ import { refreshFlywheel, registerFlywheel } from "./flywheel/register.ts";
  */
 export default class MyLogsPlugin extends Plugin {
 	settings!: MyLogsSettings;
+	/** 루미 (desktop AI): the conversation, shared by the button and the panel. */
+	lumi!: LumiController;
 
 	private refreshViews = debounce(
 		() => {
@@ -69,6 +73,7 @@ export default class MyLogsPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+		this.lumi = new LumiController(this);
 		registerProjectRollup(this);
 
 		this.registerView(VIEW_TYPE_DAILY_PAD, (leaf: WorkspaceLeaf) => new DailyPadView(leaf, this));
@@ -103,6 +108,7 @@ export default class MyLogsPlugin extends Plugin {
 		registerToolbox(this);
 		registerDiary(this);
 		registerFlywheel(this);
+		registerLumi(this);
 
 		this.addSettingTab(new MyLogsSettingTab(this.app, this));
 	}
