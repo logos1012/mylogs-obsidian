@@ -15,9 +15,11 @@ import { askThirdMove, pickDate, pickMonth, promptText } from "../desk/modals.ts
 import { drawerPath } from "../drawer/actions.ts";
 import { askWhen } from "../drawer/modals.ts";
 import { drawerTemplate, putItem } from "../drawer/ops.ts";
-import { setFrontmatterScalar } from "../writer.ts";
+import { findSection, sectionLineRange, setFrontmatterScalar, toggleCheckbox } from "../writer.ts";
 import {
 	appendSplitParts,
+	checkInDeskDay,
+	checkInPadSection,
 	describeChoice,
 	dropIndexRow,
 	forwardCopy,
@@ -216,4 +218,68 @@ export async function applyPending(host: PendingHost, padDate: string, sl: Sourc
 
 	const writes: Write[] = [...files].filter(([, v]) => v.before !== v.after).map(([path, v]) => ({ path, before: v.before, after: v.after }));
 	await commitBatch(io, writes);
+}
+
+/**
+ * A 결정 대기 line checked (or unchecked) in place: the same line on the day it came from — its
+ * Desk Calendar day cell and that day's Daily Pad 「오늘 할 일」 — follows, and a done item leaves
+ * the index 「결정 대기」 table. One checked batch. Returns the new state, or null when the line moved.
+ */
+export async function togglePending(host: PendingHost, padDate: string, sl: SourceLine, today: string): Promise<"done" | "open" | null> {
+	return exclusive(host, async () => {
+		const io = vaultIO(host.app);
+		const s = host.settings;
+		const files = new Map<string, { before: string; after: string }>();
+		const load = async (path: string): Promise<string | null> => {
+			const cur = files.get(path);
+			if (cur) return cur.after;
+			const t = await io.read(path);
+			if (t !== null) files.set(path, { before: t, after: t });
+			return t;
+		};
+		const put = (path: string, after: string) => {
+			const cur = files.get(path);
+			if (cur) cur.after = after;
+		};
+
+		const pad = padPath(host, padDate);
+		const padText = await load(pad);
+		const sec = padText === null ? null : findSection(padText, s.sections.pending);
+		if (padText === null || !sec) return null;
+		const r = toggleCheckbox(padText, { index: sl.index, line: sl.line, scope: sectionLineRange(padText, sec) });
+		if (!r.ok) return null;
+		const nowDone = /^\s*[-*+]\s+\[[xX]\]/.test(r.text.split(/\r?\n/)[sl.index] ?? "");
+		put(pad, setFrontmatterScalar(r.text, "updated", today));
+
+		const key = taskKey(sl.line);
+		const [from, to] = nowDone ? [" ", "x"] : ["x", " "];
+		const src = sourceDateOf(sl.line) ?? addDays(padDate, -1);
+		const deskPath = deskMonthPath(host, src.slice(0, 7));
+		const desk = await load(deskPath);
+		if (desk !== null) {
+			const c = checkInDeskDay(desk, src, key, from, to);
+			if (c.count) {
+				const u = touchUpdated(c.text, today);
+				put(deskPath, u.ok ? u.text : c.text);
+			}
+		}
+		const srcPad = padPath(host, src);
+		if (srcPad !== pad) {
+			const st = await load(srcPad);
+			if (st !== null) {
+				const c = checkInPadSection(st, s.sections.today, key, from, to);
+				if (c.count) put(srcPad, setFrontmatterScalar(c.text, "updated", today));
+			}
+		}
+		if (nowDone) {
+			const index = normalizePath(`${s.dailyPadFolder}/${INDEX_FILE}`);
+			const idx = await load(index);
+			if (idx !== null) {
+				const dropped = dropIndexRow(idx, key, s.sections.pending);
+				if (dropped !== idx) put(index, prependChangeLog(dropped, today, `결정 대기 「${sl.item?.text ?? key}」 완료 (원래 날 ${src}에도 반영)`));
+			}
+		}
+		await commitBatch(io, [...files].filter(([, v]) => v.before !== v.after).map(([path, v]) => ({ path, before: v.before, after: v.after })));
+		return nowDone ? "done" : "open";
+	});
 }

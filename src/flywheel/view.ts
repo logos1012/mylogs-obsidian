@@ -18,7 +18,7 @@ import { askForm } from "../ui/modals.ts";
 import { addDays } from "../parser.ts";
 import { prependChangeLog } from "../desk/ops.ts";
 import { setFrontmatterScalar } from "../writer.ts";
-import { activeElements, type FlywheelElement, flywheelPath, missedCount, parseFlywheel } from "./model.ts";
+import { activeElements, type FlywheelElement, flywheelPath, parseFlywheel } from "./model.ts";
 import {
 	addElement,
 	countActive,
@@ -33,8 +33,8 @@ import {
 	REPLACEMENT_MARK,
 	replacementsThisQuarter,
 	setElementField,
+	setLogCell,
 	setPurpose,
-	togglePadLine,
 	weekRate,
 } from "./ops.ts";
 
@@ -221,7 +221,7 @@ export class FlywheelView extends ItemView {
 		const today = todayIso();
 		const sec = root.createEl("section", { cls: "fw-today" });
 		const h = sec.createDiv({ cls: "fw-sec-head" });
-		tip(h.createEl("h2", { text: "오늘" }), "최소 행동을 했으면 체크해요. 못 했으면 그대로 두세요. 못 한 분량을 내일로 넘기지 않아요.");
+		tip(h.createEl("h2", { text: "오늘" }), "최소 행동을 했으면 여기서 체크해요(수행 표에 기록). 못 했으면 그대로 두세요. 못 한 분량을 내일로 넘기지 않아요.");
 		h.createSpan({ cls: "fw-date", text: moment(today, "YYYY-MM-DD").format("M월 D일 (dd)") });
 		const active = activeElements(d.elements);
 		const pad = d.pads.get(today) ?? null;
@@ -230,9 +230,9 @@ export class FlywheelView extends ItemView {
 			return;
 		}
 		const grid = sec.createDiv({ cls: "fw-today-grid" });
-		let missingLine = false;
+		const cellOf = (iso: string, id: string) => d.tables.get(iso.slice(0, 7))?.get(iso.slice(8, 10))?.get(id);
 		for (const e of active) {
-			const mark = dayMark(e, today, pad, undefined);
+			const mark = dayMark(e, today, pad, cellOf(today, e.id));
 			const card = grid.createDiv({ cls: `fw-today-card${mark === "x" ? " is-done" : ""}` });
 			const box = card.createEl("button", { cls: "fw-check", attr: { type: "button", role: "checkbox", "aria-checked": String(mark === "x"), "aria-label": `${e.name} 오늘 했음` } });
 			if (mark === "x") setIcon(box, "check");
@@ -240,27 +240,18 @@ export class FlywheelView extends ItemView {
 			body.createDiv({ cls: "fw-today-name", text: e.name });
 			const min = e.fields["최소"];
 			body.createDiv({ cls: `fw-today-min${isPlaceholder(min) ? " is-empty" : ""}`, text: isPlaceholder(min) ? "최소 행동을 정해 주세요" : min });
-			const missed = pad ? this.missedOf(pad, e.id) : null;
-			if (missed) tip(card.createSpan({ cls: "fw-missed" }), `${missed}일 연속 못 했어요. 보충할 필요는 없어요. 최소 행동이 충분히 작은지 봐요.`);
-			const line = mark === "x" || mark === "-";
-			if (!line) {
-				missingLine = true;
+			// "두 번 연속 빼먹지 않기" (「4-3」): the two days before today, from the same marks as the grid.
+			const missed = [1, 2].every((n) => {
+				const iso = addDays(today, -n);
+				return dayMark(e, iso, d.pads.get(iso) ?? null, cellOf(iso, e.id), false) === "-";
+			});
+			if (missed) tip(card.createSpan({ cls: "fw-missed" }), "이틀 연속 못 했어요. 보충할 필요는 없어요. 최소 행동이 충분히 작은지 봐요.");
+			if (mark === "out") {
 				box.disabled = true;
-				tip(box, "오늘 Daily Pad에 이 줄이 없어요");
-			} else box.addEventListener("click", () => void this.toggleToday(e));
+				tip(box, "아직 시작 전이에요");
+			} else box.addEventListener("click", () => void this.toggleToday(e, mark === "x"));
 			if (isPlaceholder(min)) body.addEventListener("click", () => void this.editMethod(e));
 		}
-		if (missingLine) {
-			const row = sec.createDiv({ cls: "fw-today-missing" });
-			row.createSpan({ text: pad === null ? "오늘 Daily Pad가 아직 없어요." : "오늘 Daily Pad에 없는 요소가 있어요." });
-			const b = row.createEl("button", { cls: "fw-btn", text: "Daily Pad 열기", attr: { type: "button" } });
-			b.addEventListener("click", () => void this.plugin.openDailyPadAt(today));
-		}
-	}
-
-	private missedOf(pad: string, id: string): number | null {
-		for (const line of pad.split(/\r?\n/)) if (line.includes(`flywheel:: ${id}`)) return missedCount(line);
-		return null;
 	}
 
 	private renderWeeks(root: HTMLElement, d: Loaded): void {
@@ -520,23 +511,28 @@ export class FlywheelView extends ItemView {
 		if (ok) new Notice(`「${v.name}」을(를) 바퀴에 넣었어요. 내일부터 Daily Pad에 들어가요.`);
 	}
 
-	private async toggleToday(e: FlywheelElement): Promise<void> {
+	/** 「오늘」 check → this month's 수행 표 (`x` / 빈칸). Daily Pad is not touched (「4-2」, 2026-10-28). */
+	private async toggleToday(e: FlywheelElement, wasDone: boolean): Promise<void> {
+		if (this.busy) return;
 		const today = todayIso();
-		const f = this.file(this.padPath(today));
-		if (!f || this.busy) return;
+		const month = today.slice(0, 7);
+		const path = normalizePath(`${this.folder()}/99 작업실/수행/${month}.md`);
+		const ids = (this.data?.elements ?? []).filter((x) => x.status !== "폐기").map((x) => x.id);
 		this.busy = true;
-		let ok = false;
 		try {
-			await this.app.vault.process(f, (t) => {
-				const next = togglePadLine(t, e.id);
-				if (next === null) return t;
-				ok = true;
-				return setFrontmatterScalar(next, "updated", today);
-			});
+			const f = this.file(path);
+			if (f) await this.app.vault.process(f, (t) => setLogCell(t, month, today.slice(8, 10), e.id, wasDone ? "" : "x", ids));
+			else {
+				const folder = path.slice(0, path.lastIndexOf("/"));
+				if (!this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder);
+				await this.app.vault.create(path, setLogCell(null, month, today.slice(8, 10), e.id, wasDone ? "" : "x", ids));
+			}
+		} catch (err) {
+			console.error("[MyLogs] Flywheel log write failed", err);
+			new Notice("MyLogs: 수행 표에 쓰지 못했어요.");
 		} finally {
 			this.busy = false;
 		}
-		if (!ok) new Notice("오늘 Daily Pad에서 이 줄을 찾지 못했어요.");
 		await this.refresh();
 	}
 

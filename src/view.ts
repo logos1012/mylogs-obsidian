@@ -2,7 +2,7 @@ import { toggleLinkedProjectTask } from "./projects/task-actions.ts";
 import { mountAppNav } from "./ui/nav.ts";
 import { tip } from "./ui/tip.ts";
 import { ItemPopover } from "./ui/popover.ts";
-import { choosePending } from "./pending/actions.ts";
+import { choosePending, togglePending } from "./pending/actions.ts";
 import type { PendingChoice } from "./pending/ops.ts";
 import { extractCandidates } from "./drawer/candidates.ts";
 import { acceptCandidate, removeCandidateLine } from "./drawer/actions.ts";
@@ -37,7 +37,7 @@ import {
 	toIsoDate,
 } from "./parser.ts";
 import { MAIN_SECTION_KEYS, type MainSectionKey } from "./settings.ts";
-import { flywheelIdOf, flywheelLines, flywheelPath, isFlywheelLine, missedCount, missingStatus, parseFlywheel, weeklyDone } from "./flywheel/model.ts";
+import { flywheelIdOf, isFlywheelLine, missedCount, weeklyDone } from "./flywheel/model.ts";
 import { weekMonday } from "./mylife/model.ts";
 import { AutoGrow } from "./ui/autogrow.ts";
 import { trackKeyboard } from "./ui/mobile.ts";
@@ -870,16 +870,12 @@ export class DailyPadView extends ItemView {
 				}
 			}
 			const s = this.plugin.settings;
-			// 12 Flywheel AGENTS 「4-2」: `status:: 사용` elements open 오늘 할 일. No Flywheel.md → plain skeleton.
-			const flywheel = parseFlywheel(await this.readVaultFile(flywheelPath(s.flywheelPath)));
-			const noStatus = missingStatus(flywheel).map((e) => e.id);
-			if (noStatus.length) new Notice(`Flywheel ${noStatus.join(", ")}에 status:: 가 없어 넣지 않았어요(쉼으로 봄).`);
+			// Flywheel is checked in the Flywheel view (수행 표), not as Daily Pad lines (12 Flywheel AGENTS 「4-2」, 2026-10-28).
 			const content = dailyPadSkeleton({
 				isoDate: this.date,
 				weekday: moment(this.date, "YYYY-MM-DD").format("ddd"),
 				deskCalendarFolder: s.deskCalendarFolder,
 				sections: MAIN_SECTION_KEYS.map((k) => s.sections[k]),
-				flywheelLines: flywheelLines(flywheel),
 			});
 			await this.app.vault.create(path, content);
 			// The create event triggers a rebuild; reload directly in case it fired early.
@@ -1079,19 +1075,18 @@ export class DailyPadView extends ItemView {
 			},
 			onToggle: (sl, li) => {
 				li.addClass("is-pending");
-				void this.processToggle(
-					this.padFile()!,
-					(data) => {
-						const cur = findSection(data, name);
-						return cur ? { index: sl.index, line: sl.line, scope: sectionLineRange(data, cur) } : null;
-					},
-					true,
-				).then(async (ok) => {
-					if (!ok) {
-						new Notice("Daily Pad에서 이 줄을 찾지 못했어요. 파일이 바뀌어서 다시 불러왔어요.");
-						this.renderPending(await this.readPad());
-					}
-				});
+				// Done here = done on the day it came from too (its Desk Calendar cell and Daily Pad).
+				void togglePending(this.plugin, date, sl, todayIso())
+					.catch((err) => {
+						new Notice(err instanceof Error ? err.message : String(err));
+						return null;
+					})
+					.then(async (state) => {
+						if (!state) {
+							new Notice("Daily Pad에서 이 줄을 찾지 못했어요. 파일이 바뀌어서 다시 불러왔어요.");
+							this.renderPending(await this.readPad());
+						}
+					});
 			},
 		});
 	}
