@@ -179,6 +179,11 @@ export default class MyLogsPlugin extends Plugin {
 		await this.saveSettings();
 	}
 
+	/** Save a per-view display choice without reloading every view (the view re-renders itself). */
+	async saveSettingsQuiet(): Promise<void> {
+		await this.saveData(this.settings);
+	}
+
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
 		this.refreshViews();
