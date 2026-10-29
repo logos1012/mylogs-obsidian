@@ -11293,7 +11293,7 @@ button.vb-nav-btn:hover { color: var(--text-normal); transform: scale(1.06); }
 
 /* 빠른 메모 (0.37.0): ✎ button on every MyLogs view, small box → today's Daily Pad 메모. */
 .workspace-leaf-content.has-memo-fab { position: relative; }
-button.mylogs-memo-fab { position: absolute; right: 30px; bottom: 90px; z-index: 30; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: var(--background-secondary-alt, var(--background-secondary)); color: var(--text-muted); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18), 0 0 0 1px var(--background-modifier-border); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: transform 0.15s ease; }
+button.mylogs-memo-fab { position: absolute; right: 30px; bottom: 112px; z-index: 30; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: var(--background-secondary-alt, var(--background-secondary)); color: var(--text-muted); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18), 0 0 0 1px var(--background-modifier-border); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: transform 0.15s ease; }
 button.mylogs-memo-fab:hover { transform: translateY(-2px); color: var(--text-normal); }
 button.mylogs-memo-fab svg { width: 18px; height: 18px; }
 .is-mobile button.mylogs-memo-fab, .workspace-leaf-content:not(.has-lumi-fab) > button.mylogs-memo-fab { bottom: 22px; right: 22px; width: 48px; height: 48px; }
