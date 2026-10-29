@@ -279,8 +279,8 @@ export class LumiChat {
 			if (!this.meta) {
 				const first = turns[0].at;
 				const oldText = existing0 instanceof TFile ? await app.vault.read(existing0) : null;
-				const oldId = oldText ? /^id:\s*(.+)$/m.exec(oldText)?.[1].trim() : undefined;
-				const oldSource = oldText ? /^source_id:\s*(.+)$/m.exec(oldText)?.[1].trim() : undefined;
+				const oldId = oldText ? /^id:[ \t]*(.+)$/m.exec(oldText)?.[1].trim() : undefined;
+				const oldSource = oldText ? /^source_id:[ \t]*(.+)$/m.exec(oldText)?.[1].trim() : undefined;
 				this.meta = {
 					id: oldId ?? sessionId(first),
 					sourceId: oldSource ?? `lumi-${this.engine}-${this.engineSession ?? first}`,

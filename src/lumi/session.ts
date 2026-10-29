@@ -59,9 +59,16 @@ export function carriedFrom(text: string | null): Carried {
 	if (!text) return out;
 	const fmEnd = text.indexOf("\n---", 4);
 	const head = fmEnd > 0 ? text.slice(0, fmEnd) : "";
-	out.tornOffUntil = /^torn_off_until:\s*(.*)$/m.exec(head)?.[1].trim().replace(/^"|"$/g, "") ?? "";
-	out.project = /^project:\s*(.*)$/m.exec(head)?.[1].trim() ?? "";
-	const inline = /^routed_to:\s*\[(.*)\]\s*$/m.exec(head);
+	// `[ \t]*`, never `\s*`: an empty value must not swallow the next line (2026-10-29: `project:` read
+	// `turns: 2`, `torn_off_until:` read `torn_off: false`, and each save wrote it back joined).
+	const field = (key: string) => (new RegExp(`^${key}:[ \\t]*(.*)$`, "m").exec(head)?.[1] ?? "").trim().replace(/^(["'])(.*)\1$/, "$2");
+	// A value that is itself `key: …` is that old damage: drop it (heals on the next save).
+	const clean = (v: string) => (/^[a-z_]+:(\s|$)/.test(v) ? "" : v);
+	const until = clean(field("torn_off_until"));
+	// Only a real time counts as "processed up to"; anything else → not processed (Tear-off re-reads, de-duplicates).
+	out.tornOffUntil = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/.test(until) ? until : "";
+	out.project = clean(field("project"));
+	const inline = /^routed_to:[ \t]*\[(.*)\][ \t]*$/m.exec(head);
 	if (inline) out.routedTo = inline[1].split(",").map((x) => x.trim().replace(/^"|"$/g, "")).filter(Boolean);
 	else {
 		const block = /^routed_to:\s*\n((?:\s+-\s.*\n?)*)/m.exec(head);
@@ -86,7 +93,7 @@ export function sessionText(meta: SessionMeta, turns: LumiTurn[], carried: Carri
 		"channel: app",
 		"kind: chat",
 		`title: ${yamlStr(meta.title)}`,
-		`project: ${carried.project}`,
+		`project: ${carried.project ? yamlStr(carried.project) : ""}`,
 		`turns: ${turns.filter((t) => t.text.trim()).length}`,
 		"attachments: 0",
 		"truncated: false",
