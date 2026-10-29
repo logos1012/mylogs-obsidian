@@ -64,3 +64,23 @@ test("a saved session reopens: turns, engine thread, model", async () => {
 		["user", "체력", "2026-10-29T00:01:00"],
 	]);
 });
+
+test("session file: an empty field never swallows the next line; saving again and again keeps body and cursor", () => {
+	const meta = { id: "lumi-x", sourceId: "lumi-x", title: "목표 세우기", tool: "claude", engineSession: null, model: null } as never;
+	const turns = [{ role: "user", text: "안녕", at: "2026-10-29T09:00:00" }, { role: "assistant", text: "네", at: "2026-10-29T09:00:05" }] as never;
+	let text = sessionText(meta, turns, carriedFrom(null));
+	assert.match(text, /^project: \nturns: 2$/m);
+	for (let i = 0; i < 3; i++) text = sessionText(meta, turns, carriedFrom(text));
+	assert.match(text, /^project: \nturns: 2$/m);
+	assert.match(text, /^torn_off_until: \ntorn_off: false$/m);
+	// Hermes's cursor (quoted, with a timezone) survives.
+	const done = text.replace(/^torn_off_until: $/m, "torn_off_until: '2026-10-29T09:30:00+09:00'");
+	assert.equal(carriedFrom(done).tornOffUntil, "2026-10-29T09:30:00+09:00");
+	assert.match(sessionText(meta, turns, carriedFrom(done)), /^torn_off: true$/m);
+	// Old damage heals: `project: turns: 2`, `torn_off_until: torn_off: false`.
+	const broken = text.replace(/^project: $/m, "project: turns: 2").replace(/^torn_off_until: $/m, "torn_off_until: torn_off: false");
+	const c = carriedFrom(broken);
+	assert.equal(c.project, "");
+	assert.equal(c.tornOffUntil, "");
+	assert.match(sessionText(meta, turns, c), /^project: \nturns: 2$/m);
+});
