@@ -28,6 +28,7 @@ import {
 	immediateAt,
 	interpretIntake,
 	postState,
+	resultReadPlan,
 	interpretResultGet,
 	isAbsentResult,
 	needsFastPoll,
@@ -361,9 +362,9 @@ test("발행 결과 fast re-poll: past-scheduled 예약 posts only, every 90s", 
 test("발행 결과 summary: per-id outcome, and json fallback when text is empty", () => {
 	const published = { id: "C-20261101-08", kind: "applied" as const, detail: appliedLabel({ stage: "발행", published: "2026-11-01", url: "https://www.linkedin.com/feed/update/x/", error: null }) };
 	assert.equal(formatPollHit(published), "C-20261101-08: 발행 반영");
-	assert.equal(formatPollHit({ id: "C-20261101-08", kind: "missing", detail: "403 AccessDenied" }), "C-20261101-08: 아직 결과 없음 (403 AccessDenied)");
+	assert.equal(formatPollHit({ id: "C-20261101-08", kind: "missing", detail: "403 AccessDenied" }), "C-20261101-08: 결과 파일 없음(또는 권한 없음) (403 AccessDenied)");
 	assert.equal(formatPollHit({ id: "C-20261101-09", kind: "error", detail: "500 InternalError" }), "C-20261101-09: 오류 500 InternalError");
-	assert.equal(formatPollSummary([published, { id: "C-20261101-08", kind: "missing", detail: "404" }]), "C-20261101-08: 발행 반영\nC-20261101-08: 아직 결과 없음 (404)");
+	assert.equal(formatPollSummary([published, { id: "C-20261101-08", kind: "missing", detail: "404" }]), "C-20261101-08: 발행 반영\nC-20261101-08: 결과 파일 없음(또는 권한 없음) (404)");
 	assert.equal(appliedLabel({ stage: "다듬기", sent: null, error: null }), "취소 반영");
 	assert.equal(appliedLabel({ error: "이유 없음" }), "실패 반영");
 	const json = { id: "C-20261101-08", status: "published", url: "https://www.linkedin.com/feed/update/x/", error: null, at: "2026-11-01 21:06" };
@@ -482,4 +483,32 @@ test("지금 발행 시각, 접수 응답, 예약 상태, 인스타 결과 키, 
 	const ig = parsePost("x/t.md", setFm(setPostBody(postSkeleton(IG, "C-2", []), IG, { text: "캡션" }), { scheduled: "2026-11-01 21:00", media: ["https://example.com/a.jpg"] }), IG);
 	assert.ok(postProblems(ig, { now: Date.parse("2026-11-01T11:58:30.000Z") }).some((x) => /2분 뒤/.test(x.text)));
 	assert.equal(postProblems(ig, { now: Date.parse("2026-11-01T11:57:00.000Z") }).some((x) => /2분 뒤/.test(x.text)), false);
+});
+
+test("수동 발행 결과 읽기: 지난 인스타 글도 instagram/ 키로 published를 반영", () => {
+	const past = "2026-11-01 20:00";
+	const future = "2026-11-01 23:00";
+	const plan = resultReadPlan([
+		{ id: "C-IG-1", channel: "ig", stage: "예약", sent: "2026-11-01 19:50", published: "", scheduled: past },
+		{ id: "C-LI-1", channel: "li", stage: "예약", sent: "2026-11-01 19:50", published: "", scheduled: future },
+		{ id: "C-TH-1", channel: "th", stage: "예약", sent: "2026-11-01 19:50", published: "", scheduled: past },
+		{ id: "C-IG-2", channel: "ig", stage: "발행", sent: "2026-11-01 19:50", published: "2026-11-01", scheduled: past },
+		{ id: "C-IG-3", channel: "ig", stage: "예약", sent: "", published: "", scheduled: past },
+	]);
+	assert.deepEqual(
+		plan.map((x) => x.key),
+		["studio/results/instagram/C-IG-1.json", "studio/results/C-LI-1.json", "studio/results/threads/C-TH-1.json"],
+	);
+	const ig = parsePost(
+		"x/2026-11-01 인스타.md",
+		setFm(setPostBody(postSkeleton(IG, "C-IG-1", []), IG, { text: "캡션" }), { stage: "예약", scheduled: past, sent: "2026-11-01 19:50", media: ["https://example.com/a.jpg"] }),
+		IG,
+	);
+	assert.equal(ig.channel.key, "ig");
+	assert.equal(ig.stage, "예약");
+	const row = parseResultJson(`{"id":"C-IG-1","status":"published","url":"https://www.instagram.com/p/example/","error":null,"at":"2026-11-01 20:01"}`);
+	if (!row) throw new Error("result json");
+	assert.deepEqual(resultPatch(ig, row), { published: "2026-11-01", url: "https://www.instagram.com/p/example/", stage: "발행", error: null });
+	assert.equal(formatPollHit({ id: "C-IG-1", kind: "missing", detail: "403 AccessDenied" }), "C-IG-1: 결과 파일 없음(또는 권한 없음) (403 AccessDenied)");
+	assert.equal(isAbsentResult(403, "<Error><Code>AccessDenied</Code></Error>"), true);
 });

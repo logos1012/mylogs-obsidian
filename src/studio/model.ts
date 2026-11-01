@@ -6,12 +6,14 @@
  *   <요소>/99 작업실/글감 소스.md          글감 소스 등록부 — 한 행 = 소스 하나
  *
  * md is the only source of truth. Media live in S3 (only their https addresses are written here).
- * 「예약 보내기」 posts the payload to the channel webhook. LinkedIn results come back as
- * `studio/results/{id}.json` in the same bucket (outside the upload prefix); the plugin copies
- * that file into the post's frontmatter.
+ * 「예약 보내기」 posts the payload to the channel webhook. Results come back in the same bucket,
+ * outside the upload prefix: LinkedIn `studio/results/{id}.json`, Threads `…/threads/{id}.json`,
+ * Instagram `…/instagram/{id}.json`. Manual and automatic reads use one key function.
  *
  * Pure module (no Obsidian imports).
  */
+
+import { resultObjectKey } from "./s3.ts";
 
 export type ChannelKey = "li" | "th" | "ig";
 
@@ -727,13 +729,40 @@ export function appliedLabel(patch: Record<string, FmValue | null>): string {
 }
 
 export function formatPollHit(h: PollHit): string {
-	if (h.kind === "missing") return `${h.id}: 아직 결과 없음 (${h.detail})`;
+	// 403/404 are "no result yet" (no ListBucket). On a manual read the notice still names the post.
+	if (h.kind === "missing") return `${h.id}: 결과 파일 없음(또는 권한 없음)${h.detail ? ` (${h.detail})` : ""}`;
 	if (h.kind === "error") return `${h.id}: 오류 ${h.detail}`;
 	return `${h.id}: ${h.detail}`;
 }
 
 export function formatPollSummary(hits: PollHit[]): string {
 	return hits.map(formatPollHit).join("\n");
+}
+
+export interface ResultReadPost {
+	id: string;
+	/** Channel key (`li` · `th` · `ig`) or the API name (`instagram`). */
+	channel: string;
+	stage: string;
+	sent: string;
+	published: string;
+	/** Ignored. A time already past still qualifies. */
+	scheduled?: string;
+}
+
+/**
+ * Who a result read fetches, and the S3 key. Manual (button, 글 증폭, command) and the
+ * timer share this. A past `scheduled` time does not drop the post. Every channel is included.
+ */
+export function resultReadPlan(posts: ResultReadPost[]): { id: string; channel: string; key: string }[] {
+	const out: { id: string; channel: string; key: string }[] = [];
+	for (const p of posts) {
+		if (p.stage !== "예약" || !p.sent || p.published || !p.id) continue;
+		const key = resultObjectKey(p.id, p.channel);
+		if (!key) continue;
+		out.push({ id: p.id, channel: p.channel, key });
+	}
+	return out;
 }
 
 export function pollFoundCount(hits: { kind: string }[]): number {

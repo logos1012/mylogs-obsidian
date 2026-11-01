@@ -43,6 +43,7 @@ import {
 	postSkeleton,
 	resultBody,
 	resultPatch,
+	resultReadPlan,
 	s3Code,
 	shouldRememberPoll,
 	shouldThrottlePoll,
@@ -59,7 +60,7 @@ import {
 	underSource,
 	withBlock,
 } from "./model.ts";
-import { getObject, isS3Ready, resultObjectKey } from "./s3.ts";
+import { getObject, isS3Ready } from "./s3.ts";
 import { loadSecrets, obsidianSend, s3Config } from "./settings.ts";
 
 export const todayIso = () => moment().format("YYYY-MM-DD");
@@ -380,9 +381,11 @@ export interface PollOutcome {
 
 const emptyPoll = (extra: Partial<PollOutcome>): PollOutcome => ({ changed: 0, errors: 0, unconfigured: false, eligible: 0, throttled: false, hits: [], ...extra });
 
-/** Read `studio/results/{id}.json` for each 예약 post that was sent and is not published yet. */
+/** Manual and automatic reads. Keys come only from `resultReadPlan` → `resultObjectKey`. */
 export async function pollResults(plugin: MyLogsPlugin, d: StudioData, force = false, opts?: { bypassThrottle?: boolean }): Promise<PollOutcome> {
-	const waiting = d.posts.filter((p) => p.stage === "예약" && p.sent && !p.published && p.id);
+	const plan = resultReadPlan(d.posts.map((p) => ({ id: p.id, channel: p.channel.key, stage: p.stage, sent: p.sent, published: p.published })));
+	const byId = new Map(plan.map((x) => [x.id, x.key]));
+	const waiting = d.posts.filter((p) => byId.has(p.id));
 	const now = Date.now();
 	if (!waiting.length) {
 		if (shouldRememberPoll(0, 0)) lastPoll = now;
@@ -394,7 +397,7 @@ export async function pollResults(plugin: MyLogsPlugin, d: StudioData, force = f
 	const hits: PollHit[] = [];
 	let changed = 0;
 	for (const p of waiting) {
-		const key = resultObjectKey(p.id, p.channel.key);
+		const key = byId.get(p.id) ?? "";
 		if (!key) {
 			hits.push({ id: p.id, kind: "error", detail: "결과 키가 올바르지 않아요" });
 			continue;

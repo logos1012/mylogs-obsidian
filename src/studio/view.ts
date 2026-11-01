@@ -206,7 +206,7 @@ export class StudioView extends ItemView {
 		else if (!every) this.stopFastPoll();
 	}
 
-	/** Command palette and the editor button. */
+	/** Editor header, 글 증폭 header, and the command palette. Same read as the timer. */
 	async readResults(): Promise<void> {
 		if (!this.d) await this.refresh();
 		await this.poll(true);
