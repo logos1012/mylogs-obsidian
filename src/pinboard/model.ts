@@ -479,6 +479,11 @@ export function fmtVal(v: string, unit: string): [string, string] | null {
 	return n !== null ? [fmtNum(n), unit] : [s, ""];
 }
 
+/** A Sub Goal's baseline / current / target for display: metric numbers read `1,000만`, text and milestone values stay as written. Empty stays empty. */
+export function fmtGoalValue(v: string, measure: string): string {
+	return measure === "metric" ? (fmtVal(v, "")?.[0] ?? "") : v.trim();
+}
+
 export function daysBetween(fromIso: string, toIso: string): number {
 	return Math.round((Date.parse(`${toIso}T00:00:00Z`) - Date.parse(`${fromIso}T00:00:00Z`)) / 86400000);
 }
