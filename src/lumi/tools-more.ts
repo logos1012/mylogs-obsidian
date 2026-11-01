@@ -19,6 +19,8 @@
 
 import { normalizePath, TFile, type App } from "obsidian";
 import { z } from "zod";
+import { lumiBus } from "../studio/bus.ts";
+import { cleanLine, type Candidate, hash } from "../studio/model.ts";
 import type { LumiTool, ToolCtx } from "./tools.ts";
 import { activeRoot, archiveRoot, aliasesOf, completeProject, deleteProject, editProject } from "../projects/actions.ts";
 import { hubLocation, KINDS, type Project, SCOPES, type Scope } from "../projects/model.ts";
@@ -561,6 +563,45 @@ export const MORE_TOOLS: LumiTool[] = [
 		async run(ctx, a) {
 			await editVisionBoard(ctx.host.app, ctx.host.settings.visionBoardPath, ctx.today, "확언 고침", (t) => setAffirmation(t, String(a.text)));
 			return "확언을 바꿨어요";
+		},
+	},
+	{
+		name: "studio_candidates",
+		description:
+			"콘텐츠 스튜디오 「글감」 화면에 루미가 찾은 글감 후보를 보여 준다(파일에 쓰지 않는다 — 사용자가 화면에서 「글감으로」를 눌러야 글감이 된다). 스튜디오에서 「[콘텐츠 스튜디오 · 글감 찾기]」로 부탁받았을 때 찾은 결과를 한 번에 보낸다. items마다 path(볼트 상대 경로, .md 포함), quote(사용자가 직접 한 말을 원문 그대로 한두 문장 — AI의 말이나 요약 금지), why(왜 골랐는지 한 줄), date(YYYY-MM-DD). 최대 8개.",
+		shape: {
+			query: z.string().default(""),
+			items: z.array(z.object({ path: z.string(), quote: z.string(), why: z.string().default(""), date: z.string().default("") })).max(12),
+		},
+		async run(ctx, a) {
+			const items = (a.items as { path: string; quote: string; why: string; date: string }[]) ?? [];
+			const out: Candidate[] = [];
+			for (const it of items) {
+				const path = normalizePath(it.path.replace(/^\/+/, ""));
+				const f = ctx.host.app.vault.getAbstractFileByPath(path);
+				if (!(f instanceof TFile)) continue;
+				const quote = it.quote.trim();
+				if (!quote) continue;
+				const session = path.startsWith("10 Archive Box/");
+				let line = -1;
+				let key = `${path}#lumi-${hash(quote)}`;
+				let block = "";
+				if (!session) {
+					// a line of a note → link that line (sessions are kept as they are: link the file)
+					const lines = (await ctx.host.app.vault.cachedRead(f)).split(/\r?\n/);
+					const head = cleanLine(quote).slice(0, 24);
+					const i = lines.findIndex((l) => /^\s*[-*+]\s/.test(l) && cleanLine(l).includes(head));
+					if (i >= 0) {
+						line = i;
+						key = `${path}#L${hash(lines[i])}`;
+						block = /\s\^([\w-]+)\s*$/.exec(lines[i])?.[1] ?? "";
+					}
+				}
+				const date = /^\d{4}-\d{2}-\d{2}$/.test(it.date) ? it.date : (/(\d{4}-\d{2}-\d{2})/.exec(path)?.[1] ?? ctx.today);
+				out.push({ key, source: session ? "session" : "lumi", path, date, where: f.basename, text: quote, line, heading: "", block, why: it.why.trim() });
+			}
+			lumiBus.put(out, String(a.query ?? "") || undefined);
+			return out.length ? `스튜디오 「글감」 화면에 후보 ${out.length}개를 띄웠어요` : "맞는 후보를 찾지 못했어요";
 		},
 	},
 ];

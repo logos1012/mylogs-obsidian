@@ -13,7 +13,7 @@ import { newMonthSkeleton } from "../src/desk/model.ts";
 
 const temp = mkdtempSync(join(tmpdir(), "mylogs-pending-test-"));
 after(() => rmSync(temp, { recursive: true, force: true }));
-const stub = `export class App{};export class Modal{};export class Setting{};export class Notice{constructor(m){globalThis.__notices?.push(m)}};export class TFile{constructor(path){this.path=path;this.name=path.split('/').pop()}};export class TFolder{constructor(path){this.path=path;this.children=[]}};export const normalizePath=p=>p.replace(/\\/+/g,'/').replace(/^\\/|\\/$/g,'');export class PluginSettingTab{};export const moment=()=>({format:()=>""});export const setIcon=()=>{};export const setTooltip=()=>{};export const Platform={isMobile:false};`;
+const stub = `export class App{};export class Modal{};export class Setting{};export class Notice{constructor(m){globalThis.__notices?.push(m)}};export class TFile{constructor(path){this.path=path;this.name=path.split('/').pop()}};export class TFolder{constructor(path){this.path=path;this.children=[]}};export const normalizePath=p=>p.replace(/\\/+/g,'/').replace(/^\\/|\\/$/g,'');export class PluginSettingTab{};export const moment=()=>({format:()=>""});export const setIcon=()=>{};export const setTooltip=()=>{};export const Platform={isMobile:false};export const requestUrl=async()=>({status:0,text:""});`;
 const result = await build({
 	stdin: { contents: `export * from './src/pending/actions.ts';export {DEFAULT_SETTINGS} from './src/settings.ts';export {TFile,TFolder} from 'obsidian';`, resolveDir: resolve(import.meta.dirname, "..") },
 	bundle: true,

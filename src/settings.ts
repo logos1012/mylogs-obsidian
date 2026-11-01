@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type MyLogsPlugin from "./main.ts";
 import { asSideMode, type SideMode } from "./side.ts";
+import { renderStudioSettings } from "./studio/settings.ts";
 
 export interface SectionNames {
 	pending: string;
@@ -81,6 +82,12 @@ export interface MyLogsSettings {
 	lumiTabs: { id: string; title: string; engine: "claude" | "codex"; model: string; path: string | null; engineSession: string | null }[];
 	lumiActiveTab: string;
 	autosaveDelayMs: number;
+	/** 콘텐츠 스튜디오: candidates hidden with 「안 씀」 (keys from `studio/model.ts`), newest last. */
+	studioDismissed: string[];
+	/** 콘텐츠 스튜디오 「글감」: days of candidates shown (7 · 14 · 30). */
+	studioDays: number;
+	/** 콘텐츠 스튜디오 connections that are not secret (keys and webhook addresses stay in this device's local storage). */
+	studio: { s3Bucket: string; s3Region: string; s3Prefix: string; airtableBase: string; airtableTable: string };
 }
 
 export const DEFAULT_SETTINGS: MyLogsSettings = {
@@ -130,6 +137,9 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	lumiTabs: [],
 	lumiActiveTab: "",
 	autosaveDelayMs: 800,
+	studioDismissed: [],
+	studioDays: 7,
+	studio: { s3Bucket: "", s3Region: "ap-northeast-2", s3Prefix: "studio", airtableBase: "", airtableTable: "발행 결과" },
 };
 
 export function mergeSettings(saved: unknown): MyLogsSettings {
@@ -140,6 +150,7 @@ export function mergeSettings(saved: unknown): MyLogsSettings {
 		sections: migrateSections({ ...DEFAULT_SETTINGS.sections, ...(s.sections ?? {}) }),
 		sideMode: asSideMode(s.sideMode),
 		wallShow: { ...DEFAULT_SETTINGS.wallShow, ...(s.wallShow ?? {}) },
+		studio: { ...DEFAULT_SETTINGS.studio, ...(s.studio ?? {}) },
 		myLifeCollapsed: { ...(s.myLifeCollapsed ?? {}) },
 	};
 }
@@ -343,6 +354,8 @@ export class MyLogsSettingTab extends PluginSettingTab {
 		section("로그", "log");
 		section("자료", "refs");
 		section("결정 대기", "pending", "이 섹션이 파일에 있을 때만 화면 맨 위에 보입니다.");
+
+		renderStudioSettings(containerEl, this.plugin);
 
 		new Setting(containerEl).setName("편집").setHeading();
 		new Setting(containerEl)
