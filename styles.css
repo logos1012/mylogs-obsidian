@@ -11821,6 +11821,48 @@ body.is-mobile .fw3-ws-cover { height: 110px; }
 .st .st-ed { --interactive-accent: var(--ch); --interactive-accent-hover: color-mix(in srgb, var(--ch) 85%, #000); --text-on-accent: var(--ch-on); }
 .st .st-ed button.mod-cta { background: var(--ch); color: var(--ch-on); }
 .st .st-ed.is-ig button.mod-cta, .st .st-ed.is-ig .st-stagebar button.is-now { background: var(--ch-grad); color: #fff; }
+/* 「지금 발행」: same hue as 예약 보내기, lighter fill. */
+.st .st-ed button.st-btn.st-now {
+	background: color-mix(in srgb, var(--ch) 18%, var(--background-primary));
+	color: var(--ch);
+	border: 1px solid color-mix(in srgb, var(--ch) 42%, var(--background-modifier-border));
+	box-shadow: none;
+	font-weight: 600;
+}
+.st .st-ed button.st-btn.st-now:hover:not(:disabled) {
+	background: color-mix(in srgb, var(--ch) 30%, var(--background-primary));
+}
+.st .st-ed button.st-btn.st-now:focus-visible {
+	outline: 2px solid color-mix(in srgb, var(--ch) 55%, transparent);
+	outline-offset: 2px;
+}
+.st .st-ed button.st-btn.st-now:disabled { opacity: 0.45; }
+.st .st-ed.is-th button.st-btn.st-now {
+	color: var(--text-normal);
+	background: color-mix(in srgb, var(--text-normal) 12%, var(--background-primary));
+	border-color: color-mix(in srgb, var(--text-normal) 32%, var(--background-modifier-border));
+}
+.st .st-ed.is-ig button.st-btn.st-now {
+	background: color-mix(in srgb, var(--ch) 16%, var(--background-primary));
+	color: var(--ch);
+	border-color: color-mix(in srgb, var(--ch) 40%, var(--background-modifier-border));
+}
+.menu-item.st-now-menu {
+	margin: 4px 8px;
+	border-radius: 8px;
+	padding-top: 6px;
+	padding-bottom: 6px;
+	background: color-mix(in srgb, var(--interactive-accent) 16%, var(--background-primary));
+	border: 1px solid color-mix(in srgb, var(--interactive-accent) 38%, var(--background-modifier-border));
+	font-weight: 600;
+}
+.menu-item.st-now-menu .menu-item-title,
+.menu-item.st-now-menu .menu-item-icon { color: var(--interactive-accent); }
+.menu-item.st-now-menu:hover,
+.menu-item.st-now-menu.is-selected,
+.menu-item.st-now-menu:focus-visible {
+	background: color-mix(in srgb, var(--interactive-accent) 28%, var(--background-primary));
+}
 .st .st-mark { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 7px; font-weight: 800; font-size: 13px; flex: 0 0 auto; }
 .st .st-mark.c-li, .st .st-dot.c-li { background: #0a66c2; color: #fff; }
 .st .st-mark.c-th, .st .st-dot.c-th { background: var(--text-normal); color: var(--background-primary); }
