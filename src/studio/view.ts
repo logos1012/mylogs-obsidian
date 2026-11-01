@@ -16,6 +16,7 @@ import { askForm, confirmDelete } from "../ui/modals.ts";
 import { coverSrc } from "../flywheel/actions.ts";
 import { openLumi } from "../lumi/register.ts";
 import { lumiBus } from "./bus.ts";
+import { AmpScreen } from "./amp-view.ts";
 import { chooseFiles, dropZone, pickMedia, thumb, uploadFiles } from "./media.ts";
 import {
 	type Candidate,
@@ -137,6 +138,8 @@ export class StudioView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
+		await this.amp?.flush();
+		this.amp?.stop();
 		await this.flushBody();
 		this.contentEl.empty();
 	}
@@ -161,6 +164,10 @@ export class StudioView extends ItemView {
 				const p = d?.posts.find((x) => x.path === this.editing);
 				if (!p) this.editing = null;
 				else this.draft = p;
+			}
+			if (this.amp) {
+				if (!d?.posts.some((x) => x.path === this.amp!.path)) this.amp = null;
+				else await this.amp.load();
 			}
 			this.render();
 		} catch (e) {
@@ -198,7 +205,30 @@ export class StudioView extends ItemView {
 		await this.refresh(rescan);
 	}
 
+	private amp: AmpScreen | null = null;
+
+	async openAmp(path: string): Promise<void> {
+		await this.flushBody();
+		const a = new AmpScreen(
+			{
+				plugin: this.plugin,
+				hush: (ms) => this.hush(ms),
+				rerender: () => this.render(),
+				exit: () => {
+					this.amp = null;
+					void this.refresh();
+				},
+			},
+			path,
+		);
+		await a.load();
+		this.amp = a;
+		this.render();
+		this.contentEl.scrollTop = 0;
+	}
+
 	openPost(path: string): void {
+		this.amp = null;
 		this.editing = path;
 		this.draft = this.d?.posts.find((p) => p.path === path) ?? null;
 		this.igSlide = 0;
@@ -217,6 +247,11 @@ export class StudioView extends ItemView {
 			const e = root.createDiv({ cls: "st-empty" });
 			e.createEl("h2", { text: "스튜디오를 쓰는 Flywheel 요소가 없어요" });
 			e.createEl("p", { text: "요소 허브 frontmatter에 `workspace: studio`를 적으면 그 요소의 스튜디오가 열려요." });
+			return;
+		}
+		if (this.amp) {
+			this.amp.render(root, d);
+			this.contentEl.scrollTop = scroll;
 			return;
 		}
 		if (this.editing && this.draft) {
@@ -853,6 +888,13 @@ export class StudioView extends ItemView {
 		});
 		top.createSpan({ cls: "st-faint st-small st-grow st-ellipsis", text: p.path.slice(d.root.length + 1) });
 		top.createSpan({ cls: "st-faint st-small st-saved", text: this.savedAt ? `저장 ${this.savedAt}` : "" });
+		if (p.channel.key === "li") {
+			const amp = top.createEl("button", { cls: "st-btn is-sm mod-cta st-ampbtn", attr: { type: "button" } });
+			setIcon(amp.createSpan({ cls: "st-ic" }), "sparkles");
+			amp.appendText("글 증폭");
+			tip(amp, "왜 → 질문 → 답 → 엮기 → 검토 → 보완 → 완료. 문장은 직접 쓰고, AI는 묻고 짚고 찾아요");
+			amp.addEventListener("click", () => void this.openAmp(p.path));
+		}
 		const orig = top.createEl("button", { cls: "st-btn is-sm is-ghost", text: "원문 열기", attr: { type: "button" } });
 		orig.addEventListener("click", () => void openPath(this.plugin, p.path));
 
