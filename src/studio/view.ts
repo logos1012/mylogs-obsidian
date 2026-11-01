@@ -20,6 +20,8 @@ import { AmpScreen } from "./amp-view.ts";
 import { chooseFiles, dropZone, pickMedia, thumb, uploadFiles } from "./media.ts";
 import {
 	blocksNow,
+	SEND_NOW_BUTTON_CLASS,
+	SEND_NOW_MENU_CLASS,
 	type Candidate,
 	captionOut,
 	type ChannelDef,
@@ -702,7 +704,10 @@ export class StudioView extends ItemView {
 		m.addItem((i) => i.setTitle("원문 열기").setIcon("file-text").onClick(() => void openPath(this.plugin, p.path)));
 		if (p.stage !== "발행") m.addItem((i) => i.setTitle("발행했어요…").setIcon("check").onClick(() => void this.askPublished(p)));
 		if (p.stage !== "발행" && channelEndpoint(this.plugin, p.channel.key) && !blocksNow(postProblems(p, { mediaPrefix: publicPrefix(s3Config(this.plugin)) }))) {
-			m.addItem((i) => i.setTitle("지금 발행…").setIcon("zap").onClick(() => void this.confirmSendNow(p)));
+			m.addItem((i) => {
+				i.setTitle("지금 발행…").setIcon("zap").onClick(() => void this.confirmSendNow(p));
+				(i as unknown as { dom?: HTMLElement }).dom?.classList.add(SEND_NOW_MENU_CLASS);
+			});
 		}
 		m.addSeparator();
 		m.addItem((i) =>
@@ -1468,7 +1473,7 @@ export class StudioView extends ItemView {
 			}),
 		);
 		if (hook && p.stage !== "발행") {
-			const nowBtn = g.createEl("button", { cls: "st-btn is-ghost st-wide", text: "지금 발행", attr: { type: "button" } });
+			const nowBtn = g.createEl("button", { cls: SEND_NOW_BUTTON_CLASS, text: "지금 발행", attr: { type: "button" } });
 			nowBtn.disabled = blocksNow(problems);
 			nowBtn.addEventListener("click", () => void this.confirmSendNow(p));
 		}

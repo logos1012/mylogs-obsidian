@@ -29,6 +29,8 @@ import {
 	interpretIntake,
 	postState,
 	resultReadPlan,
+	SEND_NOW_BUTTON_CLASS,
+	SEND_NOW_MENU_CLASS,
 	interpretResultGet,
 	isAbsentResult,
 	needsFastPoll,
@@ -511,4 +513,11 @@ test("수동 발행 결과 읽기: 지난 인스타 글도 instagram/ 키로 pub
 	assert.deepEqual(resultPatch(ig, row), { published: "2026-11-01", url: "https://www.instagram.com/p/example/", stage: "발행", error: null });
 	assert.equal(formatPollHit({ id: "C-IG-1", kind: "missing", detail: "403 AccessDenied" }), "C-IG-1: 결과 파일 없음(또는 권한 없음) (403 AccessDenied)");
 	assert.equal(isAbsentResult(403, "<Error><Code>AccessDenied</Code></Error>"), true);
+});
+
+test("지금 발행 control is a tinted button class, not ghost text", () => {
+	assert.match(SEND_NOW_BUTTON_CLASS, /\bst-btn\b/);
+	assert.match(SEND_NOW_BUTTON_CLASS, /\bst-now\b/);
+	assert.equal(SEND_NOW_BUTTON_CLASS.includes("is-ghost"), false);
+	assert.equal(SEND_NOW_MENU_CLASS, "st-now-menu");
 });

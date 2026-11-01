@@ -460,6 +460,11 @@ export function postProblems(p: Post, ctx?: { now?: number; mediaPrefix?: string
 	return out;
 }
 
+/** Editor 「지금 발행」: same hue as 「예약 보내기」 (`mod-cta`), lighter fill. Not `is-ghost`. */
+export const SEND_NOW_BUTTON_CLASS = "st-btn st-now st-wide";
+/** Board-menu row class so 「지금 발행…」 reads as a button. */
+export const SEND_NOW_MENU_CLASS = "st-now-menu";
+
 /** 「지금 발행」 ignores a missing time and a time that is too soon — it picks its own `at`. */
 export function blocksNow(problems: Problem[]): boolean {
 	return problems.some((x) => x.level === "block" && !x.text.startsWith("예약 날짜") && !x.text.includes("1분 뒤") && !x.text.includes("2분 뒤"));
