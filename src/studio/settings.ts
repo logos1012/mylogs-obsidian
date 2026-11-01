@@ -11,7 +11,7 @@
 
 import { type App, Notice, requestUrl, Setting } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
-import type { ChannelKey } from "./model.ts";
+import { resultBody, type ChannelKey } from "./model.ts";
 import { DEFAULT_S3_PREFIX, isS3Ready, listObjects, type S3Config, type Send } from "./s3.ts";
 
 export interface StudioSecrets {
@@ -42,7 +42,7 @@ export function s3Config(plugin: MyLogsPlugin): S3Config {
 /** Obsidian `requestUrl` (no CORS) as the S3 module's `send`. */
 export const obsidianSend: Send = async (r) => {
 	const res = await requestUrl({ url: r.url, method: r.method, headers: r.headers, body: r.body, throw: false });
-	return { status: res.status, text: res.text ?? "" };
+	return { status: res.status, text: resultBody(res) };
 };
 
 export function renderStudioSettings(el: HTMLElement, plugin: MyLogsPlugin): void {

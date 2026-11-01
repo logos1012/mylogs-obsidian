@@ -20,10 +20,20 @@ import {
 	postProblems,
 	postSkeleton,
 	readFm,
+	appliedLabel,
+	FAST_POLL_MS,
+	fastPollEvery,
+	formatPollHit,
+	formatPollSummary,
 	interpretResultGet,
 	isAbsentResult,
+	needsFastPoll,
 	parseResultJson,
+	pollFoundCount,
+	resultBody,
 	resultPatch,
+	shouldRememberPoll,
+	shouldThrottlePoll,
 	rewriteSources,
 	webhookHeaders,
 	setFm,
@@ -294,4 +304,58 @@ test("delete a post: its 글감 drops the link, back to 대기 when none is left
 test("default 예약: today at the next full hour (KST), late night → tomorrow 08:00", () => {
 	assert.equal(defaultSchedule(new Date("2026-01-14T05:20:00Z")), "2026-01-14 15:00");
 	assert.equal(defaultSchedule(new Date("2026-01-14T14:30:00Z")), "2026-01-15 08:00");
+});
+
+test("발행 결과 throttle: an all-miss round does not start the 5-minute wait", () => {
+	const t0 = 1_700_000_000_000;
+	let last = 0;
+	const remember = (eligible: number, found: number, now: number) => {
+		if (shouldRememberPoll(eligible, found)) last = now;
+	};
+	remember(1, pollFoundCount([{ kind: "missing" }, { kind: "missing" }]), t0);
+	assert.equal(last, 0);
+	assert.equal(shouldThrottlePoll(last, t0 + 30_000, false), false);
+	remember(1, pollFoundCount([{ kind: "applied" }, { kind: "missing" }]), t0);
+	assert.equal(shouldThrottlePoll(last, t0 + 60_000, false), true);
+	assert.equal(shouldThrottlePoll(last, t0 + 60_000, true), false);
+	assert.equal(shouldThrottlePoll(last, t0 + 5 * 60_000, false), false);
+	let none = 0;
+	if (shouldRememberPoll(0, 0)) none = t0;
+	assert.equal(shouldThrottlePoll(none, t0 + 1_000, false), true);
+	assert.equal(shouldRememberPoll(2, pollFoundCount([{ kind: "unchanged" }])), true);
+	assert.equal(shouldRememberPoll(2, pollFoundCount([{ kind: "error" }])), false);
+});
+
+test("발행 결과 fast re-poll: past-scheduled 예약 posts only, every 90s", () => {
+	const at = Date.parse("2026-11-01T12:06:00.000Z");
+	assert.equal(FAST_POLL_MS, 90_000);
+	const post = { stage: "예약", sent: "2026-11-01 21:04", published: "", id: "C-20261101-08", scheduled: "2026-11-01 21:06", error: "" };
+	assert.equal(needsFastPoll(post, at - 1), false);
+	assert.equal(needsFastPoll(post, at), true);
+	assert.equal(needsFastPoll({ ...post, scheduled: "2026-11-01 21:07" }, at), false);
+	assert.equal(needsFastPoll({ ...post, stage: "다듬기" }, at + 60_000), false);
+	assert.equal(needsFastPoll({ ...post, published: "2026-11-01" }, at + 60_000), false);
+	assert.equal(needsFastPoll({ ...post, sent: "" }, at + 60_000), false);
+	assert.equal(needsFastPoll({ ...post, id: "" }, at + 60_000), false);
+	assert.equal(needsFastPoll({ ...post, error: "이미지 비율" }, at + 60_000), false);
+	assert.equal(fastPollEvery([post], at + 60_000), 90_000);
+	assert.equal(fastPollEvery([{ ...post, scheduled: "2026-11-01 22:00" }], at), null);
+});
+
+test("발행 결과 summary: per-id outcome, and json fallback when text is empty", () => {
+	const published = { id: "C-20261101-08", kind: "applied" as const, detail: appliedLabel({ stage: "발행", published: "2026-11-01", url: "https://www.linkedin.com/feed/update/x/", error: null }) };
+	assert.equal(formatPollHit(published), "C-20261101-08: 발행 반영");
+	assert.equal(formatPollHit({ id: "C-20261101-08", kind: "missing", detail: "403 AccessDenied" }), "C-20261101-08: 아직 결과 없음 (403 AccessDenied)");
+	assert.equal(formatPollHit({ id: "C-20261101-09", kind: "error", detail: "500 InternalError" }), "C-20261101-09: 오류 500 InternalError");
+	assert.equal(formatPollSummary([published, { id: "C-20261101-08", kind: "missing", detail: "404" }]), "C-20261101-08: 발행 반영\nC-20261101-08: 아직 결과 없음 (404)");
+	assert.equal(appliedLabel({ stage: "다듬기", sent: null, error: null }), "취소 반영");
+	assert.equal(appliedLabel({ error: "이유 없음" }), "실패 반영");
+	const json = { id: "C-20261101-08", status: "published", url: "https://www.linkedin.com/feed/update/x/", error: null, at: "2026-11-01 21:06" };
+	const fromJson = parseResultJson(resultBody({ text: "", json }));
+	assert.equal(fromJson?.status, "published");
+	assert.equal(fromJson?.error, "");
+	assert.equal(fromJson?.at, "2026-11-01 21:06");
+	assert.equal(resultBody({ text: "  {\"id\":\"keep\"}  ", json: { id: "drop" } }).trim(), "{\"id\":\"keep\"}");
+	assert.equal(resultBody({ text: "", json: null }), "");
+	assert.equal(parseResultJson(resultBody({ text: "\uFEFF{\"id\":\"C-1\",\"status\":\"published\",\"url\":\"u\",\"error\":null,\"at\":\"2026-11-01 21:06\"}" }))?.id, "C-1");
 });

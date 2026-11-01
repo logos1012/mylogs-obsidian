@@ -24,6 +24,8 @@ import {
 	glgamPath,
 	glgamSkeleton,
 	hash,
+	appliedLabel,
+	formatPollHit,
 	interpretResultGet,
 	markDropped,
 	unmarkWritten,
@@ -33,9 +35,14 @@ import {
 	parseGlgam,
 	parsePost,
 	parseSources,
+	type PollHit,
+	pollFoundCount,
 	type Post,
 	postSkeleton,
 	resultPatch,
+	s3Code,
+	shouldRememberPoll,
+	shouldThrottlePoll,
 	webhookHeaders,
 	rewriteSources,
 	safeTitle,
@@ -325,49 +332,68 @@ export interface PollOutcome {
 	errors: number;
 	/** Bucket, region, or keys are missing, and there was something to check. */
 	unconfigured: boolean;
+	eligible: number;
+	/** Skipped because of the 5-minute throttle. Forced and fast reads are never throttled. */
+	throttled: boolean;
+	hits: PollHit[];
 }
 
+const emptyPoll = (extra: Partial<PollOutcome>): PollOutcome => ({ changed: 0, errors: 0, unconfigured: false, eligible: 0, throttled: false, hits: [], ...extra });
+
 /** Read `studio/results/{id}.json` for each 예약 post that was sent and is not published yet. */
-export async function pollResults(plugin: MyLogsPlugin, d: StudioData, force = false): Promise<PollOutcome> {
+export async function pollResults(plugin: MyLogsPlugin, d: StudioData, force = false, opts?: { bypassThrottle?: boolean }): Promise<PollOutcome> {
 	const waiting = d.posts.filter((p) => p.stage === "예약" && p.sent && !p.published && p.id);
-	if (!waiting.length) return { changed: 0, errors: 0, unconfigured: false };
+	const now = Date.now();
+	if (!waiting.length) {
+		if (shouldRememberPoll(0, 0)) lastPoll = now;
+		return emptyPoll({});
+	}
 	const cfg = s3Config(plugin);
-	if (!isS3Ready(cfg)) return { changed: 0, errors: 0, unconfigured: true };
-	if (!force && Date.now() - lastPoll < 5 * 60_000) return { changed: 0, errors: 0, unconfigured: false };
-	lastPoll = Date.now();
+	if (!isS3Ready(cfg)) return emptyPoll({ unconfigured: true, eligible: waiting.length });
+	if (shouldThrottlePoll(lastPoll, now, force || !!opts?.bypassThrottle)) return emptyPoll({ eligible: waiting.length, throttled: true });
+	const hits: PollHit[] = [];
 	let changed = 0;
-	const problems: string[] = [];
 	for (const p of waiting) {
 		const key = resultObjectKey(p.id);
 		if (!key) {
-			problems.push(`${p.id}: 결과 키가 올바르지 않아요`);
+			hits.push({ id: p.id, kind: "error", detail: "결과 키가 올바르지 않아요" });
 			continue;
 		}
 		try {
 			const res = await getObject(cfg, obsidianSend, key);
 			const read = interpretResultGet(res.status, res.text);
-			if (read.kind === "missing") continue;
+			if (read.kind === "missing") {
+				const code = s3Code(res.text);
+				hits.push({ id: p.id, kind: "missing", detail: code ? `${res.status} ${code}` : String(res.status) });
+				continue;
+			}
 			if (read.kind === "error") {
-				problems.push(`${p.id}: ${read.message}`);
+				hits.push({ id: p.id, kind: "error", detail: read.message.replace(/^S3 발행 결과 읽기 실패 \(/, "").replace(/\)$/, "") || read.message });
 				continue;
 			}
 			if (read.row.id !== p.id) {
-				problems.push(`${p.id}: 결과 id가 달라요`);
+				hits.push({ id: p.id, kind: "error", detail: "결과 id가 달라요" });
 				continue;
 			}
 			const patch = resultPatch(p, read.row);
-			if (!patch) continue;
+			if (!patch) {
+				hits.push({ id: p.id, kind: "unchanged", detail: "결과 있음 · 반영 안 함" });
+				continue;
+			}
 			await patchPost(plugin, p.path, patch);
+			hits.push({ id: p.id, kind: "applied", detail: appliedLabel(patch) });
 			changed++;
 		} catch (e) {
-			problems.push(`${p.id}: ${e instanceof Error ? e.message : String(e)}`);
+			hits.push({ id: p.id, kind: "error", detail: e instanceof Error ? e.message : String(e) });
 		}
 	}
-	if (problems.length) {
-		console.warn("[MyLogs] studio results", problems);
-		new Notice(`발행 결과 일부를 읽지 못했어요. ${problems[0]}`, 8000);
+	if (shouldRememberPoll(waiting.length, pollFoundCount(hits))) lastPoll = now;
+	const bad = hits.filter((h) => h.kind === "error");
+	if (!force) {
+		for (const h of hits) console.log(`[MyLogs studio] ${formatPollHit(h)}`);
+		if (bad.length) new Notice(bad.map(formatPollHit).join("\n"), 8000);
 	}
-	return { changed, errors: problems.length, unconfigured: false };
+	return emptyPoll({ changed, errors: bad.length, eligible: waiting.length, hits });
 }
 
 // ───────────────────────── 소스 등록부 ─────────────────────────

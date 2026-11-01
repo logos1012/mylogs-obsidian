@@ -528,12 +528,111 @@ export type ResultRead = { kind: "missing" } | { kind: "ok"; row: ResultRow } | 
 export function interpretResultGet(status: number, body: string): ResultRead {
 	if (isAbsentResult(status, body)) return { kind: "missing" };
 	if (status !== 200) {
-		const code = /<Code>\s*([^<]+?)\s*<\/Code>/.exec(body)?.[1];
+		const code = s3Code(body);
 		return { kind: "error", message: `S3 발행 결과 읽기 실패 (${status}${code ? ` ${code}` : ""})` };
 	}
 	const row = parseResultJson(body);
 	if (!row) return { kind: "error", message: "발행 결과 JSON을 읽지 못했어요" };
 	return { kind: "ok", row };
+}
+
+export const s3Code = (body: string) => /<Code>\s*([^<]+?)\s*<\/Code>/.exec(body)?.[1] ?? "";
+
+/** Use `text` when it has a body; otherwise `requestUrl`'s parsed `json`. */
+export function resultBody(res: { text?: string | null; json?: unknown }): string {
+	const text = (res.text ?? "").replace(/^\uFEFF/, "");
+	if (text.trim()) return text;
+	let j: unknown;
+	try {
+		j = res.json;
+	} catch {
+		return "";
+	}
+	if (j == null || j === "") return "";
+	if (typeof j === "string") return j.replace(/^\uFEFF/, "");
+	try {
+		return JSON.stringify(j);
+	} catch {
+		return "";
+	}
+}
+
+/** Five minutes. Not started by an all-miss round. */
+export const POLL_THROTTLE_MS = 5 * 60_000;
+/** While a sent post is past its scheduled time and still has no result. */
+export const FAST_POLL_MS = 90_000;
+
+/** `bypass` is a forced read or the fast overdue timer. */
+export function shouldThrottlePoll(lastPoll: number, now: number, bypass: boolean): boolean {
+	if (bypass || lastPoll <= 0) return false;
+	return now - lastPoll < POLL_THROTTLE_MS;
+}
+
+/**
+ * Remember `lastPoll` only after a real result file, or when nothing was eligible.
+ * An all-miss round (404 / 403 AccessDenied / NoSuchKey) must not start the throttle.
+ */
+export function shouldRememberPoll(eligible: number, found: number): boolean {
+	if (eligible <= 0) return true;
+	return found > 0;
+}
+
+export type PollHitKind = "applied" | "missing" | "error" | "unchanged";
+
+export interface PollHit {
+	id: string;
+	kind: PollHitKind;
+	/** `발행 반영`, `403 AccessDenied`, `500 …`, … */
+	detail: string;
+}
+
+export function appliedLabel(patch: Record<string, FmValue | null>): string {
+	if (patch.stage === "발행") return "발행 반영";
+	if (patch.stage === "다듬기") return "취소 반영";
+	if (typeof patch.error === "string") return "실패 반영";
+	return "반영";
+}
+
+export function formatPollHit(h: PollHit): string {
+	if (h.kind === "missing") return `${h.id}: 아직 결과 없음 (${h.detail})`;
+	if (h.kind === "error") return `${h.id}: 오류 ${h.detail}`;
+	return `${h.id}: ${h.detail}`;
+}
+
+export function formatPollSummary(hits: PollHit[]): string {
+	return hits.map(formatPollHit).join("\n");
+}
+
+export function pollFoundCount(hits: { kind: string }[]): number {
+	return hits.filter((h) => h.kind === "applied" || h.kind === "unchanged").length;
+}
+
+/** `YYYY-MM-DD HH:mm` read as Asia/Seoul. */
+export function scheduledInstant(scheduled: string): number | null {
+	const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(scheduled.trim());
+	if (!m) return null;
+	return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5])) - 9 * 3600_000;
+}
+
+export interface FastPollPost {
+	stage: string;
+	sent: string;
+	published: string;
+	id: string;
+	scheduled: string;
+	error: string;
+}
+
+/** Eligible, scheduled time has come, and no failure result has been written yet. */
+export function needsFastPoll(p: FastPollPost, now = Date.now()): boolean {
+	if (p.stage !== "예약" || !p.sent || p.published || !p.id || p.error) return false;
+	const at = scheduledInstant(p.scheduled);
+	return at != null && at <= now;
+}
+
+/** Interval while any post needs a fast re-check; null stops the timer. */
+export function fastPollEvery(posts: FastPollPost[], now = Date.now()): number | null {
+	return posts.some((p) => needsFastPoll(p, now)) ? FAST_POLL_MS : null;
 }
 
 /** A result → the post's frontmatter patch (null = nothing to change). */
