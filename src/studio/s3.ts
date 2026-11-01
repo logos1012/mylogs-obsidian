@@ -207,13 +207,14 @@ export function migrateS3Prefix(saved: string | undefined | null): string {
 export const RESULT_PREFIX = "studio/results";
 
 /**
- * LinkedIn: `studio/results/{id}.json`. Threads (`th`): `studio/results/threads/{id}.json`.
+ * LinkedIn: `studio/results/{id}.json`. Threads: `studio/results/threads/{id}.json`. Instagram: `studio/results/instagram/{id}.json`.
  * Empty for a bad id, a `_…` object (`_token.json`), or the leftover test id.
  */
 export function resultObjectKey(id: string, channel = ""): string {
 	const safe = id.trim();
 	if (!safe || /[\\/\u0000]/.test(safe) || safe === "." || safe === ".." || safe.startsWith("_") || safe === "TEST-THREADS-001") return "";
 	if (channel === "th" || channel === "threads") return `${RESULT_PREFIX}/threads/${safe}.json`;
+	if (channel === "ig" || channel === "instagram") return `${RESULT_PREFIX}/instagram/${safe}.json`;
 	return `${RESULT_PREFIX}/${safe}.json`;
 }
 

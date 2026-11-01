@@ -11574,6 +11574,16 @@ body.is-mobile .fw3-ws-cover { height: 110px; }
 .st .st-st.s-pub { background: color-mix(in srgb, var(--st-ok) 14%, var(--background-primary)); color: var(--st-ok); }
 .st .st-st.s-fail { background: color-mix(in srgb, var(--st-bad) 12%, var(--background-primary)); color: var(--st-bad); }
 .st .st-st.s-wait { background: var(--background-modifier-hover); color: var(--text-muted); }
+.st .st-st.s-going { background: color-mix(in srgb, var(--st-warn) 18%, var(--background-primary)); color: var(--st-warn); }
+.st .st-st.s-cancel { background: var(--background-modifier-hover); color: var(--text-faint); }
+.st .st-st.is-link { cursor: pointer; text-decoration: underline; }
+.st .st-nowmark { margin-right: 2px; }
+.st .st-statechips { margin-top: 6px; }
+.st .st-statecount { font-size: 12px; color: var(--text-muted); margin-left: 4px; }
+.st .st-state-line { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.st .st-warn-banner { background: color-mix(in srgb, var(--st-warn) 16%, var(--background-primary)); color: var(--text-normal); border: 1px solid color-mix(in srgb, var(--st-warn) 45%, var(--background-modifier-border)); border-radius: 10px; padding: 8px 12px; margin: 0 0 10px; font-size: 13px; }
+.st .st-slot.s-going { border-color: color-mix(in srgb, var(--st-warn) 50%, var(--background-modifier-border)); background: color-mix(in srgb, var(--st-warn) 8%, var(--background-primary)); }
+.st .st-slot.s-cancel { border-style: dashed; opacity: 0.75; }
 
 /* 머리 · 탭 */
 .st .st-head { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
