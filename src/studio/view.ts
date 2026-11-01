@@ -26,6 +26,8 @@ import {
 	CHANNELS,
 	charCount,
 	defaultSchedule,
+	fastPollEvery,
+	formatPollSummary,
 	FORMATS,
 	type GlgamLine,
 	HASHTAG_MAX,
@@ -132,12 +134,14 @@ export class StudioView extends ItemView {
 		this.registerEvent(this.app.vault.on("delete", (f) => watch(f)));
 		this.registerEvent(this.app.vault.on("rename", (f, old) => watch(f, old)));
 		this.register(lumiBus.on(() => this.tab === "glgam" && !this.editing && this.render()));
+		this.register(() => this.stopFastPoll());
 		this.registerInterval(window.setInterval(() => void this.poll(false), 10 * 60_000));
 		await this.refresh(true);
 		void this.poll(false);
 	}
 
 	async onClose(): Promise<void> {
+		this.stopFastPoll();
 		await this.amp?.flush();
 		this.amp?.stop();
 		await this.flushBody();
@@ -170,6 +174,7 @@ export class StudioView extends ItemView {
 				else await this.amp.load();
 			}
 			this.render();
+			this.syncFastPoll();
 		} catch (e) {
 			console.error("[MyLogs] studio load failed", e);
 			this.rootEl.empty();
@@ -177,15 +182,33 @@ export class StudioView extends ItemView {
 		}
 	}
 
-	private async poll(force: boolean): Promise<void> {
+	private fastPoll: number | null = null;
+
+	private stopFastPoll(): void {
+		if (this.fastPoll != null) window.clearInterval(this.fastPoll);
+		this.fastPoll = null;
+	}
+
+	/** 90s while a sent post is past `scheduled` and still unpublished. Board, editor, and 글 증폭 share this view. */
+	private syncFastPoll(): void {
+		const every = this.d ? fastPollEvery(this.d.posts) : null;
+		if (every && this.fastPoll == null) this.fastPoll = window.setInterval(() => void this.poll(false, true), every);
+		else if (!every) this.stopFastPoll();
+	}
+
+	/** Command palette and the editor button. */
+	async readResults(): Promise<void> {
+		if (!this.d) await this.refresh();
+		await this.poll(true);
+	}
+
+	private async poll(force: boolean, bypassThrottle = false): Promise<void> {
 		if (!this.d) return;
 		try {
-			const r = await pollResults(this.plugin, this.d, force);
-			if (r.changed) {
-				new Notice(`발행 결과 ${r.changed}건을 게시물에 옮겼어요.`);
-				await this.refresh();
-			} else if (force && r.unconfigured) new Notice("설정 › 콘텐츠 스튜디오에서 S3를 연결해 주세요.");
-			else if (force && !r.errors) new Notice("새 발행 결과가 없어요.");
+			const r = await pollResults(this.plugin, this.d, force, { bypassThrottle: force || bypassThrottle });
+			if (r.changed) await this.refresh();
+			else this.syncFastPoll();
+			if (force) announcePoll(r);
 		} catch (e) {
 			console.error("[MyLogs] studio results", e);
 			if (force) err(e);
@@ -214,6 +237,7 @@ export class StudioView extends ItemView {
 				plugin: this.plugin,
 				hush: (ms) => this.hush(ms),
 				rerender: () => this.render(),
+				readResults: () => void this.readResults(),
 				exit: () => {
 					this.amp = null;
 					void this.refresh();
@@ -897,6 +921,8 @@ export class StudioView extends ItemView {
 		}
 		const orig = top.createEl("button", { cls: "st-btn is-sm is-ghost", text: "원문 열기", attr: { type: "button" } });
 		orig.addEventListener("click", () => void openPath(this.plugin, p.path));
+		const read = top.createEl("button", { cls: "st-btn is-sm is-ghost", text: "발행 결과 지금 읽기", attr: { type: "button" } });
+		read.addEventListener("click", () => void this.readResults());
 
 		const layout = ed.createDiv({ cls: "st-edgrid" });
 		const main = layout.createDiv({ cls: "st-edmain" });
@@ -1390,6 +1416,27 @@ export class StudioView extends ItemView {
 }
 
 /** Open (or reveal) the studio, optionally on a post. */
+function announcePoll(r: { unconfigured: boolean; eligible: number; hits: Parameters<typeof formatPollSummary>[0] }): void {
+	if (r.unconfigured) new Notice("설정 › 콘텐츠 스튜디오에서 S3를 연결해 주세요.");
+	else if (r.eligible === 0) new Notice("새 발행 결과가 없어요.");
+	else new Notice(formatPollSummary(r.hits) || "새 발행 결과가 없어요.", 12000);
+}
+
+/** Forced read from the command palette. Uses the open studio when there is one. */
+export async function readPublishResults(plugin: MyLogsPlugin): Promise<void> {
+	const leaf = plugin.app.workspace.getLeavesOfType(VIEW_TYPE_STUDIO)[0];
+	if (leaf?.view instanceof StudioView) {
+		await leaf.view.readResults();
+		return;
+	}
+	const d = await loadStudio(plugin);
+	if (!d) {
+		new Notice("스튜디오를 쓰는 Flywheel 요소가 없어요.");
+		return;
+	}
+	announcePoll(await pollResults(plugin, d, true));
+}
+
 export async function activateStudio(plugin: MyLogsPlugin, from?: WorkspaceLeaf, post?: string): Promise<void> {
 	const ws = plugin.app.workspace;
 	let leaf = ws.getLeavesOfType(VIEW_TYPE_STUDIO)[0];

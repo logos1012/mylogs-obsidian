@@ -48,6 +48,7 @@ export interface AmpHost {
 	/** Our own writes must not redraw under the cursor. */
 	hush(ms?: number): void;
 	rerender(): void;
+	readResults(): void;
 	exit(): void;
 }
 
@@ -209,6 +210,8 @@ export class AmpScreen {
 			this.host.exit();
 		});
 		top.createSpan({ cls: "st-faint st-small st-grow st-ellipsis", text: this.path.slice(d.root.length + 1) });
+		const read = top.createEl("button", { cls: "st-btn is-sm is-ghost", text: "발행 결과 지금 읽기", attr: { type: "button" } });
+		read.addEventListener("click", () => this.host.readResults());
 		top.createSpan({ cls: "st-faint st-small", text: "자동 저장" });
 		wrap.createDiv({ cls: "amp-title", text: p?.title ?? "" });
 
