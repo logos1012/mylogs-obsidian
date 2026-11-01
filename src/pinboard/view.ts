@@ -27,7 +27,9 @@ import { askForm, confirmDelete } from "../ui/modals.ts";
 import { hubLocation, parseProject } from "../projects/model.ts";
 import { activeRoot, archiveRoot, removeGoalsFromProjects, takenIdsAndNames, completeProject, deleteProject } from "../projects/actions.ts";
 import { askNewProject } from "../projects/modals.ts";
-import { flywheelPath, parseFlywheel } from "../flywheel/model.ts";
+import { flywheelPath } from "../flywheel/model.ts";
+import { loadWheel, loadWheelCached } from "../flywheel/actions.ts";
+import { openFlywheelElement } from "../flywheel/register.ts";
 import { setFrontmatterScalar } from "../writer.ts";
 import {
 	applyGoalChange,
@@ -67,7 +69,6 @@ import {
 	fmtNum,
 	fmtVal,
 	type Goal,
-	goalIdsIn,
 	type HabitRef,
 	HEALTH_ICON,
 	HEALTH_KO,
@@ -217,7 +218,10 @@ export class PinboardView extends ItemView {
 	/** Files whose change shows up on the board: goal notes, project hubs, `Flywheel.md`. */
 	private watches(path: string): boolean {
 		if (this.inFolder(path)) return true;
-		if (path === normalizePath(flywheelPath(this.plugin.settings.flywheelPath))) return true;
+		const wheel = normalizePath(flywheelPath(this.plugin.settings.flywheelPath));
+		const root = wheel.slice(0, wheel.lastIndexOf("/"));
+		// Flywheel.md and the element hubs (`<root>/<이름>/<이름>.md`), not records/outputs.
+		if (path === wheel || (path.startsWith(`${root}/`) && path.split("/").length === root.split("/").length + 2)) return true;
 		return hubLocation(path, activeRoot(this.plugin), archiveRoot(this.plugin)) !== null;
 	}
 
@@ -306,11 +310,9 @@ export class PinboardView extends ItemView {
 	}
 
 	private async loadHabits(): Promise<HabitRef[]> {
-		const f = this.app.vault.getAbstractFileByPath(normalizePath(flywheelPath(this.plugin.settings.flywheelPath)));
-		if (!(f instanceof TFile)) return [];
 		try {
-			const els = parseFlywheel(await this.app.vault.cachedRead(f));
-			return els.map((e) => ({ id: e.id, name: e.name, status: e.status, goals: goalIdsIn(e.fields["goal"] ?? "") }));
+			const w = await loadWheelCached(this.plugin);
+			return w.elements.map((e) => ({ id: e.id, name: e.name, status: e.status, goals: e.goals }));
 		} catch (err) {
 			console.error("[MyLogs] Pinboard: Flywheel read failed", err);
 			return [];
@@ -1279,6 +1281,12 @@ export class PinboardView extends ItemView {
 						if (kind === "project") void this.plugin.openProjectAt(r.path!);
 						else this.openPath(r.path!, Keymap.isModEvent(e));
 					});
+				} else if (kind === "habit" && r.id) {
+					const a = li.createEl("a", { cls: "internal-link", text: r.label, href: "#" });
+					a.addEventListener("click", (e) => {
+						e.preventDefault();
+						void openFlywheelElement(this.plugin, r.id!);
+					});
 				} else li.createSpan({ text: r.label });
 				if (r.status) li.createSpan({ cls: "pb-rel-status", text: r.status });
 				if (r.broken) tip(li.createSpan({ cls: "pb-rel-warn", text: "⚠" }), "프로젝트를 찾을 수 없어요. ⋯에서 목록에서 뺄 수 있어요.");
@@ -1346,9 +1354,8 @@ export class PinboardView extends ItemView {
 		if (this.creating) return;
 		this.creating = true; this.beginEdit();
 		try {
-			const f = this.app.vault.getAbstractFileByPath(normalizePath(flywheelPath(this.plugin.settings.flywheelPath)));
 			const year = this.data?.year ?? Number(todayIso().slice(0,4));
-			const answer = await askCreateGoal(this.app, { year, parent, projects: this.data?.projects ?? [], flywheel: parseFlywheel(f instanceof TFile ? await this.app.vault.read(f) : null), taken: await takenIdsAndNames(this.plugin, []), today: todayIso(), areas: [...new Set(this.data?.goals.map(g => g.area) ?? [])] });
+			const answer = await askCreateGoal(this.app, { year, parent, projects: this.data?.projects ?? [], flywheel: (await loadWheelCached(this.plugin)).elements, taken: await takenIdsAndNames(this.plugin, []), today: todayIso(), areas: [...new Set(this.data?.goals.map(g => g.area) ?? [])] });
 			if (!answer) return;
 			if (!parent) answer.input.scope = inputSide(this.plugin.settings.sideMode);
 			const goal = await createGoalFlow(this.plugin, answer, year, parent?.id, todayIso());
@@ -1358,15 +1365,12 @@ export class PinboardView extends ItemView {
 	}
 
 	private async pickFlywheel(g:Goal, unlinkId?:string):Promise<void> {
-		const file=this.app.vault.getAbstractFileByPath(normalizePath(flywheelPath(this.plugin.settings.flywheelPath)));
-		if(!(file instanceof TFile))throw new Error("Flywheel.md를 먼저 만들어 주세요.");
-		const elements=parseFlywheel(await this.app.vault.read(file));
+		const elements=(await loadWheel(this.plugin)).elements;
 		let id=unlinkId;
-		if(!id){const it=await pickTarget(this.app,"연결할 Flywheel 요소",elements.filter(e=>e.status!=="폐기"&&e.fields.goal!==g.id).map(e=>({label:`${e.id} ${e.name}`,sub:e.fields.goal?`현재 연결: ${e.fields.goal}`:"연결 없음",id:e.id})));if(!it)return;id=it.id;}
+		if(!id){const it=await pickTarget(this.app,"연결할 Flywheel 요소",elements.filter(e=>e.status!=="폐기"&&!e.goals.includes(g.id)).map(e=>({label:e.name,sub:e.goals.length?`이미 연결: ${e.goals.join(", ")} (함께 연결돼요)`:"연결 없음",id:e.id})));if(!it)return;id=it.id;}
 		const e=elements.find(e=>e.id===id);if(!e)return;
-		if(unlinkId&&e.fields.goal!==g.id)throw new Error("연결이 바뀌었어요. 다시 열어 주세요.");
-		if(!unlinkId&&e.fields.goal){const v=await askForm(this.app,{title:"Flywheel 목표 연결 교체",desc:`${e.fields.goal} 연결을 ${g.id}로 바꿉니다. 요소와 결과물은 그대로 둡니다.`,fields:[],cta:"연결 교체"});if(!v)return;}
-		await connectFlywheel(this.plugin,g,e.id,e.fields.goal??"",!unlinkId,todayIso());await this.refresh();
+		if(unlinkId&&!e.goals.includes(g.id))throw new Error("연결이 바뀌었어요. 다시 열어 주세요.");
+		await connectFlywheel(this.plugin,g,e.id,"",!unlinkId,todayIso());await this.refresh();
 	}
 
 	private async linkProject(g: Goal, hub: string, link: boolean): Promise<void> {

@@ -8,7 +8,8 @@
 import { TASK_LINE_RE } from "../parser.ts";
 import { flywheelIdOf, type FlywheelElement } from "./model.ts";
 
-export const MAX_ELEMENTS = 6;
+/** No upper limit since 2026-11-01 (AGENTS v3.0 「1」). Kept for old callers. */
+export const MAX_ELEMENTS = Number.POSITIVE_INFINITY;
 export const CHANGELOG = "변경 기록";
 /** Change-log words that mark a 요소 교체 (추가·폐기), limited to once a quarter (「1」). */
 export const REPLACEMENT_MARK = "요소 교체";
@@ -16,7 +17,7 @@ export const REPLACEMENT_MARK = "요소 교체";
 /** Empty, or the template's `(채우기 …)` prompt: the user has not written this yet. */
 export function isPlaceholder(v: string | undefined): boolean {
 	const s = (v ?? "").trim();
-	return !s || /^\(채우기/.test(s);
+	return !s || /^\(채우기/.test(s) || /^\(.*채우기.*\)$/.test(s);
 }
 
 function eolOf(text: string): string {
@@ -185,19 +186,19 @@ export function padMark(padText: string | null, id: string): "x" | "-" | null {
 	return null;
 }
 
-/** One day for one element: the Daily Pad line wins, then the 수행 표 cell; before `since` = out. */
-export function dayMark(e: FlywheelElement, iso: string, padText: string | null, cell: string | undefined, resting = false): DayMark {
-	const since = e.fields["since"] ?? "";
+/**
+ * One day for one element: the 수행 표 cell (했음/쉼 win), then an old `(flywheel::)` Daily Pad line
+ * (before 2026-10-28), then the cell's 못 함. Before `since` = out. A blank day stays "" — it is
+ * never inferred from today's status (a resting element is 쉼 only where the table says so).
+ */
+export function dayMark(e: FlywheelElement, iso: string, padText: string | null, cell: string | undefined): DayMark {
+	const since = e.since || e.fields["since"] || "";
 	if (/^\d{4}-\d{2}-\d{2}$/.test(since) && iso < since) return "out";
-	// The 수행 표 is where the Flywheel view checks (since 2026-10-28); older days may only have
-	// Daily Pad lines. A table 했음/쉼 wins, then the line, then the table's 못 함.
 	const c = (cell ?? "").trim();
 	if (c === "x" || c === "쉼") return c;
 	const p = padMark(padText, e.id);
 	if (p) return p;
 	if (c === "-") return c;
-	// A resting element is left out of new Daily Pads (「4-2」 1): a pad without its line is a 쉼 day.
-	if (resting && padText !== null) return "쉼";
 	return "";
 }
 

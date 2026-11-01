@@ -11,6 +11,7 @@ import {
 	Component,
 	ItemView,
 	Keymap,
+	Menu,
 	MarkdownRenderer,
 	moment,
 	normalizePath,
@@ -39,6 +40,11 @@ import {
 import { asSide, lineSide, type ScopeLookup, shows } from "./side.ts";
 import { MAIN_SECTION_KEYS, type MainSectionKey } from "./settings.ts";
 import { flywheelIdOf, isFlywheelLine, missedCount, weeklyDone } from "./flywheel/model.ts";
+import { linkMemo, loadWheelCached, memoLines, setDay, wheelRoot } from "./flywheel/actions.ts";
+import { logPath } from "./flywheel/store.ts";
+import { parseEvidence, recordLinksOf, recordName, sourceOf } from "./flywheel/wheel.ts";
+import { parseLogTable } from "./flywheel/ops.ts";
+import { activateFlywheel, openFlywheelElement } from "./flywheel/register.ts";
 import { weekMonday } from "./mylife/model.ts";
 import { AutoGrow } from "./ui/autogrow.ts";
 import { trackKeyboard } from "./ui/mobile.ts";
@@ -342,6 +348,7 @@ class SectionPanel {
 		const md = this.bodyEl.createDiv({ cls: "ml-md markdown-rendered" });
 		await MarkdownRenderer.render(this.view.app, content, md, this.view.padPath(), this.renderChild);
 		this.wireCheckboxes(md, content);
+		if (this.key === "memo") void this.view.decorateMemo(md, content, this.name);
 	}
 
 	/** Make rendered task checkboxes write `[ ]`↔`[x]` into the Daily Pad file. */
@@ -594,6 +601,8 @@ export class DailyPadView extends ItemView {
 	private headerEl!: HTMLElement;
 	private emptyEl!: HTMLElement;
 	private deskEl!: HTMLElement;
+	private wheelEl!: HTMLElement;
+	private wheelSeq = 0;
 	private milestoneEl!: HTMLElement;
 	private milestoneSeq = 0;
 	/** The 결정 대기 line being dragged onto 개인 / 회사 할 일. */
@@ -714,6 +723,7 @@ export class DailyPadView extends ItemView {
 		this.emptyEl = this.rootEl.createDiv({ cls: "ml-empty-state" });
 		this.milestoneEl = this.rootEl.createDiv({ cls: "ml-panel ml-day-milestones" });
 		this.deskEl = this.rootEl.createDiv({ cls: "ml-panel ml-desk" });
+		this.wheelEl = this.rootEl.createDiv({ cls: "ml-panel ml-wheel" });
 		this.pendingEl = this.rootEl.createDiv({ cls: "ml-panel ml-pending" });
 		this.gridEl = this.rootEl.createDiv({ cls: "ml-grid" });
 		const mode = this.plugin.settings.sideMode;
@@ -782,6 +792,7 @@ export class DailyPadView extends ItemView {
 		this.padExists = padText !== null;
 		this.renderEmptyState();
 		this.renderDesk(deskText);
+		void this.renderWheel();
 		this.renderPending(padText);
 		this.gridEl.toggle(this.padExists);
 		if (padText !== null) this.panels.forEach((p) => p.sync(padText));
@@ -799,6 +810,125 @@ export class DailyPadView extends ItemView {
 		if (paths.some(path => path && watchesMilestoneProjects(this.plugin, path))) void this.refreshMilestones();
 		if (paths.includes(desk)) void this.readDesk().then((t) => this.renderDesk(t));
 		if (paths.includes(pad)) void this.onPadChanged();
+		const wr = wheelRoot(this.plugin.settings) + "/";
+		if (paths.some((p) => p && p.startsWith(wr) && !p.includes("/01 기록/") && !p.includes("/02 산출물/"))) void this.renderWheel();
+	}
+
+	// ── 오늘의 바퀴 (12 Flywheel AGENTS v3.0 「4-2」): no line goes into the Daily Pad file ──
+
+	private async renderWheel(): Promise<void> {
+		const seq = ++this.wheelSeq;
+		const el = this.wheelEl;
+		const date = this.date;
+		if (!el) return;
+		if (date !== todayIso()) {
+			el.empty();
+			el.hide();
+			return;
+		}
+		let w;
+		let table;
+		let evidence;
+		try {
+			w = await loadWheelCached(this.plugin);
+			const lt = await this.readVaultFile(logPath(w.root, date.slice(0, 7)));
+			table = parseLogTable(lt).get(date.slice(8, 10));
+			evidence = parseEvidence(lt);
+		} catch (e) {
+			console.error("[MyLogs] Daily Pad: Flywheel read failed", e);
+			return;
+		}
+		if (seq !== this.wheelSeq) return;
+		const live = w.elements.filter((e) => e.status === "사용" && (!e.since || e.since <= date));
+		el.empty();
+		el.toggle(live.length > 0);
+		if (!live.length) return;
+		const head = el.createDiv({ cls: "ml-panel-head" });
+		const titles = head.createDiv({ cls: "ml-panel-titles" });
+		tip(titles.createEl("h3", { cls: "ml-panel-title", text: "오늘의 바퀴" }), "누르면 오늘 했음 · Flywheel 수행 표에 적혀요. 이 Daily Pad 파일에는 줄이 생기지 않아요.");
+		const done = live.filter((e) => table?.get(e.id) === "x").length;
+		titles.createSpan({ cls: "ml-wheel-count", text: `${done}/${live.length}` });
+		const go = head.createEl("button", { cls: "ml-btn ml-btn-ghost", text: "Flywheel →", attr: { type: "button" } });
+		go.addEventListener("click", () => void activateFlywheel(this.plugin));
+		const chips = el.createDiv({ cls: "ml-wheel-chips" });
+		for (const e of live) {
+			const mark = table?.get(e.id) ?? "";
+			const src = sourceOf(mark, evidence.get(`${date}|${e.id}`));
+			const c = chips.createEl("button", { cls: `ml-wheel-chip${mark === "x" ? " is-done" : ""}`, attr: { type: "button", "aria-pressed": String(mark === "x") } });
+			c.createSpan({ cls: "ml-wheel-dot" });
+			c.appendText(e.name);
+			if (src === "agent") tip(c.createSpan({ cls: "ml-wheel-agent", text: "✦" }), evidence.get(`${date}|${e.id}`) ?? "");
+			tip(c, `${e.fields["최소"] ? `최소: ${e.fields["최소"]}` : ""}${mark === "x" ? " · 누르면 풀어요" : ""}`);
+			c.addEventListener("click", () => {
+				void setDay(this.plugin, e, date, mark === "x" ? "" : "x", mark === "x" ? null : undefined)
+					.catch((err) => new Notice(`MyLogs: ${err instanceof Error ? err.message : String(err)}`))
+					.finally(() => void this.renderWheel());
+			});
+			c.addEventListener("contextmenu", (ev) => {
+				ev.preventDefault();
+				const m = new Menu();
+				m.addItem((i) => i.setTitle(`${e.name} 열기`).setIcon("panel-top-open").onClick(() => void openFlywheelElement(this.plugin, e.id)));
+				m.showAtMouseEvent(ev);
+			});
+		}
+	}
+
+	/** 메모 줄마다 「바퀴 기록으로 잇기」 (AGENTS 「3-6」): the memo stays, both sides get a link. */
+	async decorateMemo(md: HTMLElement, content: string, section: string): Promise<void> {
+		const tops: string[] = [];
+		let fence = false;
+		for (const l of content.split("\n")) {
+			if (/^\s*(```|~~~)/.test(l)) fence = !fence;
+			if (!fence && /^[-*+] /.test(l)) tops.push(l);
+		}
+		const lis = Array.from(md.querySelectorAll<HTMLElement>(":scope > ul > li"));
+		if (!lis.length || lis.length !== tops.length) return;
+		let elements;
+		try {
+			elements = (await loadWheelCached(this.plugin)).elements.filter((e) => e.status !== "폐기");
+		} catch {
+			return;
+		}
+		if (!elements.length) return;
+		const date = this.date;
+		lis.forEach((li, n) => {
+			const line = tops[n];
+			const linked = recordLinksOf(line);
+			const b = li.createEl("button", { cls: `clickable-icon ml-memo-wheel${linked.length ? " is-linked" : ""}`, attr: { type: "button", "aria-label": "바퀴 기록으로 잇기" } });
+			setIcon(b, "repeat");
+			tip(b, linked.length ? `바퀴 기록과 이어짐: ${linked.map((a) => a.replace(/ 기록 \d{4}-\d{2}#.*$/, "")).join(", ")}` : "바퀴 기록으로 잇기 (메모는 그대로)");
+			b.addEventListener("click", (ev) => {
+				ev.preventDefault();
+				ev.stopPropagation();
+				const m = new Menu();
+				m.addItem((i) => i.setTitle("바퀴 기록으로 잇기").setDisabled(true));
+				for (const e of elements) {
+					const anchor = `${recordName(e.name, date.slice(0, 7))}#${date}`;
+					const on = linked.includes(anchor);
+					m.addItem((i) =>
+						i
+							.setTitle(e.name)
+							.setChecked(on)
+							.onClick(() => void this.linkMemoLine(section, n, line, e, !on)),
+					);
+				}
+				m.showAtMouseEvent(ev);
+			});
+		});
+	}
+
+	private async linkMemoLine(section: string, index: number, line: string, e: Parameters<typeof linkMemo>[5], link: boolean): Promise<void> {
+		try {
+			await this.flushAll();
+			const pad = await this.readPad();
+			if (pad === null) return;
+			const hit = memoLines(pad, section)[index];
+			if (!hit || hit.line !== line) throw new Error("메모가 그새 바뀌었어요. 다시 해 주세요.");
+			await linkMemo(this.plugin, this.padPath(), this.date, hit.offset, line, e, link);
+			new Notice(link ? `「${e.name}」 기록에 이었어요. 메모는 그대로예요.` : `「${e.name}」 잇기를 풀었어요.`);
+		} catch (err) {
+			new Notice(`MyLogs: ${err instanceof Error ? err.message : String(err)}`, 10000);
+		}
 	}
 
 	private async onPadChanged(): Promise<void> {

@@ -13,9 +13,13 @@ export function projectGoalLinks(p: Project, goals: Goal[]): { id: string; goal?
 	const ids = new Set([...p.goals, ...goals.filter(g => goalPointsToProject(g, p)).map(g => g.id)]);
 	return [...ids].map(id => { const goal = goals.find(g => g.id === id); return { id, goal, oneSided: !!goal && (!p.goals.includes(id) || !goalPointsToProject(goal, p)) }; });
 }
-export function sharedFlywheel(p: Project, goals: Goal[], elements: FlywheelElement[]): FlywheelElement[] {
+/**
+ * Flywheel elements shown on a project: those the hub names in `flywheel` (the project came out of
+ * them, AGENTS 「4-8」) and those linked to one of the project's goals. 폐기 excluded.
+ */
+export function sharedFlywheel(p: Project, goals: Goal[], elements: FlywheelElement[], direct: string[] = []): FlywheelElement[] {
 	const ids = new Set(projectGoalLinks(p, goals).map(g => g.id));
-	return elements.filter(e => e.status !== "폐기" && ids.has(e.fields.goal));
+	return elements.filter(e => e.status !== "폐기" && (direct.includes(e.id) || e.goals.some(g => ids.has(g))));
 }
 export function workspaceSections(text: string): { title: string; text: string }[] {
 	const sections = parseSections(parseFrontmatterText(text).body);
