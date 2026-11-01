@@ -68,6 +68,7 @@ export const VIEW_TYPE_STUDIO = "mylogs-studio";
 type Tab = "glgam" | "board" | "sched" | "src";
 const TABS: [Tab, string][] = [["glgam", "글감"], ["board", "보드"], ["sched", "예약"], ["src", "소스"]];
 const SRC_LABEL: Record<string, string> = { daily: "Daily Pad", fw: "Flywheel 기록", news: "AI 뉴스", wiki: "LLM Wiki", diary: "Diary", session: "AI 대화", hand: "직접", lumi: "✦ 루미" };
+const CH_MARK: Record<string, string> = { li: "in", th: "@", ig: "◎" };
 const ROUTE: Record<string, string> = { li: "Make → LinkedIn", th: "Make → Buffer (또는 Threads API)", ig: "API Gateway → Lambda" };
 
 const err = (e: unknown) => new Notice(`MyLogs: ${e instanceof Error ? e.message : String(e)}`, 10000);
@@ -839,6 +840,7 @@ export class StudioView extends ItemView {
 	private renderEditor(root: HTMLElement, d: StudioData, p: Post): void {
 		const ed = root.createDiv({ cls: `st-ed is-${p.channel.key}` });
 		const top = ed.createDiv({ cls: "st-row st-edtop" });
+		top.createSpan({ cls: `st-mark c-${p.channel.key}`, text: CH_MARK[p.channel.key] });
 		const back = top.createEl("button", { cls: "st-link", text: "← 보드", attr: { type: "button" } });
 		back.addEventListener("click", async () => {
 			await this.flushBody();
@@ -863,8 +865,8 @@ export class StudioView extends ItemView {
 		for (const ch of CHANNELS) {
 			const x = sib.find((s) => s.channel.key === ch.key);
 			const b = sw.createEl("button", { cls: `${x?.path === p.path ? "is-on" : ""}${x ? "" : " is-new"}`, attr: { type: "button" } });
-			b.createSpan({ cls: `st-ch c-${ch.key}`, text: ch.name });
-			b.appendText(x ? ` ${x.stage}` : " ＋");
+			b.createSpan({ cls: `st-dot c-${ch.key}`, text: CH_MARK[ch.key] });
+			b.appendText(`${ch.name} · ${x ? x.stage : "＋"}`);
 			b.addEventListener("click", async () => {
 				await this.flushBody();
 				if (x) this.openPost(x.path);
@@ -953,9 +955,16 @@ export class StudioView extends ItemView {
 		const row = main.createDiv({ cls: "st-row st-edrow" });
 		row.createSpan({ cls: "st-small st-muted", text: "형식" });
 		this.formatSeg(row, p);
-		const paper = main.createDiv({ cls: "st-paper" });
-		paper.createDiv({ cls: "st-h", text: "본문" });
-		const foot = main.createDiv({ cls: "st-row" });
+		const paper = main.createDiv({ cls: "st-lipost" });
+		const ph = paper.createDiv({ cls: "st-liph" });
+		ph.createDiv({ cls: "st-liav" });
+		const nm = ph.createDiv();
+		nm.createEl("b", { text: "내 게시물" });
+		nm.createDiv({ cls: "st-tiny st-faint", text: `본문 · ${p.format} · 🌐` });
+		const textWrap = paper.createDiv({ cls: "st-libody" });
+		const foot = paper.createDiv({ cls: "st-lifoot" });
+		for (const a of ["👍 추천", "💬 댓글", "↻ 퍼가기"]) foot.createSpan({ text: a });
+		foot.createDiv({ cls: "st-grow" });
 		const fold = main.createDiv({ cls: "st-foldpv" });
 		const showFold = () => {
 			fold.empty();
@@ -971,7 +980,7 @@ export class StudioView extends ItemView {
 			fold.createDiv({ cls: "st-foldtext", text: head.join("\n") || "…" });
 		};
 		const cnt = this.counter(foot, charCount(p.text), p.channel.limit);
-		this.textarea(paper, p.text, "st-body", (v) => {
+		this.textarea(textWrap, p.text, "st-body", (v) => {
 			p.text = v;
 			cnt.setText(`${charCount(v).toLocaleString()} / ${p.channel.limit.toLocaleString()}자`);
 			cnt.toggleClass("is-over", charCount(v) > p.channel.limit);
@@ -989,18 +998,23 @@ export class StudioView extends ItemView {
 		const topic = row.createEl("input", { cls: "st-search", attr: { type: "text", placeholder: "주제 하나 (선택)" } });
 		topic.value = p.topic;
 		topic.addEventListener("change", () => void this.setFields({ topic: topic.value.trim().replace(/^#/, "") || null }, false));
-		const list = main.createDiv({ cls: "st-thread" });
+		const list = main.createDiv({ cls: "st-thread st-thcard" });
 		p.parts.forEach((part, i) => {
 			const tp = list.createDiv({ cls: `st-tp${i === p.parts.length - 1 ? " is-last" : ""}` });
 			tp.createDiv({ cls: "st-av", text: String(i + 1) });
 			const body = tp.createDiv({ cls: "st-grow" });
+			const hd = body.createDiv({ cls: "st-thhd" });
+			hd.createEl("b", { text: "내 계정" });
+			if (i === 0) hd.createSpan({ text: "첫 글 · 멈추게 하는 한 줄" });
+			else if (i === p.parts.length - 1) hd.createSpan({ text: "마지막 글" });
 			const box = body.createDiv({ cls: "st-tbox" });
 			const foot = body.createDiv({ cls: "st-tfoot" });
-			const bar = foot.createDiv({ cls: "st-bar" }).createEl("i");
+			const bar = foot.createSpan({ cls: "st-ring" });
 			const n = foot.createSpan({ text: "" });
 			const upd = (v: string) => {
 				const c = charCount(v);
-				bar.style.width = `${Math.min(100, (c / p.channel.limit) * 100)}%`;
+				bar.style.setProperty("--p", `${Math.min(100, (c / p.channel.limit) * 100)}%`);
+				bar.toggleClass("is-warn", c > p.channel.limit * 0.9 && c <= p.channel.limit);
 				bar.toggleClass("is-over", c > p.channel.limit);
 				n.setText(`${c} / ${p.channel.limit}`);
 				n.toggleClass("st-bad", c > p.channel.limit);
