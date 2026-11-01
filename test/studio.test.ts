@@ -12,7 +12,11 @@ import {
 	markDropped,
 	markWritten,
 	unmarkWritten,
+	channelMinLeadMs,
 	defaultSchedule,
+	prefillSchedule,
+	SCHEDULE_PRESETS,
+	schedulePresetAt,
 	newPostId,
 	parseGlgam,
 	parsePost,
@@ -323,6 +327,47 @@ test("delete a post: its 글감 drops the link, back to 대기 when none is left
 test("default 예약: today at the next full hour (KST), late night → tomorrow 08:00", () => {
 	assert.equal(defaultSchedule(new Date("2026-01-14T05:20:00Z")), "2026-01-14 15:00");
 	assert.equal(defaultSchedule(new Date("2026-01-14T14:30:00Z")), "2026-01-15 08:00");
+});
+
+test("예약 시각 미리 채우기: local time rounded up to the next minute", () => {
+	const at = (h: number, min: number, s = 0, ms = 0, day = 1) => new Date(2026, 10, day, h, min, s, ms);
+	assert.equal(prefillSchedule(at(12, 0, 0, 0)), "2026-11-01 12:00");
+	assert.equal(prefillSchedule(at(12, 0, 0, 1)), "2026-11-01 12:01");
+	assert.equal(prefillSchedule(at(12, 4, 59, 999)), "2026-11-01 12:05");
+	assert.equal(prefillSchedule(at(23, 59, 1, 0)), "2026-11-02 00:00");
+});
+
+test("예약 프리셋: 5분 뒤는 5분 더한 뒤 다음 분으로 올림", () => {
+	const at = (h: number, min: number, s = 0, ms = 0) => new Date(2026, 10, 1, h, min, s, ms);
+	assert.deepEqual(SCHEDULE_PRESETS.map((x) => x.label), ["5분 뒤", "오전 7시", "점심 12시", "퇴근 5시 반"]);
+	assert.equal(schedulePresetAt("plus5", "li", at(12, 0, 0, 0)), "2026-11-01 12:05");
+	assert.equal(schedulePresetAt("plus5", "th", at(12, 0, 0, 1)), "2026-11-01 12:06");
+	assert.equal(schedulePresetAt("plus5", "ig", at(12, 0, 59, 0)), "2026-11-01 12:06");
+	assert.equal(schedulePresetAt("plus5", "li", at(23, 55, 0, 0)), "2026-11-02 00:00");
+	assert.equal(schedulePresetAt("plus5", "ig", at(23, 56, 30, 0)), "2026-11-02 00:02");
+});
+
+test("예약 프리셋: 고정 시각은 채널 여유(li·th 60초, ig 120초) 안이면 내일", () => {
+	assert.equal(channelMinLeadMs("li"), 60_000);
+	assert.equal(channelMinLeadMs("th"), 60_000);
+	assert.equal(channelMinLeadMs("ig"), 120_000);
+	const at = (h: number, min: number, s = 0, ms = 0, day = 1) => new Date(2026, 10, day, h, min, s, ms);
+	assert.equal(schedulePresetAt("am7", "li", at(6, 58, 0)), "2026-11-01 07:00");
+	assert.equal(schedulePresetAt("am7", "th", at(6, 58, 0)), "2026-11-01 07:00");
+	assert.equal(schedulePresetAt("am7", "ig", at(6, 58, 0)), "2026-11-01 07:00");
+	assert.equal(schedulePresetAt("am7", "li", at(6, 59, 0)), "2026-11-01 07:00");
+	assert.equal(schedulePresetAt("am7", "ig", at(6, 59, 0)), "2026-11-02 07:00");
+	assert.equal(schedulePresetAt("am7", "li", at(6, 59, 0, 1)), "2026-11-02 07:00");
+	assert.equal(schedulePresetAt("am7", "th", at(7, 0, 0)), "2026-11-02 07:00");
+	assert.equal(schedulePresetAt("noon", "li", at(11, 59, 0)), "2026-11-01 12:00");
+	assert.equal(schedulePresetAt("noon", "ig", at(11, 59, 0)), "2026-11-02 12:00");
+	assert.equal(schedulePresetAt("noon", "ig", at(9, 0, 0)), "2026-11-01 12:00");
+	assert.equal(schedulePresetAt("pm1730", "li", at(17, 29, 0)), "2026-11-01 17:30");
+	assert.equal(schedulePresetAt("pm1730", "th", at(17, 29, 0)), "2026-11-01 17:30");
+	assert.equal(schedulePresetAt("pm1730", "ig", at(17, 29, 0)), "2026-11-02 17:30");
+	assert.equal(schedulePresetAt("pm1730", "li", at(17, 30, 0)), "2026-11-02 17:30");
+	assert.equal(schedulePresetAt("pm1730", "ig", at(18, 0, 0, 0, 30)), "2026-12-01 17:30");
+	assert.equal(schedulePresetAt("am7", "li", new Date(2026, 11, 31, 8, 0, 0)), "2027-01-01 07:00");
 });
 
 test("발행 결과 throttle: an all-miss round does not start the 5-minute wait", () => {

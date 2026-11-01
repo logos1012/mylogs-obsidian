@@ -1013,6 +1013,64 @@ export function defaultSchedule(now: Date): string {
 	return `${day} ${String(h).padStart(2, "0")}:00`;
 }
 
+/** Local wall clock as `YYYY-MM-DD HH:mm` (seconds dropped). */
+function formatLocalMinute(d: Date): string {
+	const p = (n: number) => String(n).padStart(2, "0");
+	return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** Round up to the next local minute. An exact minute (0s, 0ms) stays. */
+export function ceilLocalMinute(at: Date): Date {
+	const out = new Date(at.getTime());
+	if (out.getSeconds() === 0 && out.getMilliseconds() === 0) return out;
+	out.setSeconds(0, 0);
+	out.setMinutes(out.getMinutes() + 1);
+	return out;
+}
+
+/**
+ * Empty 예약 field: this device's current local time, rounded up to the next minute.
+ * Shown until the user edits or sends; it does not replace a time already stored.
+ * The intake still reads the saved string as KST, and the lead pre-check is unchanged.
+ */
+export function prefillSchedule(now: Date = new Date()): string {
+	return formatLocalMinute(ceilLocalMinute(now));
+}
+
+/** Minimum lead the schedule pre-check uses. Instagram 120s; LinkedIn and Threads 60s. */
+export function channelMinLeadMs(channel: ChannelKey): number {
+	return channel === "ig" ? 120_000 : 60_000;
+}
+
+export type SchedulePreset = "plus5" | "am7" | "noon" | "pm1730";
+
+export const SCHEDULE_PRESETS: { id: SchedulePreset; label: string }[] = [
+	{ id: "plus5", label: "5분 뒤" },
+	{ id: "am7", label: "오전 7시" },
+	{ id: "noon", label: "점심 12시" },
+	{ id: "pm1730", label: "퇴근 5시 반" },
+];
+
+const PRESET_CLOCK: Record<Exclude<SchedulePreset, "plus5">, [number, number]> = {
+	am7: [7, 0],
+	noon: [12, 0],
+	pm1730: [17, 30],
+};
+
+/**
+ * Preset 예약 instant on the local clock.
+ * 「5분 뒤」 is now + 5 minutes, then rounded up to the next minute.
+ * Fixed clocks use the next occurrence: today when that time is still at least
+ * the channel lead ahead, otherwise tomorrow.
+ */
+export function schedulePresetAt(preset: SchedulePreset, channel: ChannelKey, now: Date = new Date()): string {
+	if (preset === "plus5") return formatLocalMinute(ceilLocalMinute(new Date(now.getTime() + 5 * 60_000)));
+	const [hour, minute] = PRESET_CLOCK[preset];
+	const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0);
+	if (target.getTime() < now.getTime() + channelMinLeadMs(channel)) target.setDate(target.getDate() + 1);
+	return formatLocalMinute(target);
+}
+
 export function markDropped(raw: string, why: string): string {
 	const m = GL_RE.exec(raw);
 	if (!m) return raw;

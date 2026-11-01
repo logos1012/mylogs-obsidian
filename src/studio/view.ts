@@ -28,7 +28,6 @@ import {
 	channelByKey,
 	CHANNELS,
 	charCount,
-	defaultSchedule,
 	fastPollEvery,
 	formatPollSummary,
 	FORMATS,
@@ -39,6 +38,9 @@ import {
 	postProblems,
 	postState,
 	type PostStateKind,
+	prefillSchedule,
+	SCHEDULE_PRESETS,
+	schedulePresetAt,
 	scheduledInstant,
 	PRIVATE_HINT,
 	type Source,
@@ -1443,21 +1445,31 @@ export class StudioView extends ItemView {
 		if (real.warning) g.createDiv({ cls: "st-warn-banner", text: real.warning });
 		g.createEl("h2", { text: "예약" });
 		const assumed = !real.scheduled && real.stage !== "발행";
-		// shown as today; written when sent or changed
-		const p: Post = assumed ? { ...real, scheduled: defaultSchedule(new Date()) } : real;
+		// shown as the current local minute; written when sent, edited, or a preset is chosen
+		const p: Post = assumed ? { ...real, scheduled: prefillSchedule(new Date()) } : real;
 		const problems = postProblems(p, { mediaPrefix: publicPrefix(s3Config(this.plugin)) });
 		const row = g.createDiv({ cls: "st-schedin" });
 		const date = row.createEl("input", { attr: { type: "date" } });
-		const time = row.createEl("input", { attr: { type: "time", step: "300" } });
+		const time = row.createEl("input", { attr: { type: "time", step: "60" } });
 		date.value = p.scheduled.slice(0, 10);
-		time.value = p.scheduled.slice(11, 16) || "08:00";
+		time.value = p.scheduled.slice(11, 16) || "00:00";
 		const save = () => {
 			if (!date.value) return;
-			void this.setFields({ scheduled: `${date.value} ${time.value || "08:00"}` });
+			void this.setFields({ scheduled: `${date.value} ${time.value || "00:00"}` });
 		};
 		date.addEventListener("change", save);
 		time.addEventListener("change", save);
-		if (assumed) g.createDiv({ cls: "st-tiny st-faint", text: "오늘로 잡아 뒀어요. 바꾸거나 보내면 저장돼요." });
+		const chips = row.createDiv({ cls: "st-chips st-timepresets" });
+		for (const preset of SCHEDULE_PRESETS) {
+			const b = chips.createEl("button", { text: preset.label, attr: { type: "button" } });
+			b.addEventListener("click", () => {
+				const at = schedulePresetAt(preset.id, p.channel.key, new Date());
+				date.value = at.slice(0, 10);
+				time.value = at.slice(11, 16);
+				void this.setFields({ scheduled: at });
+			});
+		}
+		if (assumed) g.createDiv({ cls: "st-tiny st-faint", text: "지금 시각으로 잡아 뒀어요. 바꾸거나 보내면 저장돼요." });
 		for (const x of problems) if (!(x.text.startsWith("예약 날짜") && !p.scheduled)) g.createDiv({ cls: `st-prob is-${x.level}`, text: x.text });
 		const hook = channelEndpoint(this.plugin, p.channel.key);
 		if (p.channel.key === "th" && !hook) g.createDiv({ cls: "st-prob is-block", text: "스레드 접수 주소를 설정 › 콘텐츠 스튜디오에 넣어 주세요." });
