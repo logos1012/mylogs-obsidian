@@ -209,7 +209,10 @@ test("linkedin webhook header: x-studio-key only when the linkedin key is set", 
 	assert.deepEqual(webhookHeaders("li", "   "), {});
 	assert.deepEqual(webhookHeaders("th", "studio-key"), { "x-studio-key": "studio-key" });
 	assert.deepEqual(webhookHeaders("th", ""), {});
-	assert.deepEqual(webhookHeaders("ig", "studio-key"), {});
+	assert.deepEqual(webhookHeaders("ig", "studio-key"), { "x-studio-key": "studio-key" });
+	assert.deepEqual(webhookHeaders("ig", "  studio-key  "), { "x-studio-key": "studio-key" });
+	assert.deepEqual(webhookHeaders("ig", ""), {});
+	assert.deepEqual(webhookHeaders("ig", "   "), {});
 });
 
 test("s3 prefix: default is artifacts/studio; only the old default studio migrates", () => {

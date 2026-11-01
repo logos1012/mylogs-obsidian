@@ -17,7 +17,7 @@ import { DEFAULT_S3_PREFIX, isS3Ready, listObjects, type S3Config, type Send } f
 export interface StudioSecrets {
 	s3KeyId: string;
 	s3Secret: string;
-	/** LinkedIn and Threads `x-studio-key`. Empty = do not send the header. */
+	/** LinkedIn, Threads, and Instagram `x-studio-key`. Empty = do not send the header. */
 	studioKey: string;
 	/** Threads intake URL. Empty = do not send. Never a hard-coded endpoint. */
 	threadsIntake: string;
@@ -91,7 +91,7 @@ export function renderStudioSettings(el: HTMLElement, plugin: MyLogsPlugin): voi
 			}),
 		);
 	text("링크드인 웹훅", "「예약 보내기」·「예약 취소」가 POST 할 곳 (API Gateway). 본문 형식은 그대로예요.", () => sec.webhook.li, (v) => ((sec.webhook.li = v), saveSec()), true, "https://….execute-api.….amazonaws.com/…");
-	text("링크드인 키 (x-studio-key)", "값이 있으면 링크드인·스레드 예약·취소 POST에 헤더 x-studio-key 로 붙여요. 비우면 헤더를 안 보내요. 이 기기에만 저장", () => sec.studioKey, (v) => ((sec.studioKey = v), saveSec()), true);
+	text("링크드인 키 (x-studio-key)", "값이 있으면 링크드인·스레드·인스타그램 예약·취소 POST에 헤더 x-studio-key 로 붙여요. 비우면 헤더를 안 보내요. 이 기기에만 저장", () => sec.studioKey, (v) => ((sec.studioKey = v), saveSec()), true);
 	text("스레드 접수 주소", "스레드 「예약 보내기」·「예약 취소」가 POST 할 곳. 비어 있으면 보내지 않아요. 링크드인과 같은 x-studio-key 를 붙여요.", () => sec.threadsIntake, (v) => ((sec.threadsIntake = v), saveSec()), true, "https://….execute-api.….amazonaws.com/…");
 	text("인스타그램 웹훅", "API Gateway → Lambda", () => sec.webhook.ig, (v) => ((sec.webhook.ig = v), saveSec()), true, "https://….execute-api.….amazonaws.com/…");
 }
