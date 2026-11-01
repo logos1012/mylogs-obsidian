@@ -206,11 +206,24 @@ export function migrateS3Prefix(saved: string | undefined | null): string {
 /** Publish results. Not derived from `S3Config.prefix` — that folder is uploads only. */
 export const RESULT_PREFIX = "studio/results";
 
-/** `studio/results/{id}.json`. Empty when `id` is not a single path segment. */
-export function resultObjectKey(id: string): string {
+/**
+ * LinkedIn: `studio/results/{id}.json`. Threads (`th`): `studio/results/threads/{id}.json`.
+ * Empty for a bad id, a `_…` object (`_token.json`), or the leftover test id.
+ */
+export function resultObjectKey(id: string, channel = ""): string {
 	const safe = id.trim();
-	if (!safe || /[\\/\u0000]/.test(safe) || safe === "." || safe === "..") return "";
+	if (!safe || /[\\/\u0000]/.test(safe) || safe === "." || safe === ".." || safe.startsWith("_") || safe === "TEST-THREADS-001") return "";
+	if (channel === "th" || channel === "threads") return `${RESULT_PREFIX}/threads/${safe}.json`;
 	return `${RESULT_PREFIX}/${safe}.json`;
+}
+
+/** Public base of uploaded media, from the user's bucket · region · folder. No hard-coded host. */
+export function publicPrefix(c: { bucket: string; region: string; prefix: string }): string {
+	const bucket = c.bucket.trim();
+	const region = c.region.trim();
+	const prefix = c.prefix.trim().replace(/^\/+|\/+$/g, "");
+	if (!bucket || !region || !prefix) return "";
+	return `https://${bucket}.s3.${region}.amazonaws.com/${prefix}/`;
 }
 
 /** Signed GetObject. HTTP status is returned as-is (404 / 403 are not thrown). */

@@ -422,12 +422,11 @@ export interface Problem {
 }
 
 /** What stops 「예약 보내기」 (and what only warns). */
-export function postProblems(p: Post): Problem[] {
+export function postProblems(p: Post, ctx?: { now?: number; mediaPrefix?: string }): Problem[] {
 	const out: Problem[] = [];
 	const ch = p.channel;
 	if (ch.key === "th") {
-		if (!p.parts.some((x) => x.text.trim())) out.push({ level: "block", text: "글이 비어 있어요." });
-		p.parts.forEach((x, i) => charCount(x.text) > ch.limit && out.push({ level: "block", text: `${i + 1}번 글이 ${ch.limit}자를 넘어요 (${charCount(x.text)}자).` }));
+		for (const text of threadsProblems(threadsDraft(p), ctx)) out.push({ level: "block", text });
 	} else {
 		if (!p.text.trim()) out.push({ level: "block", text: ch.key === "ig" ? "캡션이 비어 있어요." : "본문이 비어 있어요." });
 		const n = charCount(captionOut(p));
@@ -447,6 +446,109 @@ export function postProblems(p: Post): Problem[] {
 
 export const isVideo = (u: string) => /\.(mp4|mov|m4v|webm)(\?|$)/i.test(u);
 
+// ───────────────────────── Threads intake (same rules as studio-threads-intake) ─────────────────────────
+
+export const THREADS_MEDIA_EXT = new Set(["jpg", "jpeg", "png", "gif", "mp4", "mov", "webp"]);
+export const THREADS_MAX_TEXT = 500;
+export const THREADS_MAX_LINKS = 5;
+export const THREADS_MAX_MEDIA = 20;
+export const THREADS_MAX_ALT = 1000;
+export const THREADS_MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+export const THREADS_MAX_VIDEO_BYTES = 1024 * 1024 * 1024;
+export const THREADS_MIN_LEAD_MS = 60_000;
+const THREADS_ID_RE = /^[A-Za-z0-9_-]{1,61}$/;
+const THREADS_LINK_RE = /https?:\/\/[^\s<>"']+/gi;
+
+/** Threads length: 1 per character, except emoji / ZWJ / the BMP symbol block, which count as UTF-8 bytes. */
+export function threadsTextLength(text: string): number {
+	let n = 0;
+	for (const ch of text) {
+		const cp = ch.codePointAt(0) ?? 0;
+		if (cp >= 0x10000 || (cp >= 0x2000 && cp <= 0x2bff) || (cp >= 0xfe00 && cp <= 0xfe0f) || cp === 0x200d) n += new TextEncoder().encode(ch).length;
+		else n += 1;
+	}
+	return n;
+}
+
+export function threadsUniqueLinks(text: string): string[] {
+	return [...new Set([...text.matchAll(THREADS_LINK_RE)].map((m) => m[0].replace(/[.,!?)\]}>\'\"]+$/, "").toLowerCase()))];
+}
+
+export function mediaExtOf(ref: string): string | null {
+	const path = ref.split("?")[0].split("#")[0];
+	const last = path.replace(/\/+$/, "").split("/").pop() ?? "";
+	if (!last.includes(".")) return null;
+	return last.split(".").pop()!.toLowerCase();
+}
+
+/** Local file gate before upload. Null means the file may go up. */
+export function threadsUploadProblem(name: string, size: number): string | null {
+	const ext = mediaExtOf(name);
+	if (!ext || !THREADS_MEDIA_EXT.has(ext)) return `지원하지 않는 미디어: ${ext || "알 수 없음"} (jpg/jpeg/png/gif/mp4/mov/webp만 가능)`;
+	const video = ext === "mp4" || ext === "mov";
+	if (video && size > THREADS_MAX_VIDEO_BYTES) return "영상이 1GB를 넘어요.";
+	if (!video && size > THREADS_MAX_IMAGE_BYTES) return "이미지가 8MB를 넘어요.";
+	return null;
+}
+
+export interface ThreadsDraft {
+	text: string;
+	media: (string | { url: string; alt?: string })[];
+	partsCount: number;
+	topic: string;
+	scheduled: string;
+	id: string;
+}
+
+/** One filled 타래 part, or the single body. Multi-part is reported, not sent. */
+export function threadsDraft(p: Post): ThreadsDraft {
+	const parts = p.parts.filter((x) => x.text.trim() || x.media.length);
+	const first = parts[0];
+	const text = (first?.text ?? p.text).trim();
+	const urls = first ? first.media : p.media;
+	const media = urls.map((url, i) => {
+		const alt = (p.alt[i] ?? "").trim();
+		return alt ? { url, alt } : url;
+	});
+	return { text, media, partsCount: parts.length, topic: p.topic.trim(), scheduled: p.scheduled, id: p.id.trim() };
+}
+
+/** Korean block messages. `mediaPrefix` is `https://{bucket}.s3.{region}.amazonaws.com/{prefix}/` from settings — never a hard-coded host. */
+export function threadsProblems(d: ThreadsDraft, ctx: { now?: number; mediaPrefix?: string } = {}): string[] {
+	const out: string[] = [];
+	if (d.partsCount > 1) out.push("이어쓰기(글 2개 이상)는 아직 보낼 수 없어요.");
+	if (!d.text && !d.media.length) out.push("본문도 미디어도 없어요.");
+	const n = threadsTextLength(d.text);
+	if (n > THREADS_MAX_TEXT) out.push(`본문이 500자를 넘어요: ${n}/${THREADS_MAX_TEXT} (이모티콘은 바이트 수로 셈)`);
+	const links = threadsUniqueLinks(d.text);
+	if (links.length > THREADS_MAX_LINKS) out.push(`링크가 너무 많음: ${links.length}/${THREADS_MAX_LINKS}`);
+	if (d.media.length > THREADS_MAX_MEDIA) out.push(`미디어가 너무 많음: ${d.media.length}/${THREADS_MAX_MEDIA}`);
+	const prefix = (ctx.mediaPrefix ?? "").trim();
+	if (d.media.length && !prefix) out.push("S3 버킷과 리전을 설정해야 스레드 미디어 주소를 확인할 수 있어요.");
+	for (const item of d.media) {
+		const url = typeof item === "string" ? item : item.url;
+		const alt = typeof item === "string" ? "" : (item.alt ?? "");
+		if (!url) {
+			out.push("미디어 항목에 url이 없어요.");
+			continue;
+		}
+		if (prefix && (!url.startsWith(prefix) || url.includes(".."))) out.push("허용되지 않은 미디어 주소예요. 설정의 S3 폴더 공개 주소만 보낼 수 있어요.");
+		const ext = mediaExtOf(url);
+		if (!ext || !THREADS_MEDIA_EXT.has(ext)) out.push(`지원하지 않는 미디어: ${ext || "알 수 없음"} (jpg/jpeg/png/gif/mp4/mov/webp만 가능)`);
+		if (alt && [...alt].length > THREADS_MAX_ALT) out.push("alt는 1000자 이하여야 해요.");
+	}
+	if (d.topic && (d.topic.length < 1 || d.topic.length > 50 || d.topic.includes(".") || d.topic.includes("&"))) out.push("주제는 1~50자이고 . 와 & 는 쓸 수 없어요.");
+	if (d.id && !THREADS_ID_RE.test(d.id)) out.push("글 id는 영문·숫자·_·- 만, 61자 이하여야 해요.");
+	if (!d.id) out.push("글을 보낼 id가 없어요.");
+	if (d.scheduled) {
+		const at = scheduledInstant(d.scheduled);
+		const now = ctx.now ?? Date.now();
+		if (at == null) out.push("예약 시각을 읽을 수 없어요.");
+		else if (at < now + THREADS_MIN_LEAD_MS) out.push("예약 시각은 지금보다 1분 뒤여야 해요.");
+	}
+	return out;
+}
+
 export interface Payload {
 	id: string;
 	action: "schedule" | "cancel";
@@ -456,7 +558,8 @@ export interface Payload {
 	title: string;
 	text: string;
 	parts?: { text: string; media: string[] }[];
-	media: string[];
+	/** URL string, or `{url, alt}` for Threads. */
+	media: (string | { url: string; alt?: string })[];
 	alt?: string[];
 	ratio?: string;
 	topic?: string;
@@ -472,8 +575,9 @@ export function buildPayload(p: Post, action: "schedule" | "cancel" = "schedule"
 	const base: Payload = { id: p.id, action, channel: p.channel.api, format: p.format, at: atIso(p.scheduled), title: p.title, text: "", media: [] };
 	if (action === "cancel") return base;
 	if (p.channel.key === "th") {
-		const parts = p.parts.filter((x) => x.text.trim() || x.media.length).map((x) => ({ text: x.text, media: x.media }));
-		return { ...base, text: parts[0]?.text ?? "", parts, media: parts.flatMap((x) => x.media), ...(p.topic ? { topic: p.topic } : {}) };
+		const d = threadsDraft(p);
+		// One post only. `parts` is omitted so a 타래 is never sent as 이어쓰기. Title stays in the JSON; intake does not publish it.
+		return { ...base, text: d.text, media: d.media, ...(d.topic ? { topic: d.topic } : {}) };
 	}
 	return { ...base, text: captionOut(p), media: p.media, ...(p.channel.key === "ig" ? { ratio: p.ratio, alt: p.alt } : {}) };
 }
@@ -653,10 +757,10 @@ export function resultPatch(p: Post, r: ResultRow | undefined): Record<string, F
 	return null;
 }
 
-/** Header for a channel webhook POST. LinkedIn sends `x-studio-key` only when the setting is non-empty. */
+/** Header for an intake POST. LinkedIn and Threads send `x-studio-key` only when the setting is non-empty. */
 export function webhookHeaders(channel: ChannelKey, studioKey: string): Record<string, string> {
 	const key = studioKey.trim();
-	if (channel !== "li" || !key) return {};
+	if ((channel !== "li" && channel !== "th") || !key) return {};
 	return { "x-studio-key": key };
 }
 
