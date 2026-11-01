@@ -2,9 +2,9 @@
  * Flywheel view (`mylogs-flywheel`, v3 — 「Flywheel 화면 설계 v2」).
  *
  *   오늘     요소 카드 여러 열: 어떻게 기록됐나 · 최소 행동 · 최근 기록 · 최근 7일 · 「했음」 · ✎ 한 줄
- *   바퀴     등록부 순서의 카드, 사이 화살표는 `다음::`
- *   재료함   모든 요소 기록의 `#재료`
  *   4주      요소 × 28일, 칸을 눌러 지난날 고치기
+ *
+ * (0.39: 「바퀴」 · 「재료함」 탭은 뺐다. SNS 글감은 퍼스널 브랜딩의 콘텐츠 스튜디오가 맡는다.)
  *
  * A card opens the element popup (`element-modal.ts`, like the project workspace). Ids stay in the
  * files only. Nothing here moves a Pinboard goal.
@@ -19,17 +19,17 @@ import { prependChangeLog } from "../desk/ops.ts";
 import { vaultIO } from "../pinboard/create-actions.ts";
 import { commitBatch } from "../pinboard/batch.ts";
 import { isPlaceholder } from "./ops.ts";
-import { addRecordLine, coverSrc, createElement, createOutput, migrateFolders, nowHm, setDay, wheelRoot } from "./actions.ts";
+import { addRecordLine, coverSrc, createElement, migrateFolders, nowHm, setDay, wheelRoot } from "./actions.ts";
+import { activateStudio } from "../studio/view.ts";
 import { loadScreen, markOf, type ElementStats, type ScreenData } from "./screen-data.ts";
-import { MATERIAL_TAG, nextText, orderRegistry, SOURCE_LABEL } from "./wheel.ts";
+import { SOURCE_LABEL } from "./wheel.ts";
 import { openElementModal } from "./element-modal.ts";
 import type { FlywheelElement } from "./model.ts";
-import { addDays } from "../parser.ts";
 
 export const VIEW_TYPE_FLYWHEEL = "mylogs-flywheel";
 
-type Tab = "today" | "wheel" | "mats" | "weeks";
-const TABS: [Tab, string][] = [["today", "오늘"], ["wheel", "바퀴"], ["mats", "재료함"], ["weeks", "4주"]];
+type Tab = "today" | "weeks";
+const TABS: [Tab, string][] = [["today", "오늘"], ["weeks", "4주"]];
 const MARK_CLS: Record<string, string> = { x: "x", "-": "m", 쉼: "r", "": "", out: "o" };
 
 const err = (e: unknown) => new Notice(`MyLogs: ${e instanceof Error ? e.message : String(e)}`, 10000);
@@ -42,8 +42,6 @@ export class FlywheelView extends ItemView {
 	private seq = 0;
 	private busy = false;
 	private writing = new Set<string>();
-	private matFilter = "";
-	private showUsed = false;
 
 	constructor(leaf: WorkspaceLeaf, plugin: MyLogsPlugin) {
 		super(leaf);
@@ -139,8 +137,6 @@ export class FlywheelView extends ItemView {
 		this.renderHead(root, d);
 		if (!d.wheel.registry || d.wheel.elements.some((e) => e.folder && e.folder.slice(e.folder.lastIndexOf("/") + 1) !== e.name)) this.renderMigrate(root, d);
 		if (this.tab === "today") this.renderToday(root, d);
-		else if (this.tab === "wheel") this.renderWheel(root, d);
-		else if (this.tab === "mats") this.renderMaterials(root, d);
 		else this.renderWeeks(root, d);
 		this.contentEl.scrollTop = scroll;
 	}
@@ -164,7 +160,6 @@ export class FlywheelView extends ItemView {
 			{ x: 0, n: 0 },
 		);
 		const lines = [...d.stats.values()].reduce((n, s) => n + s.recLines, 0);
-		const left2 = d.materials.filter((m) => !d.used.has(m.anchor)).length;
 		const stats = left.createDiv({ cls: "fw3-stats" });
 		const stat = (k: string, v: string, hint?: string) => {
 			const s = stats.createSpan();
@@ -175,7 +170,6 @@ export class FlywheelView extends ItemView {
 		stat("오늘", `${done}/${live.length}`, resting ? `(쉼 ${resting})` : "");
 		stat("최근 7일", `${week.x}/${week.n}`);
 		stat("이달 기록", `${lines}줄`);
-		stat("남은 재료", String(left2));
 
 		const right = head.createDiv({ cls: "fw3-head-right" });
 		const seg = right.createDiv({ cls: "fw3-seg" });
@@ -188,7 +182,7 @@ export class FlywheelView extends ItemView {
 		}
 		const add = right.createEl("button", { cls: "fw3-btn", attr: { type: "button" } });
 		setIcon(add.createSpan({ cls: "fw3-ic" }), "plus");
-		add.appendText("요소");
+		add.appendText("플라이휠");
 		add.addEventListener("click", () => void this.addElementFlow());
 		const more = right.createEl("button", { cls: "clickable-icon", attr: { type: "button", "aria-label": "Flywheel 메뉴" } });
 		setIcon(more, "more-horizontal");
@@ -229,7 +223,7 @@ export class FlywheelView extends ItemView {
 		this.renderCheckin(root, d);
 		const shown = d.wheel.elements.filter((e) => e.status !== "폐기");
 		if (!shown.length) {
-			root.createDiv({ cls: "fw3-empty", text: "요소가 없어요. 「＋ 요소」로 시작해요." });
+			root.createDiv({ cls: "fw3-empty", text: "아직 없어요. 「＋ 플라이휠」로 시작해요." });
 			return;
 		}
 		const grid = root.createDiv({ cls: "fw3-grid" });
@@ -243,7 +237,7 @@ export class FlywheelView extends ItemView {
 		const e = s.e;
 		const notStarted = !!e.since && e.since > d.today;
 		const resting = e.status === "쉼";
-		const card = grid.createDiv({ cls: `fw3-card${s.today === "x" ? " is-done" : ""}${resting || notStarted ? " is-rest" : ""}${this.writing.has(e.id) ? " is-writing" : ""}` });
+		const card = grid.createDiv({ cls: `fw3-card${s.today === "x" ? " is-done" : ""}${resting ? " is-rest" : ""}${notStarted ? " is-soon" : ""}${this.writing.has(e.id) ? " is-writing" : ""}` });
 		card.addEventListener("click", (ev) => {
 			if ((ev.target as HTMLElement).closest("button, input, a")) return;
 			this.openElement(e.id);
@@ -271,28 +265,29 @@ export class FlywheelView extends ItemView {
 
 		const line = card.createDiv({ cls: "fw3-oneline" });
 		const input = line.createEl("input", { attr: { type: "text", placeholder: "오늘 한 것 한 줄 (Enter)", enterkeyhint: "done" } });
-		const star = line.createEl("button", { cls: "fw3-star", text: "☆", attr: { type: "button", "aria-label": "재료로 표시" } });
-		tip(star, "재료로 표시 (#재료)");
-		star.addEventListener("click", () => {
-			star.toggleClass("is-on", !star.hasClass("is-on"));
-			star.setText(star.hasClass("is-on") ? "★" : "☆");
-		});
 		input.addEventListener("keydown", (ev) => {
 			if (ev.key === "Escape") {
 				this.writing.delete(e.id);
 				card.removeClass("is-writing");
 			}
 			if (ev.key !== "Enter" || ev.isComposing || !input.value.trim()) return;
-			const text = input.value.trim() + (star.hasClass("is-on") ? ` ${MATERIAL_TAG}` : "");
+			const text = input.value.trim();
 			input.value = "";
 			this.writing.delete(e.id);
 			void this.run(() => addRecordLine(this.plugin, e, d.today, text));
 		});
 
+		if (e.workspace === "studio") {
+			const st = card.createEl("button", { cls: "fw3-studio-btn", attr: { type: "button" } });
+			setIcon(st.createSpan({ cls: "fw3-ic" }), "pen-tool");
+			st.appendText("콘텐츠 스튜디오");
+			st.createSpan({ cls: "fw3-faint", text: " 글감 · 보드 · 예약 →" });
+			st.addEventListener("click", () => void activateStudio(this.plugin, this.leaf));
+		}
 		const foot = card.createDiv({ cls: "fw3-foot" });
 		const dots = foot.createDiv({ cls: "fw3-dots" });
 		for (const x of s.last7) tip(dots.createSpan({ cls: `fw3-c c-${MARK_CLS[x.mark]}${x.iso === d.today ? " is-today" : ""}` }), `${moment(x.iso, "YYYY-MM-DD").format("M/D (dd)")}`);
-		foot.createSpan({ cls: "fw3-meta", text: `기록 ${s.recDays}일 · 산출물 ${s.outputs.length + s.drafts.length}` });
+		foot.createSpan({ cls: "fw3-meta", text: `기록 ${s.recDays}일` });
 		if (resting || notStarted || e.status === "폐기") return;
 		const pen = foot.createEl("button", { cls: "clickable-icon fw3-pen", attr: { type: "button", "aria-label": "한 줄 남기기" } });
 		setIcon(pen, "pencil");
@@ -308,135 +303,6 @@ export class FlywheelView extends ItemView {
 			const undo = s.today === "x";
 			if (!undo) this.writing.add(e.id);
 			void this.run(() => setDay(this.plugin, e, d.today, undo ? "" : "x", undo ? null : undefined));
-		});
-	}
-
-	private renderWheel(root: HTMLElement, d: ScreenData): void {
-		root.createDiv({ cls: "fw3-hint", text: "등록부 순서대로. 화살표는 「다음」 — 이게 돌면 무엇이 좋아지나. 카드를 누르면 요소를 열어요." });
-		const ring = root.createDiv({ cls: "fw3-ring" });
-		const live = d.wheel.elements.filter((e) => e.status !== "폐기");
-		live.forEach((e, i) => {
-			const c = ring.createDiv({ cls: `fw3-rcard${e.status === "쉼" ? " is-rest" : ""}` });
-			c.addEventListener("click", (ev) => {
-				if ((ev.target as HTMLElement).closest("button")) return;
-				this.openElement(e.id);
-			});
-			const rc = coverSrc(this.app, e);
-			if (rc) {
-				c.addClass("has-cover");
-				c.createDiv({ cls: "fw3-card-cover" }).createEl("img", { attr: { src: rc, alt: "", loading: "lazy", draggable: "false" } });
-			}
-			const top = c.createDiv({ cls: "fw3-card-top" });
-			top.createEl("h3", { text: e.name });
-			if (e.status === "쉼") top.createSpan({ cls: "fw3-src s-rest", text: "쉼" });
-			const mv = top.createEl("button", { cls: "clickable-icon", attr: { type: "button", "aria-label": "순서" } });
-			setIcon(mv, "arrow-up-down");
-			mv.addEventListener("click", (ev) => {
-				const m = new Menu();
-				if (i > 0) m.addItem((it) => it.setTitle("앞으로").setIcon("arrow-left").onClick(() => void this.reorder(live, i, i - 1)));
-				if (i < live.length - 1) m.addItem((it) => it.setTitle("뒤로").setIcon("arrow-right").onClick(() => void this.reorder(live, i, i + 1)));
-				m.showAtMouseEvent(ev);
-			});
-			const id = e.fields["정체성"];
-			c.createDiv({ cls: `fw3-ident${isPlaceholder(id) ? " is-empty" : ""}`, text: isPlaceholder(id) ? "정체성 — 채워 주세요" : id });
-			const min = c.createDiv({ cls: "fw3-min" });
-			min.createSpan({ cls: "fw3-k", text: "최소" });
-			min.createEl("b", { text: isPlaceholder(e.fields["최소"]) ? "정해 주세요" : e.fields["최소"] });
-			if (!isPlaceholder(e.fields["보통"])) min.createSpan({ cls: "fw3-faint", text: ` · 보통 ${e.fields["보통"]}` });
-			const chips = c.createDiv({ cls: "fw3-chips" });
-			for (const g of e.goals) chips.createSpan({ cls: "fw3-pill is-goal", text: `◎ ${d.goals.get(g) ?? g}` });
-			for (const ch of e.channels) chips.createSpan({ cls: "fw3-pill is-ch", text: ch });
-			const nx = e.fields["다음"];
-			c.createDiv({ cls: `fw3-next${isPlaceholder(nx) ? " is-empty" : ""}`, text: isPlaceholder(nx) ? "다음 — 이게 돌면 무엇이 좋아지나요?" : `→ ${nextText(nx, d.wheel.elements)}` });
-			if (i < live.length - 1) c.createSpan({ cls: "fw3-arrow", text: "→" });
-		});
-		const gone = d.wheel.elements.filter((e) => e.status === "폐기");
-		if (gone.length) {
-			const det = root.createEl("details", { cls: "fw3-gone" });
-			det.createEl("summary", { text: `폐기한 요소 ${gone.length}` });
-			for (const e of gone) det.createDiv({ cls: "fw3-muted", text: e.name });
-		}
-	}
-
-	private async reorder(live: FlywheelElement[], from: number, to: number): Promise<void> {
-		const ids = live.map((e) => e.id);
-		const [x] = ids.splice(from, 1);
-		ids.splice(to, 0, x);
-		await this.run(async () => {
-			const io = vaultIO(this.app);
-			const path = this.data!.wheel.path;
-			const before = await io.read(path);
-			if (before === null) return;
-			await commitBatch(io, [{ path, before, after: prependChangeLog(orderRegistry(before, ids), moment().format("YYYY-MM-DD"), "바퀴 순서 바꿈") }]);
-		});
-	}
-
-	private renderMaterials(root: HTMLElement, d: ScreenData): void {
-		const bar = root.createDiv({ cls: "fw3-matbar" });
-		const filters = bar.createDiv({ cls: "fw3-filters" });
-		const names = [...new Set(d.materials.map((m) => m.elementName))];
-		for (const n of ["", ...names]) {
-			const b = filters.createEl("button", { cls: n === this.matFilter ? "is-on" : "", text: n || "전체", attr: { type: "button" } });
-			b.addEventListener("click", () => {
-				this.matFilter = n;
-				this.render();
-			});
-		}
-		const lab = bar.createEl("label", { cls: "fw3-small fw3-muted" });
-		const cb = lab.createEl("input", { attr: { type: "checkbox" } });
-		cb.checked = this.showUsed;
-		lab.appendText(" 쓴 재료도 보기");
-		cb.addEventListener("change", () => {
-			this.showUsed = cb.checked;
-			this.render();
-		});
-		const list = root.createDiv({ cls: "fw3-mats" });
-		const shown = d.materials.filter((m) => (!this.matFilter || m.elementName === this.matFilter) && (this.showUsed || !d.used.has(m.anchor)));
-		if (!shown.length) {
-			list.createDiv({ cls: "fw3-empty", text: d.materials.length ? "남은 재료가 없어요." : "아직 재료가 없어요. 기록에 ☆를 누르면 여기에 모여요." });
-			return;
-		}
-		for (const m of shown) {
-			const c = list.createDiv({ cls: `fw3-mat${d.used.has(m.anchor) ? " is-used" : ""}` });
-			const meta = c.createDiv({ cls: "fw3-mat-meta" });
-			meta.createSpan({ cls: "fw3-pill", text: m.elementName });
-			meta.createSpan({ text: moment(m.date, "YYYY-MM-DD").format("M/D") });
-			if (m.embed) meta.createSpan({ cls: "fw3-faint", text: "· Daily Pad 메모" });
-			const usedIn = d.used.get(m.anchor);
-			if (usedIn) meta.createSpan({ cls: "fw3-pill is-pub", text: `「${usedIn.replace(/^\d{4}-\d{2}-\d{2}\s+/, "")}」에 씀` });
-			c.createDiv({ cls: "fw3-mat-body", text: m.embed ? `↙ ${m.embed}` : m.text });
-			const acts = c.createDiv({ cls: "fw3-mat-acts" });
-			const b = acts.createEl("button", { cls: "fw3-btn is-sm", text: "게시물로", attr: { type: "button" } });
-			b.addEventListener("click", () => void this.postFromMaterial(d, m.anchor));
-			const o = acts.createEl("button", { cls: "fw3-btn is-sm is-ghost", text: "원문", attr: { type: "button" } });
-			o.addEventListener("click", () => void this.app.workspace.openLinkText(m.anchor, "", "tab"));
-		}
-	}
-
-	private async postFromMaterial(d: ScreenData, anchor: string): Promise<void> {
-		const els = d.wheel.elements.filter((e) => e.status !== "폐기");
-		const opts: [string, string][] = [];
-		for (const e of els) {
-			for (const ch of e.channels) opts.push([`${e.id}|${ch}`, `${e.name} · ${ch}`]);
-			opts.push([`${e.id}|`, `${e.name} · 채널 없음`]);
-		}
-		const v = await askForm(this.app, {
-			title: "재료로 게시물 만들기",
-			desc: "재료 글은 복사하지 않고 게시물 frontmatter `from`에 링크만 둬요.",
-			fields: [
-				{ key: "where", label: "어디에", type: "select", value: opts[0]?.[0] ?? "", options: opts },
-				{ key: "title", label: "제목", type: "text", value: "", placeholder: "파일 이름이 돼요" },
-			],
-			cta: "만들기",
-			validate: (x) => (x.title ? [] : ["제목을 적어 주세요."]),
-		});
-		if (!v) return;
-		const [id, ch] = v.where.split("|");
-		const e = els.find((x) => x.id === id);
-		if (!e) return;
-		await this.run(async () => {
-			const f = await createOutput(this.plugin, e, ch, v.title, [anchor]);
-			await this.app.workspace.getLeaf("tab").openFile(f);
 		});
 	}
 
@@ -514,7 +380,7 @@ export class FlywheelView extends ItemView {
 
 	private async addElementFlow(): Promise<void> {
 		const v = await askForm(this.app, {
-			title: "요소 추가",
+			title: "플라이휠 추가",
 			desc: "요소 교체(추가·폐기)는 분기에 한 번 이하가 좋아요. 폴더와 허브를 함께 만들어요.",
 			fields: [
 				{ key: "strong", label: "반복할수록 내가 강해지나요?", type: "select", value: "", options: [["", "골라 주세요"], ["yes", "예"], ["no", "아니오"]], desc: "아니면 프로젝트나 할 일이 맞아요." },
@@ -523,7 +389,7 @@ export class FlywheelView extends ItemView {
 				{ key: "min", label: "최소", type: "text", value: "", desc: "바쁜 날에도 2분이면 되는 버전", placeholder: "예: 걷기 15분" },
 				{ key: "normal", label: "보통", type: "text", value: "", placeholder: "예: 달리기 5km" },
 				{ key: "next", label: "다음", type: "text", value: "", placeholder: "이게 돌면 무엇이 좋아지나요?" },
-				{ key: "since", label: "시작", type: "date", value: addDays(moment().format("YYYY-MM-DD"), 1) },
+				{ key: "since", label: "시작", type: "date", value: moment().format("YYYY-MM-DD") },
 			],
 			cta: "추가",
 			validate: (x) => {

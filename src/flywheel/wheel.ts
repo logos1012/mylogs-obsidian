@@ -205,6 +205,7 @@ export function elementOf(row: RegistryRow | null, hubText: string | null, hubPa
 		goals,
 		channels: getFmList(hubText, "channels"),
 		cover: coverTarget(fm("cover")),
+		workspace: fm("workspace") || undefined,
 		fields,
 		folder,
 		hubPath,

@@ -27,7 +27,8 @@ export const APP_VIEWS: { type: string; label: string; icon: string; desc: strin
  * with the view. A tab switches to an open view of that type, or opens it in this tab.
  */
 export function mountAppNav(view: ItemView): void {
-	const current = view.getViewType();
+	// The 콘텐츠 스튜디오 lives under Flywheel.
+	const current = view.getViewType() === "mylogs-studio" ? "mylogs-flywheel" : view.getViewType();
 	view.containerEl.querySelectorAll(":scope > .mylogs-appnav").forEach((e) => e.remove());
 	const nav = createDiv({ cls: "mylogs-appnav", attr: { role: "navigation", "aria-label": "MyLogs 화면" } });
 	view.contentEl.before(nav);
@@ -41,7 +42,7 @@ export function mountAppNav(view: ItemView): void {
 		b.createSpan({ cls: "mylogs-appnav-label", text: v.label });
 		tip(b, v.desc);
 		b.addEventListener("click", () => {
-			if (!on) void goToView(view, v.type);
+			if (!on || view.getViewType() !== current) void goToView(view, v.type);
 		});
 	}
 	const plugin = (view as unknown as { plugin?: MyLogsPlugin }).plugin;
