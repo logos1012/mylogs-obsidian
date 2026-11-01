@@ -3,8 +3,8 @@
  *
  *   머리      ← 바퀴 · 이름 + 상태 · 정체성 · ⋯ (이름 바꾸기, 쉼/사용, 폐기, 허브 원문)
  *   오늘      최소 행동(크게) · 보통 · 어떻게 기록됐나 · 「했음」
- *   기록      한 줄 쓰기(☆ 재료) + 날짜별 기록
- *   초안·산출물  채널 탭, ＋ 게시물 / ＋ 산출물
+ *   기록      한 줄 쓰기 + 날짜별 기록
+ *   스튜디오   `workspace: studio` 요소만 — 콘텐츠 스튜디오 열기 (0.39: 게시물·재료는 스튜디오가 맡는다)
  *   요소 정보  방법 · 지금 다듬는 것 · 주요 결정
  *   옆        연결 목표 · 이달 수행 · 나온 프로젝트 · 작업 자료(기록/초안/산출물/작업실)
  */
@@ -14,25 +14,23 @@ import type MyLogsPlugin from "../main.ts";
 import { tip } from "../ui/tip.ts";
 import { askForm } from "../ui/modals.ts";
 import { pickTarget } from "../ui/mobile.ts";
-import { vaultIO } from "../pinboard/create-actions.ts";
-import { commitBatch } from "../pinboard/batch.ts";
 import { isPlaceholder } from "./ops.ts";
-import { addRecordLine, changeElement, coverSrc, createOutput, IMAGE_EXT, renameElement, setCover, setDay, setElementGoals, todayIso } from "./actions.ts";
+import { addRecordLine, changeElement, coverSrc, IMAGE_EXT, renameElement, setCover, setDay, setElementGoals, todayIso } from "./actions.ts";
+import { activateStudio } from "../studio/view.ts";
 import { type ElementStats, loadScreen, markOf, type ScreenData } from "./screen-data.ts";
 import type { FlywheelElement } from "./model.ts";
 import {
 	DECISIONS_SECTION,
 	type ElementFile,
 	hubSection,
-	MATERIAL_TAG,
 	METHOD_KEYS,
 	nextText,
 	recordPath,
+	recordSkeleton,
 	setHubFm,
 	setHubMethod,
 	setHubSection,
 	SOURCE_LABEL,
-	toggleMaterial,
 	TUNING_SECTION,
 } from "./wheel.ts";
 
@@ -48,7 +46,6 @@ class ElementModal extends Modal {
 	private onChange?: () => void;
 	private d: ScreenData | null = null;
 	private hubText = "";
-	private channel = "";
 	private busy = false;
 	private unwatch: (() => void) | null = null;
 
@@ -112,7 +109,7 @@ class ElementModal extends Modal {
 		}
 		const e = s.e;
 		const nav = el.createDiv({ cls: "fw3-ws-nav" });
-		const back = nav.createEl("button", { cls: "fw3-btn", text: "← 바퀴", attr: { type: "button" } });
+		const back = nav.createEl("button", { cls: "fw3-btn", text: "← Flywheel", attr: { type: "button" } });
 		back.addEventListener("click", () => this.close());
 		nav.createDiv({ cls: "fw3-grow" });
 		const more = nav.createEl("button", { cls: "clickable-icon", attr: { type: "button", "aria-label": "요소 메뉴" } });
@@ -143,7 +140,7 @@ class ElementModal extends Modal {
 		const side = layout.createDiv({ cls: "fw3-ws-side" });
 		this.renderAction(main, d, s);
 		this.renderRecords(main, d, s);
-		this.renderOutputs(main, s);
+		if (e.workspace === "studio") this.renderStudio(main, s);
 		this.renderInfo(main, e);
 		this.renderGoals(side, d, e);
 		this.renderMonth(side, d, e);
@@ -183,16 +180,11 @@ class ElementModal extends Modal {
 		h.createSpan({ cls: "fw3-small fw3-muted", text: `이달 ${s.recDays}일 · ${s.recLines}줄` });
 		const write = sec.createDiv({ cls: "fw3-write" });
 		const input = write.createEl("input", { attr: { type: "text", placeholder: "오늘 한 것, 떠오른 생각 (Enter = 오늘 기록에)", enterkeyhint: "done" } });
-		const star = write.createEl("button", { cls: "fw3-btn fw3-star", text: "☆ 재료", attr: { type: "button" } });
-		star.addEventListener("click", () => {
-			star.toggleClass("is-on", !star.hasClass("is-on"));
-			star.setText(star.hasClass("is-on") ? "★ 재료" : "☆ 재료");
-		});
 		const save = write.createEl("button", { cls: "fw3-btn mod-cta", text: "남기기", attr: { type: "button" } });
 		const submit = () => {
 			const t = input.value.trim();
 			if (!t) return;
-			void this.run(() => addRecordLine(this.plugin, e, d.today, t + (star.hasClass("is-on") ? ` ${MATERIAL_TAG}` : "")));
+			void this.run(() => addRecordLine(this.plugin, e, d.today, t));
 		};
 		save.addEventListener("click", submit);
 		input.addEventListener("keydown", (ev) => {
@@ -203,7 +195,7 @@ class ElementModal extends Modal {
 		const list = sec.createDiv({ cls: "fw3-rdays" });
 		const shown = s.days.filter((x) => x.day.lines.length).slice(0, 10);
 		if (!shown.length) list.createDiv({ cls: "fw3-faint fw3-small", text: "아직 기록이 없어요." });
-		for (const { ym, day } of shown) {
+		for (const { day } of shown) {
 			const row = list.createDiv({ cls: "fw3-rday" });
 			const dd = row.createDiv({ cls: "fw3-rday-d" });
 			const mark = markOf(d, e, day.date);
@@ -216,25 +208,11 @@ class ElementModal extends Modal {
 				const t = li.createSpan({ cls: "fw3-rtext", text: l.embed ? "…" : l.text });
 				if (l.embed) void this.embedText(l.embed).then((x) => t.setText(x ?? l.embed!));
 				if (l.embed) li.createSpan({ cls: "fw3-tiny fw3-faint", text: " ↙ Daily Pad 메모" });
-				if (l.material || day.material) li.createSpan({ cls: "fw3-pill is-mat", text: "재료" });
-				const used = d.used.get(`${recordPath(e, ym).split("/").pop()!.replace(/\.md$/, "")}#${day.date}`);
-				if (used && (l.material || day.material)) li.createSpan({ cls: "fw3-used", text: ` → 「${used.replace(/^\d{4}-\d{2}-\d{2}\s+/, "")}」에 씀` });
-				const st = li.createEl("button", { cls: `fw3-icon-btn${l.material ? " is-on" : ""}`, text: l.material ? "★" : "☆", attr: { type: "button", "aria-label": "재료 표시" } });
-				tip(st, l.material ? "재료 표시 빼기" : "재료로 표시");
-				st.addEventListener("click", () => void this.run(() => this.toggleMat(e, ym, l.raw)));
 			}
 			if (ev && !ev.includes("사용자 수정")) lines.createDiv({ cls: "fw3-who", text: ev });
 		}
 		const open = sec.createEl("button", { cls: "fw3-link", text: "이달 기록 원문 열기 →", attr: { type: "button" } });
 		open.addEventListener("click", () => void this.openPath(recordPath(e, d.today.slice(0, 7))));
-	}
-
-	private async toggleMat(e: FlywheelElement, ym: string, raw: string): Promise<void> {
-		const io = vaultIO(this.app);
-		const path = recordPath(e, ym);
-		const before = await io.read(path);
-		if (before === null) return;
-		await commitBatch(io, [{ path, before, after: toggleMaterial(before, raw) }]);
 	}
 
 	/** `04 Daily Pad/…/2026-01-14#^fw-1` → that memo line's text. */
@@ -246,43 +224,21 @@ class ElementModal extends Modal {
 		return line ? line.replace(/^\s*[-*+]\s+/, "").replace(/\s*\(record::[^)]*\)/, "").replace(/\s*\^[\w-]+$/, "") : null;
 	}
 
-	private renderOutputs(main: HTMLElement, s: ElementStats): void {
-		const e = s.e;
-		const sec = main.createDiv({ cls: "fw3-ws-sec" });
-		const h = sec.createEl("h2");
-		h.appendText("초안 · 산출물");
+	/** `workspace: studio` (퍼스널 브랜딩): posts, 글감 and 예약 live in the 콘텐츠 스튜디오. */
+	private renderStudio(main: HTMLElement, s: ElementStats): void {
+		const box = main.createDiv({ cls: "fw3-ws-sec fw3-studio-box" });
+		const h = box.createEl("h2");
+		h.appendText("콘텐츠 스튜디오");
 		h.createDiv({ cls: "fw3-grow" });
-		const np = h.createEl("button", { cls: "fw3-btn is-sm", text: "＋ 게시물", attr: { type: "button" } });
-		np.addEventListener("click", () => void this.newOutput(e, true));
-		const no = h.createEl("button", { cls: "fw3-btn is-sm is-ghost", text: "＋ 산출물", attr: { type: "button" } });
-		no.addEventListener("click", () => void this.newOutput(e, false));
-		const items = [...s.drafts, ...s.outputs].sort((a, b) => b.date.localeCompare(a.date));
-		const channels = [...new Set([...e.channels, ...items.map((f) => f.channel).filter(Boolean)])];
-		if (channels.length) {
-			const seg = sec.createDiv({ cls: "fw3-seg" });
-			const tab = (key: string, label: string, n: number) => {
-				const b = seg.createEl("button", { cls: key === this.channel ? "is-on" : "", text: `${label} ${n}`, attr: { type: "button" } });
-				b.addEventListener("click", () => {
-					this.channel = key;
-					this.render();
-				});
-			};
-			tab("", "전체", items.length);
-			for (const c of channels) tab(c, c, items.filter((f) => f.channel === c).length);
-			if (items.some((f) => !f.channel)) tab("-", "기타", items.filter((f) => !f.channel).length);
-		}
-		const shown = items.filter((f) => !this.channel || (this.channel === "-" ? !f.channel : f.channel === this.channel));
-		const list = sec.createDiv({ cls: "fw3-plist" });
-		if (!shown.length) list.createDiv({ cls: "fw3-faint fw3-small fw3-pad", text: "아직 없어요." });
-		for (const f of shown.slice(0, 30)) {
-			const row = list.createEl("button", { cls: "fw3-prow", attr: { type: "button" } });
-			row.createSpan({ cls: "fw3-pdate", text: f.date ? moment(f.date, "YYYY-MM-DD").format("M/D") : "" });
-			row.createSpan({ cls: "fw3-ptitle", text: f.title });
-			if (f.channel) row.createSpan({ cls: "fw3-pill is-ch", text: f.channel });
-			const draft = s.drafts.includes(f);
-			row.createSpan({ cls: `fw3-pill${draft ? "" : " is-pub"}`, text: f.kind === "output" ? "산출물" : draft ? "초안" : "발행" });
-			row.addEventListener("click", () => void this.openPath(f.path));
-		}
+		h.createSpan({ cls: "fw3-small fw3-muted", text: `게시물 ${s.drafts.length + s.outputs.length}` });
+		box.createDiv({ cls: "fw3-small fw3-muted", text: "글감 모으기 → 고르기 → 링크드인·스레드·인스타그램 글 → 예약 보내기 → 발행. 기록과 체크는 여기, 글은 스튜디오에서." });
+		const b = box.createEl("button", { cls: "fw3-btn mod-cta", attr: { type: "button" } });
+		setIcon(b.createSpan({ cls: "fw3-ic" }), "pen-tool");
+		b.appendText("스튜디오 열기");
+		b.addEventListener("click", () => {
+			this.close();
+			void activateStudio(this.plugin);
+		});
 	}
 
 	private renderInfo(main: HTMLElement, e: FlywheelElement): void {
@@ -423,7 +379,15 @@ class ElementModal extends Modal {
 	// ── actions ──
 
 	private async openPath(path: string): Promise<void> {
-		const f = this.app.vault.getAbstractFileByPath(path);
+		let f = this.app.vault.getAbstractFileByPath(path);
+		const s = this.d?.stats.get(this.id);
+		const ym = /(\d{4}-\d{2})\.md$/.exec(path)?.[1];
+		if (!(f instanceof TFile) && s && ym && path === recordPath(s.e, ym)) {
+			// the month's record file is made with its first line — open it empty to write at length
+			const dir = path.slice(0, path.lastIndexOf("/"));
+			if (!this.app.vault.getAbstractFileByPath(dir)) await this.app.vault.createFolder(dir);
+			f = await this.app.vault.create(path, recordSkeleton(s.e, ym));
+		}
 		if (!(f instanceof TFile)) {
 			new Notice("아직 파일이 없어요.");
 			return;
@@ -537,26 +501,6 @@ class ElementModal extends Modal {
 		if (goals.length) await this.refreshPinboardIndex(goals);
 	}
 
-	private async newOutput(e: FlywheelElement, post: boolean): Promise<void> {
-		const fields: Parameters<typeof askForm>[1]["fields"] = [];
-		if (post) {
-			fields.push({ key: "ch", label: "채널", type: "text", value: this.channel && this.channel !== "-" ? this.channel : (e.channels[0] ?? ""), list: e.channels, placeholder: "예: 인스타그램" });
-		}
-		fields.push({ key: "title", label: "제목", type: "text", value: "", placeholder: "파일 이름이 돼요" });
-		const v = await askForm(this.app, {
-			title: post ? "새 게시물" : "새 산출물",
-			desc: post ? "「02 산출물/채널/」에 만들어요. 발행하면 published와 url을 채워요." : "「02 산출물/」에 만들어요.",
-			fields,
-			cta: "만들기",
-			validate: (x) => [...(x.title ? [] : ["제목을 적어 주세요."]), ...(post && !x.ch ? ["채널을 적어 주세요."] : [])],
-		});
-		if (!v) return;
-		await this.run(async () => {
-			const f = await createOutput(this.plugin, e, post ? v.ch : "", v.title, []);
-			this.close();
-			await this.app.workspace.getLeaf("tab").openFile(f);
-		});
-	}
 }
 
 /** Any image in the vault; the Flywheel image folder first. */

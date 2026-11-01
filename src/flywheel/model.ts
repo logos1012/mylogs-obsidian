@@ -37,6 +37,8 @@ export interface FlywheelElement {
 	channels: string[];
 	/** Hub `cover` — the card image, a link target without `[[ ]]` ("" or absent = none). */
 	cover?: string;
+	/** Hub `workspace` — `studio` opens the 콘텐츠 스튜디오 for this element (퍼스널 브랜딩). */
+	workspace?: string;
 	/** Vault path of the element folder ("" for the old one-file format). */
 	folder: string;
 	/** Vault path of the hub ("" for the old format). */

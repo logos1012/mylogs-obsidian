@@ -11,6 +11,7 @@ import { activateMyLife, refreshMyLife, registerMyLife } from "./mylife/register
 import { refreshToolbox, registerToolbox } from "./toolbox/register.ts";
 import { activateDiary, refreshDiaries, registerDiary } from "./diary/register.ts";
 import { refreshFlywheel, registerFlywheel } from "./flywheel/register.ts";
+import { registerStudio } from "./studio/register.ts";
 import { refreshShelf, registerShelf } from "./shelf/register.ts";
 import { refreshVisionBoard, registerVisionBoard } from "./vision/register.ts";
 import { LumiController } from "./lumi/controller.ts";
@@ -119,6 +120,7 @@ export default class MyLogsPlugin extends Plugin {
 		registerToolbox(this);
 		registerDiary(this);
 		registerFlywheel(this);
+		registerStudio(this);
 		registerShelf(this);
 		registerVisionBoard(this);
 		registerLumi(this);
