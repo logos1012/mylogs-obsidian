@@ -9,7 +9,7 @@
  *   옆        연결 목표 · 이달 수행 · 나온 프로젝트 · 작업 자료(기록/초안/산출물/작업실)
  */
 
-import { type App, Menu, Modal, moment, Notice, setIcon, TFile } from "obsidian";
+import { type App, FuzzySuggestModal, Menu, Modal, moment, Notice, setIcon, TFile } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { tip } from "../ui/tip.ts";
 import { askForm } from "../ui/modals.ts";
@@ -17,7 +17,7 @@ import { pickTarget } from "../ui/mobile.ts";
 import { vaultIO } from "../pinboard/create-actions.ts";
 import { commitBatch } from "../pinboard/batch.ts";
 import { isPlaceholder } from "./ops.ts";
-import { addRecordLine, changeElement, createOutput, renameElement, setDay, setElementGoals, todayIso } from "./actions.ts";
+import { addRecordLine, changeElement, coverSrc, createOutput, IMAGE_EXT, renameElement, setCover, setDay, setElementGoals, todayIso } from "./actions.ts";
 import { type ElementStats, loadScreen, markOf, type ScreenData } from "./screen-data.ts";
 import type { FlywheelElement } from "./model.ts";
 import {
@@ -120,6 +120,13 @@ class ElementModal extends Modal {
 		more.addEventListener("click", (ev) => this.menu(ev, e));
 
 		const head = el.createDiv({ cls: "fw3-ws-head" });
+		const cover = coverSrc(this.app, e);
+		if (cover) {
+			const b = head.createDiv({ cls: "fw3-ws-cover" });
+			b.createEl("img", { attr: { src: cover, alt: "", draggable: "false" } });
+			tip(b, "누르면 커버 이미지를 바꿔요");
+			b.addEventListener("click", () => this.pickCover(e));
+		}
 		head.createDiv({ cls: "fw3-ws-meta", text: ["매일", e.since ? `${moment(e.since, "YYYY-MM-DD").format("YYYY-MM-DD")}부터` : "", ...e.channels].filter(Boolean).join(" · ") });
 		const title = head.createDiv({ cls: "fw3-ws-title" });
 		title.createEl("h1", { text: e.name });
@@ -430,9 +437,15 @@ class ElementModal extends Modal {
 		m.addItem((i) => i.setTitle("방법 고치기…").setIcon("pencil").onClick(() => void this.editMethod(e)));
 		m.addItem((i) => i.setTitle("이름 바꾸기…").setIcon("text-cursor-input").onClick(() => void this.rename(e)));
 		m.addItem((i) => i.setTitle("허브 원문 열기").setIcon("file-text").onClick(() => void this.openPath(e.hubPath)));
+		m.addItem((i) => i.setTitle("커버 이미지 바꾸기…").setIcon("image").onClick(() => this.pickCover(e)));
+		if (e.cover) m.addItem((i) => i.setTitle("커버 이미지 빼기").setIcon("image-off").onClick(() => void this.run(() => setCover(this.plugin, e, ""))));
 		m.addSeparator();
 		m.addItem((i) => i.setTitle("폐기…").setIcon("trash-2").setWarning(true).onClick(() => void this.retire(e)));
 		m.showAtMouseEvent(ev);
+	}
+
+	private pickCover(e: FlywheelElement): void {
+		new CoverPicker(this.app, (f) => void this.run(() => setCover(this.plugin, e, f.path))).open();
 	}
 
 	private statusMenu(ev: MouseEvent, e: FlywheelElement): void {
@@ -543,5 +556,29 @@ class ElementModal extends Modal {
 			this.close();
 			await this.app.workspace.getLeaf("tab").openFile(f);
 		});
+	}
+}
+
+/** Any image in the vault; the Flywheel image folder first. */
+class CoverPicker extends FuzzySuggestModal<TFile> {
+	constructor(
+		app: App,
+		private readonly onPick: (f: TFile) => void,
+	) {
+		super(app);
+		this.setPlaceholder("커버로 쓸 이미지 (12 Flywheel/99 작업실/images 먼저)");
+	}
+	getItems(): TFile[] {
+		const own = (f: TFile) => (f.path.startsWith("12 Flywheel/") ? 0 : 1);
+		return this.app.vault
+			.getFiles()
+			.filter((f) => IMAGE_EXT.includes(f.extension.toLowerCase()))
+			.sort((a, b) => own(a) - own(b) || a.path.localeCompare(b.path));
+	}
+	getItemText(f: TFile): string {
+		return f.path;
+	}
+	onChooseItem(f: TFile): void {
+		this.onPick(f);
 	}
 }

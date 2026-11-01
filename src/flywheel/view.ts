@@ -19,7 +19,7 @@ import { prependChangeLog } from "../desk/ops.ts";
 import { vaultIO } from "../pinboard/create-actions.ts";
 import { commitBatch } from "../pinboard/batch.ts";
 import { isPlaceholder } from "./ops.ts";
-import { addRecordLine, createElement, createOutput, migrateFolders, nowHm, setDay, wheelRoot } from "./actions.ts";
+import { addRecordLine, coverSrc, createElement, createOutput, migrateFolders, nowHm, setDay, wheelRoot } from "./actions.ts";
 import { loadScreen, markOf, type ElementStats, type ScreenData } from "./screen-data.ts";
 import { MATERIAL_TAG, nextText, orderRegistry, SOURCE_LABEL } from "./wheel.ts";
 import { openElementModal } from "./element-modal.ts";
@@ -248,6 +248,11 @@ export class FlywheelView extends ItemView {
 			if ((ev.target as HTMLElement).closest("button, input, a")) return;
 			this.openElement(e.id);
 		});
+		const cover = coverSrc(this.app, e);
+		if (cover) {
+			card.addClass("has-cover");
+			card.createDiv({ cls: "fw3-card-cover" }).createEl("img", { attr: { src: cover, alt: "", loading: "lazy", draggable: "false" } });
+		}
 		const top = card.createDiv({ cls: "fw3-card-top" });
 		top.createEl("h3", { text: e.name });
 		if (s.missed2) tip(top.createSpan({ cls: "fw3-dot" }), "이틀 연속 못 했어요. 보충할 필요는 없어요. 최소 행동이 충분히 작은지 봐요.");
@@ -316,6 +321,11 @@ export class FlywheelView extends ItemView {
 				if ((ev.target as HTMLElement).closest("button")) return;
 				this.openElement(e.id);
 			});
+			const rc = coverSrc(this.app, e);
+			if (rc) {
+				c.addClass("has-cover");
+				c.createDiv({ cls: "fw3-card-cover" }).createEl("img", { attr: { src: rc, alt: "", loading: "lazy", draggable: "false" } });
+			}
 			const top = c.createDiv({ cls: "fw3-card-top" });
 			top.createEl("h3", { text: e.name });
 			if (e.status === "쉼") top.createSpan({ cls: "fw3-src s-rest", text: "쉼" });

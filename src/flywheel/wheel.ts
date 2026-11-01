@@ -204,11 +204,21 @@ export function elementOf(row: RegistryRow | null, hubText: string | null, hubPa
 		since,
 		goals,
 		channels: getFmList(hubText, "channels"),
+		cover: coverTarget(fm("cover")),
 		fields,
 		folder,
 		hubPath,
 		hasHub: true,
 	};
+}
+
+/** `"[[12 Flywheel/99 작업실/images/운동.jpg]]"` / `![[…|alias]]` / a bare path → the link target. */
+export function coverTarget(v: string): string {
+	return v.trim().replace(/^!?\[\[/, "").replace(/\]\]$/, "").split("|")[0].trim();
+}
+/** Frontmatter value for a cover path (quoted wikilink, so Obsidian keeps it on rename). */
+export function coverValue(path: string): string {
+	return path ? `"[[${path}]]"` : "";
 }
 
 export interface NewElementInput {

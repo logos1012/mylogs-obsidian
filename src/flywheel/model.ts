@@ -35,6 +35,8 @@ export interface FlywheelElement {
 	goals: string[];
 	/** Channels (`02 산출물/{채널}/`). */
 	channels: string[];
+	/** Hub `cover` — the card image, a link target without `[[ ]]` ("" or absent = none). */
+	cover?: string;
 	/** Vault path of the element folder ("" for the old one-file format). */
 	folder: string;
 	/** Vault path of the hub ("" for the old format). */
