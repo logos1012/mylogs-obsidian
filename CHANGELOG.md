@@ -2,6 +2,18 @@
 
 버전 번호는 `manifest.json`의 `version`과 같고, 같은 이름의 git 태그와 GitHub Release가 있다(앞에 v를 붙이지 않는다).
 
+## 0.39.1 — 2026-11-01
+
+### 콘텐츠 스튜디오
+- 발행 결과를 Airtable 「발행 결과」 대신 같은 S3 버킷의 `studio/results/{id}.json`에서 읽는다 (SigV4 GetObject). 이 키는 업로드 폴더 밖이라 S3 폴더 설정으로 만들지 않는다. `stage`가 예약이고 이미 보냈지만 아직 발행 전인 글만, 글마다 한 번씩 확인한다.
+- 결과 파일이 없으면 조용히 건너뛴다. `studio/results/`에는 ListBucket이 없어서 없는 객체는 HTTP 404 또는 403 (`AccessDenied` / `NoSuchKey`)이다. 그 밖의 읽기 오류는 알림과 로그로만 남기고 스튜디오는 그대로 연다.
+- 결과 JSON은 `{id, status, url, error, at}` (`at`은 KST `YYYY-MM-DD HH:mm`). `published`(기존 동의어 포함)면 발행일·주소·단계 발행, `failed`면 `error`, `취소`면 예약 취소와 같이 단계를 다듬기로 되돌리고 `sent`를 지운다. `at`이 그 글의 `sent`보다 이르면 무시한다.
+- 읽는 시점은 그대로다. 스튜디오를 열 때, 10분마다(5분 스로틀), 메뉴 「발행 결과 지금 읽기」.
+- 링크드인 웹훅에 `x-studio-key` 설정(이 기기 `mylogs-studio-secrets` local storage, 가림). 값이 있을 때만 링크드인 예약·취소 POST 헤더로 보낸다. 본문 형식은 그대로.
+- S3 폴더 기본값을 `artifacts/studio`로 바꿨다. 저장된 값이 예전 기본값 `studio`와 같으면 새 기본값으로 옮기고, 그 외 사용자 값은 그대로 둔다.
+- Airtable 설정과 읽기 경로를 뺐다. 스튜디오는 Airtable 없이 동작한다.
+- 플러그인 키에 필요한 IAM: `s3:PutObject` `artifacts/studio/*`, `s3:ListBucket`(prefix `artifacts/studio/`), `s3:GetObject` `studio/results/*`.
+
 ## 0.39.0 — 2026-11-01
 
 ### 콘텐츠 스튜디오 (퍼스널 브랜딩)
