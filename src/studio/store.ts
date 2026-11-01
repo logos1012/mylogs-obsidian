@@ -26,6 +26,7 @@ import {
 	hash,
 	interpretResultGet,
 	markDropped,
+	unmarkWritten,
 	markWritten,
 	newBlockId,
 	newPostId,
@@ -227,6 +228,15 @@ export async function createPost(plugin: MyLogsPlugin, d: StudioData, ch: Channe
 	const f = await plugin.app.vault.create(path, text);
 	if (g) await editGlgamLine(plugin, g, (raw) => markWritten(withBlock(raw, block), `[[${f.path.replace(/\.md$/, "")}|${ch.name}]]`));
 	return f;
+}
+
+/** 삭제: the post file to Obsidian's trash; 글감 lines that pointed at it let go of the link. */
+export async function deletePost(plugin: MyLogsPlugin, d: StudioData, p: Post): Promise<void> {
+	const f = file(plugin, p.path);
+	if (!f) return;
+	const stem = p.path.replace(/\.md$/, "");
+	for (const g of d.glgam.filter((x) => x.posts.includes(stem))) await editGlgamLine(plugin, g, (raw) => unmarkWritten(raw, p.path));
+	await plugin.app.fileManager.trashFile(f);
 }
 
 export async function patchPost(plugin: MyLogsPlugin, path: string, patch: Record<string, FmValue | null>, body?: { ch: ChannelDef; text?: string; parts?: ThreadPart[] }): Promise<void> {

@@ -645,6 +645,32 @@ export function markWritten(raw: string, postLink: string): string {
 	return `${m[1]}- [>] ${rest}`;
 }
 
+/** A post was deleted: drop its link; no post left → back to `[ ]` (the 글감 waits again). */
+export function unmarkWritten(raw: string, postPath: string): string {
+	const m = GL_RE.exec(raw);
+	if (!m || !m[3].includes(" → ")) return raw;
+	const rest = m[3];
+	const tail = /((?:\s*\([a-z]+::[^)]*\))*)(\s\^[\w-]+)?\s*$/.exec(rest)!;
+	const main = rest.slice(0, tail.index).trimEnd();
+	const i = main.indexOf(" → ");
+	const text = main.slice(0, i);
+	const want = postPath.replace(/\.md$/, "");
+	const keep = [...main.slice(i).matchAll(/\[\[[^\]]+\]\]/g)].map((x) => x[0]).filter((l) => l.slice(2, -2).split("|")[0] !== want);
+	return keep.length ? `${m[1]}- [>] ${text} → ${keep.join(", ")}${tail[0]}` : `${m[1]}- [ ] ${text}${tail[0]}`;
+}
+
+/** Default 예약: today at the next full hour (from 23:00 on, tomorrow 08:00). */
+export function defaultSchedule(now: Date): string {
+	const k = new Date(now.getTime() + 9 * 3600_000); // Asia/Seoul wall clock
+	let day = k.toISOString().slice(0, 10);
+	let h = k.getUTCHours() + 1;
+	if (h >= 23) {
+		day = new Date(k.getTime() + 86400_000).toISOString().slice(0, 10);
+		h = 8;
+	}
+	return `${day} ${String(h).padStart(2, "0")}:00`;
+}
+
 export function markDropped(raw: string, why: string): string {
 	const m = GL_RE.exec(raw);
 	if (!m) return raw;
