@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type MyLogsPlugin from "./main.ts";
 import { asSideMode, type SideMode } from "./side.ts";
+import { DEFAULT_S3_PREFIX, migrateS3Prefix } from "./studio/s3.ts";
 import { renderStudioSettings } from "./studio/settings.ts";
 
 export interface SectionNames {
@@ -86,8 +87,8 @@ export interface MyLogsSettings {
 	studioDismissed: string[];
 	/** 콘텐츠 스튜디오 「글감」: days of candidates shown (7 · 14 · 30). */
 	studioDays: number;
-	/** 콘텐츠 스튜디오 connections that are not secret (keys and webhook addresses stay in this device's local storage). */
-	studio: { s3Bucket: string; s3Region: string; s3Prefix: string; airtableBase: string; airtableTable: string };
+	/** 콘텐츠 스튜디오 connections that are not secret (keys, webhook addresses, and x-studio-key stay in this device's local storage). */
+	studio: { s3Bucket: string; s3Region: string; s3Prefix: string };
 }
 
 export const DEFAULT_SETTINGS: MyLogsSettings = {
@@ -139,7 +140,7 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	autosaveDelayMs: 800,
 	studioDismissed: [],
 	studioDays: 7,
-	studio: { s3Bucket: "", s3Region: "ap-northeast-2", s3Prefix: "studio", airtableBase: "", airtableTable: "발행 결과" },
+	studio: { s3Bucket: "", s3Region: "ap-northeast-2", s3Prefix: DEFAULT_S3_PREFIX },
 };
 
 export function mergeSettings(saved: unknown): MyLogsSettings {
@@ -150,7 +151,12 @@ export function mergeSettings(saved: unknown): MyLogsSettings {
 		sections: migrateSections({ ...DEFAULT_SETTINGS.sections, ...(s.sections ?? {}) }),
 		sideMode: asSideMode(s.sideMode),
 		wallShow: { ...DEFAULT_SETTINGS.wallShow, ...(s.wallShow ?? {}) },
-		studio: { ...DEFAULT_SETTINGS.studio, ...(s.studio ?? {}) },
+		studio: {
+			s3Bucket: s.studio?.s3Bucket ?? DEFAULT_SETTINGS.studio.s3Bucket,
+			s3Region: s.studio?.s3Region ?? DEFAULT_SETTINGS.studio.s3Region,
+			// Exact old default `studio` moves to `artifacts/studio`. Other saved prefixes stay. Airtable keys are dropped.
+			s3Prefix: migrateS3Prefix(s.studio && "s3Prefix" in s.studio ? s.studio.s3Prefix : undefined),
+		},
 		myLifeCollapsed: { ...(s.myLifeCollapsed ?? {}) },
 	};
 }

@@ -5,9 +5,10 @@
  *   <요소>/02 산출물/{채널}/날짜 제목.md   게시물 — 파일 하나 = 보드 카드 하나, 단계는 `stage` 한 칸
  *   <요소>/99 작업실/글감 소스.md          글감 소스 등록부 — 한 행 = 소스 하나
  *
- * md is the only source of truth. Media live in S3 (only their https addresses are written here);
- * Make · Buffer · Lambda only receive what 「예약 보내기」 sends, and their results come back
- * through one Airtable table that the plugin copies into the post's frontmatter.
+ * md is the only source of truth. Media live in S3 (only their https addresses are written here).
+ * 「예약 보내기」 posts the payload to the channel webhook. LinkedIn results come back as
+ * `studio/results/{id}.json` in the same bucket (outside the upload prefix); the plugin copies
+ * that file into the post's frontmatter.
  *
  * Pure module (no Obsidian imports).
  */
@@ -276,7 +277,7 @@ export interface Post {
 	sent: string;
 	published: string;
 	url: string;
-	/** 「발행 결과」 failure reason, cleared on a new send. */
+	/** Publish-result failure reason, cleared on a new send or a 취소 result. */
 	error: string;
 	media: string[];
 	from: string[];
@@ -390,7 +391,7 @@ export function postSkeleton(ch: ChannelDef, id: string, from: string[], format 
 	return `---\n${lines.join("\n")}\n---\n\n${body}`;
 }
 
-/** `C-YYYYMMDD-NN` — the key that matches 「발행 결과」 rows to posts. */
+/** `C-YYYYMMDD-NN` — the key that matches `studio/results/{id}.json` to a post. */
 export function newPostId(date: string, taken: Iterable<string>): string {
 	const base = `C-${date.replace(/-/g, "")}-`;
 	const used = new Set(taken);
@@ -477,43 +478,87 @@ export function buildPayload(p: Post, action: "schedule" | "cancel" = "schedule"
 	return { ...base, text: captionOut(p), media: p.media, ...(p.channel.key === "ig" ? { ratio: p.ratio, alt: p.alt } : {}) };
 }
 
-// ───────────────────────── 발행 결과 (Airtable) ─────────────────────────
+// ───────────────────────── 발행 결과 (S3 studio/results/{id}.json) ─────────────────────────
 
 export interface ResultRow {
 	id: string;
 	status: string;
 	url: string;
 	error: string;
+	/** KST `YYYY-MM-DD HH:mm` (older ISO strings still compare). */
 	at: string;
-}
-
-/** The newest row per post id. */
-export function latestResults(rows: ResultRow[]): Map<string, ResultRow> {
-	const out = new Map<string, ResultRow>();
-	for (const r of rows) {
-		if (!r.id) continue;
-		const cur = out.get(r.id);
-		if (!cur || r.at > cur.at) out.set(r.id, r);
-	}
-	return out;
 }
 
 const PUBLISHED = /^(발행|published|success|ok|done)$/i;
 const FAILED = /^(실패|failed|fail|error)$/i;
+const CANCELLED = /^취소$/;
 
-/** A result row → the post's frontmatter patch (null = nothing to change). */
+const resultStr = (v: unknown) => (v == null ? "" : String(v)).trim();
+
+/** One result file. Null when the body is not a result object. */
+export function parseResultJson(text: string): ResultRow | null {
+	let raw: unknown;
+	try {
+		raw = JSON.parse(text);
+	} catch {
+		return null;
+	}
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+	const o = raw as Record<string, unknown>;
+	const id = resultStr(o.id);
+	if (!id) return null;
+	return { id, status: resultStr(o.status), url: resultStr(o.url), error: resultStr(o.error), at: resultStr(o.at) };
+}
+
+/**
+ * Missing result object.
+ * Without `s3:ListBucket` on `studio/results/`, S3 answers **403 AccessDenied** (sometimes
+ * `NoSuchKey`) instead of 404. Both mean "no result yet".
+ */
+export function isAbsentResult(status: number, body: string): boolean {
+	if (status === 404) return true;
+	if (status !== 403) return false;
+	const code = /<Code>\s*([^<]+?)\s*<\/Code>/.exec(body)?.[1] ?? "";
+	return code === "AccessDenied" || code === "NoSuchKey";
+}
+
+export type ResultRead = { kind: "missing" } | { kind: "ok"; row: ResultRow } | { kind: "error"; message: string };
+
+/** Classify one results GetObject. 404 and 403 AccessDenied/NoSuchKey are "not yet". */
+export function interpretResultGet(status: number, body: string): ResultRead {
+	if (isAbsentResult(status, body)) return { kind: "missing" };
+	if (status !== 200) {
+		const code = /<Code>\s*([^<]+?)\s*<\/Code>/.exec(body)?.[1];
+		return { kind: "error", message: `S3 발행 결과 읽기 실패 (${status}${code ? ` ${code}` : ""})` };
+	}
+	const row = parseResultJson(body);
+	if (!row) return { kind: "error", message: "발행 결과 JSON을 읽지 못했어요" };
+	return { kind: "ok", row };
+}
+
+/** A result → the post's frontmatter patch (null = nothing to change). */
 export function resultPatch(p: Post, r: ResultRow | undefined): Record<string, FmValue | null> | null {
 	if (!r || !p.sent) return null;
 	if (r.at && p.sent && r.at.slice(0, 16).replace("T", " ") < p.sent.slice(0, 16)) return null; // an older send's result
-	if (PUBLISHED.test(r.status.trim())) {
+	const status = r.status.trim();
+	if (PUBLISHED.test(status)) {
 		if (p.published && p.url === r.url) return null;
 		return { published: (r.at || "").slice(0, 10) || p.scheduled.slice(0, 10), url: r.url, stage: "발행", error: null };
 	}
-	if (FAILED.test(r.status.trim())) {
+	if (FAILED.test(status)) {
 		const why = r.error.trim() || "이유 없음";
 		return p.error === why ? null : { error: why };
 	}
+	// Same frontmatter as `cancelSchedule`: back to 다듬기, clear sent and error.
+	if (CANCELLED.test(status)) return { stage: "다듬기", sent: null, error: null };
 	return null;
+}
+
+/** Header for a channel webhook POST. LinkedIn sends `x-studio-key` only when the setting is non-empty. */
+export function webhookHeaders(channel: ChannelKey, studioKey: string): Record<string, string> {
+	const key = studioKey.trim();
+	if (channel !== "li" || !key) return {};
+	return { "x-studio-key": key };
 }
 
 // ───────────────────────── 글감 (03 글감/글감 YYYY-MM.md) ─────────────────────────

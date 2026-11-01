@@ -1,0 +1,15 @@
+name: Notify MyLogs bot
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping webhook
+        run: |
+          curl -fsS -X POST "${{ secrets.MYLOGS_WEBHOOK_URL }}" \
+            -H "Authorization: ${{ secrets.MYLOGS_WEBHOOK_AUTH }}" \
+            -H "Content-Type: application/json" \
+            -d '{"repo":"${{ github.repository }}","tag":"${{ github.event.release.tag_name }}"}'

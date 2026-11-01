@@ -144,6 +144,20 @@ updated: 2026-10-24
 | 자동 저장 지연 | 800 ms |
 | 테스트 데이터 표시 | 켬 (`#test` 항목에 작은 표시) |
 
+### 콘텐츠 스튜디오
+
+설정 › 콘텐츠 스튜디오. 버킷·리전·폴더는 볼트 `data.json`에, 키와 웹훅 주소는 이 기기의 local storage(`mylogs-studio-secrets`)에만 저장됩니다. Airtable은 쓰지 않습니다.
+
+| 항목 | 설명 |
+|---|---|
+| S3 버킷 · 리전 | 미디어를 올리고 발행 결과를 읽는 버킷. 리전 기본 `ap-northeast-2` |
+| S3 폴더 | 미디어 업로드 접두사. 기본 `artifacts/studio` (`…/YYYY/MM/`). 저장값이 예전 기본값 `studio`와 같으면 `artifacts/studio`로 옮기고, 그 외 값은 그대로 |
+| AWS 액세스 키 · 시크릿 | 이 기기에만. 필요한 IAM: `s3:PutObject` `artifacts/studio/*`, `s3:ListBucket`(prefix `artifacts/studio/`), `s3:GetObject` `studio/results/*` |
+| 채널 웹훅 | 예약·취소 POST. 링크드인 · 스레드 · 인스타그램. 본문 형식은 `{id, action, channel, format, at, title, text, parts, media, alt, ratio, topic}` |
+| 링크드인 키 (`x-studio-key`) | 이 기기에만, 입력은 가림. 비어 있지 않을 때만 링크드인 예약·취소 POST 헤더 `x-studio-key`로 보냄 |
+
+발행 결과는 업로드 폴더와 별개로, 설정한 버킷의 `studio/results/{id}.json`을 서명된 GetObject로 읽습니다 (`{id, status, url, error, at}`, `at`은 KST `YYYY-MM-DD HH:mm`). `studio/results/`에는 ListBucket이 없어도 됩니다. 없는 파일은 404 또는 403 (`AccessDenied` / `NoSuchKey`)이고, 그때는 아직 결과가 없는 것으로 건너뜁니다. `stage`가 예약이고 이미 보낸 글만 확인합니다 (열 때, 10분마다, 「발행 결과 지금 읽기」).
+
 ## 계획
 
 전체 계획은 볼트의 **`MyLogs Plugin 계획.md`** 에 있습니다. 화면마다 연결할 데이터, 기본 방침(정본은 `.md`, 줄·섹션 하나만 고침, Hermes와 충돌하지 않음, 다국어), 단계별 체크리스트가 정리되어 있습니다. 이 플러그인은 그 문서의 「### 4. Daily Pad」를 먼저 구현한 것입니다.

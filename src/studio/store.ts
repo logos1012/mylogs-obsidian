@@ -24,7 +24,7 @@ import {
 	glgamPath,
 	glgamSkeleton,
 	hash,
-	latestResults,
+	interpretResultGet,
 	markDropped,
 	unmarkWritten,
 	markWritten,
@@ -35,8 +35,8 @@ import {
 	parseSources,
 	type Post,
 	postSkeleton,
-	type ResultRow,
 	resultPatch,
+	webhookHeaders,
 	rewriteSources,
 	safeTitle,
 	setFm,
@@ -49,7 +49,8 @@ import {
 	underSource,
 	withBlock,
 } from "./model.ts";
-import { loadSecrets } from "./settings.ts";
+import { getObject, isS3Ready, resultObjectKey } from "./s3.ts";
+import { loadSecrets, obsidianSend, s3Config } from "./settings.ts";
 
 export const todayIso = () => moment().format("YYYY-MM-DD");
 export const nowStamp = () => moment().format("YYYY-MM-DD HH:mm");
@@ -260,7 +261,7 @@ export async function renamePost(plugin: MyLogsPlugin, p: Post, title: string): 
 	return to;
 }
 
-/** Old posts get an id the first time the studio sees them (the key for 「발행 결과」). */
+/** Old posts get an id the first time the studio sees them (the key for `studio/results/{id}.json`). */
 export async function ensureIds(plugin: MyLogsPlugin, d: StudioData): Promise<number> {
 	const taken = new Set(d.posts.map((p) => p.id).filter(Boolean));
 	let n = 0;
@@ -276,15 +277,28 @@ export async function ensureIds(plugin: MyLogsPlugin, d: StudioData): Promise<nu
 
 // ───────────────────────── 예약 보내기 · 결과 ─────────────────────────
 
+async function postWebhook(plugin: MyLogsPlugin, p: Post, action: "schedule" | "cancel"): Promise<{ status: number; text: string }> {
+	const sec = loadSecrets(plugin.app);
+	const headers = webhookHeaders(p.channel.key, sec.studioKey);
+	const r = await requestUrl({
+		url: sec.webhook[p.channel.key].trim(),
+		method: "POST",
+		contentType: "application/json",
+		...(Object.keys(headers).length ? { headers } : {}),
+		body: JSON.stringify(buildPayload(p, action)),
+		throw: false,
+	});
+	return { status: r.status, text: r.text ?? "" };
+}
+
 export async function sendSchedule(plugin: MyLogsPlugin, p: Post): Promise<"sent" | "noted"> {
 	const hook = loadSecrets(plugin.app).webhook[p.channel.key].trim();
 	if (!hook) {
 		await patchPost(plugin, p.path, { stage: "예약", scheduled: p.scheduled, sent: null, error: null });
 		return "noted";
 	}
-	const payload = buildPayload(p, "schedule");
-	const r = await requestUrl({ url: hook, method: "POST", contentType: "application/json", body: JSON.stringify(payload), throw: false });
-	if (r.status < 200 || r.status >= 300) throw new Error(`보내지 못했어요 (${r.status}) ${(r.text ?? "").slice(0, 120)}`);
+	const r = await postWebhook(plugin, p, "schedule");
+	if (r.status < 200 || r.status >= 300) throw new Error(`보내지 못했어요 (${r.status}) ${r.text.slice(0, 120)}`);
 	await patchPost(plugin, p.path, { stage: "예약", scheduled: p.scheduled, sent: nowStamp(), error: null });
 	return "sent";
 }
@@ -292,47 +306,68 @@ export async function sendSchedule(plugin: MyLogsPlugin, p: Post): Promise<"sent
 export async function cancelSchedule(plugin: MyLogsPlugin, p: Post): Promise<void> {
 	const hook = loadSecrets(plugin.app).webhook[p.channel.key].trim();
 	if (hook && p.sent) {
-		const r = await requestUrl({ url: hook, method: "POST", contentType: "application/json", body: JSON.stringify(buildPayload(p, "cancel")), throw: false });
+		const r = await postWebhook(plugin, p, "cancel");
 		if (r.status < 200 || r.status >= 300) throw new Error(`취소를 보내지 못했어요 (${r.status})`);
 	}
 	await patchPost(plugin, p.path, { stage: "다듬기", sent: null, error: null });
 }
 
-/** Hand-marked 발행 (no Airtable yet, or posted by hand). */
+/** Hand-marked 발행 (posted by hand, or before a result file exists). */
 export async function markPublished(plugin: MyLogsPlugin, p: Post, url: string, date: string): Promise<void> {
 	await patchPost(plugin, p.path, { stage: "발행", published: date, url, error: null });
 }
 
 let lastPoll = 0;
 
-/** Read 「발행 결과」 and copy what changed into the posts. Returns how many posts changed. */
-export async function pollResults(plugin: MyLogsPlugin, d: StudioData, force = false): Promise<number> {
-	const st = plugin.settings.studio;
-	const token = loadSecrets(plugin.app).airtableToken.trim();
-	if (!st.airtableBase || !token) return 0;
-	const waiting = d.posts.filter((p) => p.sent && !p.published);
-	if (!waiting.length) return 0;
-	if (!force && Date.now() - lastPoll < 5 * 60_000) return 0;
+export interface PollOutcome {
+	changed: number;
+	/** Reads that failed for a reason other than "no result yet". */
+	errors: number;
+	/** Bucket, region, or keys are missing, and there was something to check. */
+	unconfigured: boolean;
+}
+
+/** Read `studio/results/{id}.json` for each 예약 post that was sent and is not published yet. */
+export async function pollResults(plugin: MyLogsPlugin, d: StudioData, force = false): Promise<PollOutcome> {
+	const waiting = d.posts.filter((p) => p.stage === "예약" && p.sent && !p.published && p.id);
+	if (!waiting.length) return { changed: 0, errors: 0, unconfigured: false };
+	const cfg = s3Config(plugin);
+	if (!isS3Ready(cfg)) return { changed: 0, errors: 0, unconfigured: true };
+	if (!force && Date.now() - lastPoll < 5 * 60_000) return { changed: 0, errors: 0, unconfigured: false };
 	lastPoll = Date.now();
-	const url = `https://api.airtable.com/v0/${encodeURIComponent(st.airtableBase)}/${encodeURIComponent(st.airtableTable)}?pageSize=100`;
-	const r = await requestUrl({ url, headers: { Authorization: `Bearer ${token}` }, throw: false });
-	if (r.status !== 200) throw new Error(`Airtable 읽기 실패 (${r.status})`);
-	const rows: ResultRow[] = ((r.json?.records ?? []) as { fields: Record<string, unknown> }[]).map((x) => ({
-		id: String(x.fields.id ?? "").trim(),
-		status: String(x.fields.status ?? ""),
-		url: String(x.fields.url ?? ""),
-		error: String(x.fields.error ?? ""),
-		at: String(x.fields.at ?? ""),
-	}));
-	const latest = latestResults(rows);
-	let n = 0;
+	let changed = 0;
+	const problems: string[] = [];
 	for (const p of waiting) {
-		const patch = resultPatch(p, latest.get(p.id));
-		if (!patch) continue;
-		await patchPost(plugin, p.path, patch);
-		n++;
+		const key = resultObjectKey(p.id);
+		if (!key) {
+			problems.push(`${p.id}: 결과 키가 올바르지 않아요`);
+			continue;
+		}
+		try {
+			const res = await getObject(cfg, obsidianSend, key);
+			const read = interpretResultGet(res.status, res.text);
+			if (read.kind === "missing") continue;
+			if (read.kind === "error") {
+				problems.push(`${p.id}: ${read.message}`);
+				continue;
+			}
+			if (read.row.id !== p.id) {
+				problems.push(`${p.id}: 결과 id가 달라요`);
+				continue;
+			}
+			const patch = resultPatch(p, read.row);
+			if (!patch) continue;
+			await patchPost(plugin, p.path, patch);
+			changed++;
+		} catch (e) {
+			problems.push(`${p.id}: ${e instanceof Error ? e.message : String(e)}`);
+		}
 	}
-	return n;
+	if (problems.length) {
+		console.warn("[MyLogs] studio results", problems);
+		new Notice(`발행 결과 일부를 읽지 못했어요. ${problems[0]}`, 8000);
+	}
+	return { changed, errors: problems.length, unconfigured: false };
 }
 
 // ───────────────────────── 소스 등록부 ─────────────────────────

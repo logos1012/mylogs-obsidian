@@ -185,3 +185,36 @@ function s3Error(xml: string): string {
 }
 
 export const isS3Ready = (c: S3Config) => !!(c.bucket && c.region && c.accessKeyId && c.secretAccessKey);
+
+/** Upload folder default. Results are not stored under this prefix. */
+export const DEFAULT_S3_PREFIX = "artifacts/studio";
+/** 0.39.0 default. Only this exact saved value is rewritten. */
+export const LEGACY_S3_PREFIX = "studio";
+
+/**
+ * `undefined` (never saved) and the old default `studio` become `artifacts/studio`.
+ * Any other saved value, including empty, is kept. Surrounding slashes are stripped
+ * the same way the settings field does, so `studio/` is still the old default.
+ */
+export function migrateS3Prefix(saved: string | undefined | null): string {
+	if (saved == null) return DEFAULT_S3_PREFIX;
+	const prefix = saved.trim().replace(/^\/+|\/+$/g, "");
+	if (prefix === LEGACY_S3_PREFIX) return DEFAULT_S3_PREFIX;
+	return prefix;
+}
+
+/** Publish results. Not derived from `S3Config.prefix` — that folder is uploads only. */
+export const RESULT_PREFIX = "studio/results";
+
+/** `studio/results/{id}.json`. Empty when `id` is not a single path segment. */
+export function resultObjectKey(id: string): string {
+	const safe = id.trim();
+	if (!safe || /[\\/\u0000]/.test(safe) || safe === "." || safe === "..") return "";
+	return `${RESULT_PREFIX}/${safe}.json`;
+}
+
+/** Signed GetObject. HTTP status is returned as-is (404 / 403 are not thrown). */
+export async function getObject(c: S3Config, send: Send, key: string): Promise<{ status: number; text: string }> {
+	const signed = await sign(c, { method: "GET", key });
+	return send({ url: signed.url, method: "GET", headers: signed.headers });
+}

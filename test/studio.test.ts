@@ -20,14 +20,18 @@ import {
 	postProblems,
 	postSkeleton,
 	readFm,
+	interpretResultGet,
+	isAbsentResult,
+	parseResultJson,
 	resultPatch,
 	rewriteSources,
+	webhookHeaders,
 	setFm,
 	setPostBody,
 	underSource,
 	withBlock,
 } from "../src/studio/model.ts";
-import { parseList, uploadKey, uriEncode } from "../src/studio/s3.ts";
+import { DEFAULT_S3_PREFIX, getObject, migrateS3Prefix, parseList, resultObjectKey, uploadKey, uriEncode, type Send } from "../src/studio/s3.ts";
 
 const LI = channelByKey("li");
 const TH = channelByKey("th");
@@ -124,13 +128,82 @@ test("스레드: a post over 500 characters blocks sending", () => {
 	assert.equal(buildPayload(p).parts?.length, 1);
 });
 
-test("발행 결과: published row → url and stage; failure keeps stage; older rows ignored", () => {
+test("발행 결과: published, failed, 취소; at earlier than sent is ignored", () => {
 	const t = `---\nid: C-20260114-02\nstage: 예약\nscheduled: "2026-01-16 08:00"\nsent: "2026-01-14 14:10"\n---\n\n## 본문\n\n글\n`;
 	const p = parsePost("x/t.md", t, LI);
+	const published = { published: "2026-01-16", url: "https://www.linkedin.com/feed/update/urn/", stage: "발행", error: null };
+	assert.deepEqual(resultPatch(p, { id: p.id, status: "published", url: published.url, error: "", at: "2026-01-16 08:05" }), published);
 	assert.deepEqual(resultPatch(p, { id: p.id, status: "발행", url: "https://lnkd.in/x", error: "", at: "2026-01-16T08:00:05+09:00" }), { published: "2026-01-16", url: "https://lnkd.in/x", stage: "발행", error: null });
-	assert.deepEqual(resultPatch(p, { id: p.id, status: "실패", url: "", error: "이미지 비율", at: "2026-01-16T08:00:05" }), { error: "이미지 비율" });
-	assert.equal(resultPatch(p, { id: p.id, status: "발행", url: "u", error: "", at: "2026-01-10T08:00" }), null);
-	assert.equal(resultPatch({ ...p, sent: "" }, { id: p.id, status: "발행", url: "u", error: "", at: "" }), null);
+	assert.deepEqual(resultPatch(p, { id: p.id, status: "ok", url: "https://lnkd.in/ok", error: "", at: "2026-01-16 08:05" }), { ...published, url: "https://lnkd.in/ok" });
+	assert.deepEqual(resultPatch(p, { id: p.id, status: "failed", url: "", error: "이미지 비율", at: "2026-01-16 08:00" }), { error: "이미지 비율" });
+	assert.deepEqual(resultPatch(p, { id: p.id, status: "실패", url: "", error: "", at: "2026-01-16T08:00:05" }), { error: "이유 없음" });
+	assert.deepEqual(resultPatch(p, { id: p.id, status: "취소", url: "", error: "ignored", at: "2026-01-16 09:00" }), { stage: "다듬기", sent: null, error: null });
+	// same minute as sent is not earlier
+	assert.deepEqual(resultPatch(p, { id: p.id, status: "취소", url: "", error: "", at: "2026-01-14 14:10" }), { stage: "다듬기", sent: null, error: null });
+	assert.equal(resultPatch(p, { id: p.id, status: "published", url: "u", error: "", at: "2026-01-10 08:00" }), null);
+	assert.equal(resultPatch(p, { id: p.id, status: "취소", url: "", error: "", at: "2026-01-14 14:09" }), null);
+	assert.equal(resultPatch(p, { id: p.id, status: "failed", url: "", error: "x", at: "2026-01-14 14:09" }), null);
+	assert.equal(resultPatch({ ...p, sent: "" }, { id: p.id, status: "published", url: "u", error: "", at: "2026-01-16 08:00" }), null);
+	const row = parseResultJson(`{"id":"C-20260114-02","status":"published","url":"https://www.linkedin.com/feed/update/urn/","error":null,"at":"2026-01-16 08:05"}`);
+	assert.deepEqual(row, { id: "C-20260114-02", status: "published", url: "https://www.linkedin.com/feed/update/urn/", error: "", at: "2026-01-16 08:05" });
+	assert.equal(parseResultJson("not-json"), null);
+});
+
+test("발행 결과 GetObject: 404 and 403 AccessDenied/NoSuchKey mean no result yet", async () => {
+	const denied = `<?xml version="1.0" encoding="UTF-8"?><Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>`;
+	const noKey = `<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message></Error>`;
+	const badSig = `<Error><Code>SignatureDoesNotMatch</Code><Message>no</Message></Error>`;
+	assert.equal(isAbsentResult(404, ""), true);
+	assert.equal(isAbsentResult(403, denied), true);
+	assert.equal(isAbsentResult(403, noKey), true);
+	assert.equal(isAbsentResult(403, badSig), false);
+	assert.equal(isAbsentResult(500, denied), false);
+	const c = { bucket: "example-bucket", region: "ap-northeast-2", prefix: "artifacts/studio", accessKeyId: "TESTACCESSKEY", secretAccessKey: "test-secret-not-real" };
+	const read = async (status: number, text: string) => {
+		const key = resultObjectKey("C-20260116-01");
+		assert.equal(key, "studio/results/C-20260116-01.json");
+		const send: Send = async (req) => {
+			assert.equal(req.method, "GET");
+			assert.equal(req.url, "https://example-bucket.s3.ap-northeast-2.amazonaws.com/studio/results/C-20260116-01.json");
+			assert.equal(req.url.includes("artifacts"), false);
+			assert.match(req.headers.authorization ?? "", /^AWS4-HMAC-SHA256 /);
+			return { status, text };
+		};
+		const res = await getObject(c, send, key);
+		return interpretResultGet(res.status, res.text);
+	};
+	assert.equal((await read(404, "")).kind, "missing");
+	assert.equal((await read(403, denied)).kind, "missing");
+	assert.equal((await read(403, noKey)).kind, "missing");
+	assert.equal((await read(403, badSig)).kind, "error");
+	assert.equal((await read(500, "nope")).kind, "error");
+	const ok = await read(200, `{"id":"C-20260116-01","status":"취소","url":"","error":"","at":"2026-01-16 09:00"}`);
+	assert.deepEqual(ok, { kind: "ok", row: { id: "C-20260116-01", status: "취소", url: "", error: "", at: "2026-01-16 09:00" } });
+	assert.equal(resultObjectKey("a/b"), "");
+	assert.equal(resultObjectKey(".."), "");
+});
+
+test("linkedin webhook header: x-studio-key only when the linkedin key is set", () => {
+	assert.deepEqual(webhookHeaders("li", "studio-key"), { "x-studio-key": "studio-key" });
+	assert.deepEqual(webhookHeaders("li", "  studio-key  "), { "x-studio-key": "studio-key" });
+	assert.deepEqual(webhookHeaders("li", ""), {});
+	assert.deepEqual(webhookHeaders("li", "   "), {});
+	assert.deepEqual(webhookHeaders("th", "studio-key"), {});
+	assert.deepEqual(webhookHeaders("ig", "studio-key"), {});
+});
+
+test("s3 prefix: default is artifacts/studio; only the old default studio migrates", () => {
+	assert.equal(DEFAULT_S3_PREFIX, "artifacts/studio");
+	assert.equal(migrateS3Prefix(undefined), "artifacts/studio");
+	assert.equal(migrateS3Prefix(null), "artifacts/studio");
+	assert.equal(migrateS3Prefix("studio"), "artifacts/studio");
+	assert.equal(migrateS3Prefix(" studio "), "artifacts/studio");
+	assert.equal(migrateS3Prefix("studio/"), "artifacts/studio");
+	assert.equal(migrateS3Prefix("/studio"), "artifacts/studio");
+	assert.equal(migrateS3Prefix("my-folder"), "my-folder");
+	assert.equal(migrateS3Prefix("studio/custom"), "studio/custom");
+	assert.equal(migrateS3Prefix("artifacts/studio"), "artifacts/studio");
+	assert.equal(migrateS3Prefix(""), "");
 });
 
 test("글감 lines: format, parse, written, dropped", () => {
