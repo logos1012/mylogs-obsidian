@@ -12,7 +12,7 @@ import { isVideo } from "./model.ts";
 const ACCEPT = "image/*,video/*,.heic,.pdf";
 
 /** Upload local files; returns their addresses in order (failed ones are left out with a Notice). */
-export async function uploadFiles(plugin: MyLogsPlugin, files: File[], onStep?: (msg: string) => void): Promise<string[]> {
+export async function uploadFiles(plugin: MyLogsPlugin, files: File[], onStep?: (msg: string) => void, gate?: (f: File) => string | null): Promise<string[]> {
 	const c = s3Config(plugin);
 	if (!isS3Ready(c)) {
 		new Notice("설정 › 콘텐츠 스튜디오에서 S3 버킷과 키를 넣어 주세요.", 8000);
@@ -20,6 +20,11 @@ export async function uploadFiles(plugin: MyLogsPlugin, files: File[], onStep?: 
 	}
 	const out: string[] = [];
 	for (const [i, f] of files.entries()) {
+		const why = gate?.(f);
+		if (why) {
+			new Notice(`${f.name}: ${why}`, 10000);
+			continue;
+		}
 		onStep?.(`${f.name} 올리는 중… (${i + 1}/${files.length})`);
 		try {
 			const buf = await f.arrayBuffer();

@@ -38,6 +38,11 @@ import {
 	webhookHeaders,
 	setFm,
 	setPostBody,
+	threadsDraft,
+	threadsProblems,
+	threadsTextLength,
+	threadsUniqueLinks,
+	threadsUploadProblem,
 	underSource,
 	withBlock,
 } from "../src/studio/model.ts";
@@ -134,8 +139,12 @@ test("인스타그램: caption section, hashtags appended when sent, problems", 
 test("스레드: a post over 500 characters blocks sending", () => {
 	const t = setFm(setPostBody(postSkeleton(TH, "C-1", []), TH, { parts: [{ text: "가".repeat(501), media: [] }] }), { scheduled: "2026-01-15 07:30" });
 	const p = parsePost("x/t.md", t, TH);
-	assert.ok(postProblems(p).some((x) => x.level === "block" && /500자/.test(x.text)));
-	assert.equal(buildPayload(p).parts?.length, 1);
+	assert.ok(postProblems(p, { now: Date.parse("2026-01-15T00:00:00+09:00") }).some((x) => x.level === "block" && /500자/.test(x.text)));
+	const pay = buildPayload(p);
+	assert.equal(pay.parts, undefined);
+	assert.equal(pay.channel, "threads");
+	assert.equal(pay.text, "가".repeat(501));
+	assert.equal(pay.action, "schedule");
 });
 
 test("발행 결과: published, failed, 취소; at earlier than sent is ignored", () => {
@@ -198,7 +207,8 @@ test("linkedin webhook header: x-studio-key only when the linkedin key is set", 
 	assert.deepEqual(webhookHeaders("li", "  studio-key  "), { "x-studio-key": "studio-key" });
 	assert.deepEqual(webhookHeaders("li", ""), {});
 	assert.deepEqual(webhookHeaders("li", "   "), {});
-	assert.deepEqual(webhookHeaders("th", "studio-key"), {});
+	assert.deepEqual(webhookHeaders("th", "studio-key"), { "x-studio-key": "studio-key" });
+	assert.deepEqual(webhookHeaders("th", ""), {});
 	assert.deepEqual(webhookHeaders("ig", "studio-key"), {});
 });
 
@@ -358,4 +368,70 @@ test("발행 결과 summary: per-id outcome, and json fallback when text is empt
 	assert.equal(resultBody({ text: "  {\"id\":\"keep\"}  ", json: { id: "drop" } }).trim(), "{\"id\":\"keep\"}");
 	assert.equal(resultBody({ text: "", json: null }), "");
 	assert.equal(parseResultJson(resultBody({ text: "\uFEFF{\"id\":\"C-1\",\"status\":\"published\",\"url\":\"u\",\"error\":null,\"at\":\"2026-11-01 21:06\"}" }))?.id, "C-1");
+});
+
+test("스레드: payload, limits, result path, cancel", () => {
+	const prefix = "https://example-bucket.s3.ap-northeast-2.amazonaws.com/artifacts/studio/";
+	const now = Date.parse("2026-11-01T12:00:00.000Z"); // 21:00 KST
+	const later = "2026-11-01 21:06";
+	const media = (n: number) => Array.from({ length: n }, (_, i) => `${prefix}2026/11/p${i}.jpg`);
+	const post = (over: Partial<ReturnType<typeof threadsDraft>> = {}) => {
+		const d = { text: "안녕", media: [] as (string | { url: string; alt?: string })[], partsCount: 1, topic: "", scheduled: later, id: "C-20261101-08", ...over };
+		return threadsProblems(d, { now, mediaPrefix: prefix });
+	};
+	assert.equal(threadsTextLength("안녕"), 2);
+	assert.equal(threadsTextLength("😀"), 4);
+	assert.equal(threadsTextLength("👨‍👩‍👧"), 18);
+	assert.equal(threadsTextLength("가".repeat(500)), 500);
+	assert.equal(threadsTextLength("😀".repeat(125)), 500);
+	assert.deepEqual(post({ text: "가".repeat(500) }), []);
+	assert.ok(post({ text: "가".repeat(501) }).some((x) => /500자/.test(x)));
+	assert.ok(post({ text: "😀".repeat(126) }).some((x) => /500자/.test(x)));
+	const five = Array.from({ length: 5 }, (_, i) => `https://example.com/${i}`).join(" ");
+	assert.deepEqual(post({ text: five }), []);
+	assert.equal(threadsUniqueLinks("http://A.com http://a.com.").length, 1);
+	assert.ok(post({ text: `${five} https://example.com/5` }).some((x) => /링크/.test(x)));
+	assert.deepEqual(post({ text: "", media: media(20) }), []);
+	assert.ok(post({ text: "", media: media(21) }).some((x) => /미디어가 너무 많음/.test(x)));
+	assert.deepEqual(post({ text: "", media: [] }), ["본문도 미디어도 없어요."]);
+	assert.deepEqual(post({ text: "글", media: [`${prefix}a.webp`] }), []);
+	assert.ok(post({ text: "글", media: [`${prefix}a.pdf`] }).some((x) => /지원하지 않는 미디어/.test(x)));
+	assert.ok(post({ text: "글", media: [`${prefix}../secret.jpg`] }).some((x) => /허용되지 않은/.test(x)));
+	assert.ok(post({ text: "글", media: ["https://other.example/a.jpg"] }).some((x) => /허용되지 않은/.test(x)));
+	assert.deepEqual(post({ text: "글", media: [{ url: `${prefix}a.jpg`, alt: "가".repeat(1000) }] }), []);
+	assert.ok(post({ text: "글", media: [{ url: `${prefix}a.jpg`, alt: "가".repeat(1001) }] }).some((x) => /alt/.test(x)));
+	assert.deepEqual(post({ topic: "기록" }), []);
+	assert.deepEqual(post({ topic: "a".repeat(50) }), []);
+	assert.ok(post({ topic: "a".repeat(51) }).some((x) => /주제/.test(x)));
+	assert.ok(post({ topic: "a.b" }).some((x) => /주제/.test(x)));
+	assert.ok(post({ topic: "a&b" }).some((x) => /주제/.test(x)));
+	assert.ok(post({ partsCount: 2 }).some((x) => /이어쓰기/.test(x)));
+	assert.deepEqual(post({ scheduled: "2026-11-01 21:01" }), []);
+	assert.ok(post({ scheduled: "2026-11-01 21:00" }).some((x) => /1분/.test(x)));
+	assert.equal(threadsUploadProblem("a.jpg", 8 * 1024 * 1024), null);
+	assert.ok(threadsUploadProblem("a.jpg", 8 * 1024 * 1024 + 1)?.includes("8MB"));
+	assert.equal(threadsUploadProblem("a.mp4", 1024 * 1024 * 1024), null);
+	assert.ok(threadsUploadProblem("a.mov", 1024 * 1024 * 1024 + 1)?.includes("1GB"));
+	assert.equal(threadsUploadProblem("a.gif", 1), null);
+	assert.equal(resultObjectKey("C-20261101-08", "li"), "studio/results/C-20261101-08.json");
+	assert.equal(resultObjectKey("C-20261101-08", "th"), "studio/results/threads/C-20261101-08.json");
+	assert.equal(resultObjectKey("_token", "th"), "");
+	assert.equal(resultObjectKey("TEST-THREADS-001", "th"), "");
+	const file = setFm(setPostBody(postSkeleton(TH, "C-20261101-08", []), TH, { parts: [{ text: "한 줄", media: [`${prefix}a.png`] }, { text: "둘", media: [] }] }), { topic: "기록", scheduled: later, alt: ["설명"] });
+	const parsed = parsePost("x/2026-11-01 t.md", file, TH);
+	const schedule = buildPayload(parsed);
+	assert.equal(schedule.action, "schedule");
+	assert.equal(schedule.channel, "threads");
+	assert.equal(schedule.title, parsed.title);
+	assert.equal(schedule.text, "한 줄");
+	assert.equal(schedule.parts, undefined);
+	assert.deepEqual(schedule.media, [{ url: `${prefix}a.png`, alt: "설명" }]);
+	assert.equal(schedule.topic, "기록");
+	assert.equal(schedule.text.includes(parsed.title), false);
+	const cancel = buildPayload(parsed, "cancel");
+	assert.equal(cancel.action, "cancel");
+	assert.equal(cancel.channel, "threads");
+	assert.equal(cancel.id, "C-20261101-08");
+	assert.deepEqual(cancel.media, []);
+	assert.equal(cancel.parts, undefined);
 });

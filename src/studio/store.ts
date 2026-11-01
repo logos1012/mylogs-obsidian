@@ -284,11 +284,17 @@ export async function ensureIds(plugin: MyLogsPlugin, d: StudioData): Promise<nu
 
 // ───────────────────────── 예약 보내기 · 결과 ─────────────────────────
 
+function channelEndpoint(plugin: MyLogsPlugin, key: Post["channel"]["key"]): string {
+	const sec = loadSecrets(plugin.app);
+	if (key === "th") return sec.threadsIntake.trim();
+	return sec.webhook[key].trim();
+}
+
 async function postWebhook(plugin: MyLogsPlugin, p: Post, action: "schedule" | "cancel"): Promise<{ status: number; text: string }> {
 	const sec = loadSecrets(plugin.app);
 	const headers = webhookHeaders(p.channel.key, sec.studioKey);
 	const r = await requestUrl({
-		url: sec.webhook[p.channel.key].trim(),
+		url: channelEndpoint(plugin, p.channel.key),
 		method: "POST",
 		contentType: "application/json",
 		...(Object.keys(headers).length ? { headers } : {}),
@@ -299,8 +305,9 @@ async function postWebhook(plugin: MyLogsPlugin, p: Post, action: "schedule" | "
 }
 
 export async function sendSchedule(plugin: MyLogsPlugin, p: Post): Promise<"sent" | "noted"> {
-	const hook = loadSecrets(plugin.app).webhook[p.channel.key].trim();
+	const hook = channelEndpoint(plugin, p.channel.key);
 	if (!hook) {
+		if (p.channel.key === "th") throw new Error("스레드 접수 주소를 설정 › 콘텐츠 스튜디오에 넣어 주세요.");
 		await patchPost(plugin, p.path, { stage: "예약", scheduled: p.scheduled, sent: null, error: null });
 		return "noted";
 	}
@@ -311,7 +318,8 @@ export async function sendSchedule(plugin: MyLogsPlugin, p: Post): Promise<"sent
 }
 
 export async function cancelSchedule(plugin: MyLogsPlugin, p: Post): Promise<void> {
-	const hook = loadSecrets(plugin.app).webhook[p.channel.key].trim();
+	const hook = channelEndpoint(plugin, p.channel.key);
+	if (p.channel.key === "th" && p.sent && !hook) throw new Error("스레드 접수 주소가 없어서 취소를 보낼 수 없어요.");
 	if (hook && p.sent) {
 		const r = await postWebhook(plugin, p, "cancel");
 		if (r.status < 200 || r.status >= 300) throw new Error(`취소를 보내지 못했어요 (${r.status})`);
@@ -354,7 +362,7 @@ export async function pollResults(plugin: MyLogsPlugin, d: StudioData, force = f
 	const hits: PollHit[] = [];
 	let changed = 0;
 	for (const p of waiting) {
-		const key = resultObjectKey(p.id);
+		const key = resultObjectKey(p.id, p.channel.key);
 		if (!key) {
 			hits.push({ id: p.id, kind: "error", detail: "결과 키가 올바르지 않아요" });
 			continue;
