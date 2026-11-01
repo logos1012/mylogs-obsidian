@@ -17,6 +17,7 @@ import {
 	type AmpQuestion,
 	type AmpSource,
 	type AmpStep,
+	type ThinkTurn,
 	answerUsed,
 	atText,
 	insertAfter,
@@ -67,7 +68,7 @@ export class AmpScreen {
 	private post: Post | null = null;
 	private step: AmpStep = "왜";
 	private draftMsg: string | null = null;
-	private talk: { q: string; a: string }[] = [];
+	private talk: ThinkTurn[] = [];
 	private thinking = false;
 	private sugg: { persona: string; question: string }[] = [];
 	private cur = 0;
@@ -354,6 +355,7 @@ export class AmpScreen {
 		for (const [i, t] of this.talk.entries()) {
 			const a = ai.createDiv({ cls: "amp-say is-ai" });
 			a.createDiv({ cls: "amp-w", text: `✦ 생각하기 ${i + 1}` });
+			if (t.from) a.createDiv({ cls: "amp-from", text: `↳ "${t.from}"에서` });
 			a.createDiv({ text: t.q });
 			if (t.a) {
 				const m = ai.createDiv({ cls: "amp-say is-me" });
@@ -395,8 +397,8 @@ export class AmpScreen {
 	}
 
 	private async nextThink(d: StudioData, draft: string): Promise<void> {
-		const r = await this.ai<{ question?: string }>("생각하는 중…", promptThink(this.ctx(d), draft, this.talk.filter((t) => t.a)));
-		if (r?.question) this.talk.push({ q: r.question, a: "" });
+		const r = await this.ai<{ question?: string; from?: string }>("생각하는 중…", promptThink(this.ctx(d), draft, this.talk.filter((t) => t.a)));
+		if (r?.question) this.talk.push({ q: r.question, a: "", from: (r.from ?? "").trim() });
 		this.host.rerender();
 	}
 
