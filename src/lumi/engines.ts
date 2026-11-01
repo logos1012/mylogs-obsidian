@@ -47,9 +47,12 @@ export interface RunOptions {
 	resume: string | null;
 	signal: AbortSignal;
 	tools: ToolBridge;
+	/** Also allow web search / fetch (글 증폭 「근거 찾아 줘」 only). */
+	allowWeb?: boolean;
 }
 
 const READ_TOOLS = ["Read", "Glob", "Grep"];
+const WEB_TOOLS = ["WebSearch", "WebFetch"];
 
 /** Where the installers put `claude` / `codex` (Obsidian started from the Dock has a short PATH). */
 export function findExecutable(name: EngineId, configured: string): string | null {
@@ -121,7 +124,7 @@ async function* runClaude(prompt: string, exe: string, o: RunOptions): AsyncGene
 			mcpServers: { mylogs },
 			permissionMode: "default",
 			canUseTool: async (toolName, input) =>
-				READ_TOOLS.includes(toolName) || toolName.startsWith("mcp__mylogs__")
+				READ_TOOLS.includes(toolName) || toolName.startsWith("mcp__mylogs__") || (o.allowWeb && WEB_TOOLS.includes(toolName))
 					? { behavior: "allow", updatedInput: input }
 					: { behavior: "deny", message: "볼트 파일은 MyLogs 도구(mcp__mylogs__*)로만 바꿔요. 맞는 도구가 없으면 무엇을 바꿀지 사용자에게 보여 주세요." },
 			abortController: abort,
@@ -181,6 +184,7 @@ async function* codexTurn(prompt: string, exe: string, o: RunOptions, url: strin
 		sandboxMode: "read-only" as const,
 		approvalPolicy: "never" as const,
 		model: o.model || undefined,
+		...(o.allowWeb ? { webSearchEnabled: true } : {}),
 	};
 	const thread = o.resume ? codex.resumeThread(o.resume, opts) : codex.startThread(opts);
 	// Codex has no system prompt option: 루미's instructions ride in front of the message.
