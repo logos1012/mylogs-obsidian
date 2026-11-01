@@ -259,16 +259,38 @@ export interface AmpContext {
 const ctxBlock = (c: AmpContext) =>
 	[`글 제목: ${c.title}`, c.topic && `글감(주제): ${c.topic}`, c.message ? `메시지: ${messageLine(c.message)}` : "메시지: (아직 없음)", c.strategy && `채널 전략(발췌):\n${c.strategy.slice(0, 1800)}`].filter(Boolean).join("\n");
 
-export function promptThink(c: AmpContext, draft: string, talk: { q: string; a: string }[]): string {
+export interface ThinkTurn {
+	q: string;
+	a: string;
+	/** The words of the user's previous answer this question followed. */
+	from?: string;
+}
+
+/**
+ * 「왜」 생각하기 — an interviewer that follows the user's last answer (not a checklist toward
+ * the message). It picks the most alive thread there and digs; it asks to restate the message
+ * only when a new, stronger idea shows up in the answers.
+ */
+export function promptThink(c: AmpContext, draft: string, talk: ThinkTurn[]): string {
+	const last = talk[talk.length - 1];
 	return [
 		ctxBlock(c),
 		draft && `지금 적어 둔 메시지 초안: ${draft}`,
-		talk.length ? `지금까지의 생각하기:\n${talk.map((t, i) => `Q${i + 1}. ${t.q}\nA${i + 1}. ${t.a || "(답 없음)"}`).join("\n")}` : "",
+		talk.length ? `지금까지의 생각하기(앞의 질문과 사용자의 답):\n${talk.map((t, i) => `Q${i + 1}. ${t.q}\nA${i + 1}. ${t.a}`).join("\n\n")}` : "",
 		"",
-		"「왜」 단계: 사용자가 이 글로 사람들에게 정말 하고 싶은 말(주장 한 문장)을 스스로 찾도록 다음 질문 하나를 해.",
-		"- 이미 한 질문과 겹치지 않게. 왜 중요한지, 누구에게, 반대로 생각하는 사람, 그걸 언제 깨달았는지, 한 단어로 하면 같은 방향.",
-		"- 초안이 주제(~에 대해)라면 주장(~다)으로 바꿔 보게 묻기. 메시지를 대신 써 주지 마.",
-		'JSON: {"question": "다음 질문 하나"}',
+		"너는 「왜」 단계의 인터뷰어다. 목표는 사용자가 이 글로 하고 싶은 말을 스스로 더 깊고 선명하게 발견하는 것. 체크리스트를 채우는 게 아니라 대화를 따라간다.",
+		last
+			? [
+					"규칙:",
+					`1. 반드시 사용자의 마지막 답(A${talk.length})에서 출발한다. 그 답에서 가장 살아 있는 실마리 하나 — 구체적 장면, 숫자, 비유, 감정, 의외의 말, 앞뒤가 안 맞는 곳 — 를 골라 그걸 한 걸음 더 파고드는 질문을 한다. 앞선 답과 이어지는 게 보이면 연결해서 물어도 좋다.`,
+					"2. 사용자가 이미 답한 것을 다시 묻거나, 앞 질문을 표현만 바꿔 되풀이하지 않는다.",
+					"3. 메시지·주장·한 문장으로 정리해 보라는 질문, 독자에게 무엇을 바라냐는 질문은 하지 않는다. 예외: 답 속에 메시지 초안과 다른, 더 강한 새 생각이 보이면 그걸 짚어서 \"방금 말한 ○○이 지금 메시지보다 더 하고 싶은 말 같은데요?\"처럼 한 번만.",
+					"4. 질문의 결을 바꿔 가며: 그때 장면(언제·어디서·무엇을 봤나), 이유(왜 그렇게 느꼈나), 구체(예를 들면·몇 번·얼마나), 대비(처음과 나중, 남과 나), 반례(그래도 멈추는 게 나은 때는), 비유 파고들기(그 비유에서 정확히 무엇이 닮았나).",
+					"5. from에는 따라간 사용자의 말을 마지막 답에서 그대로 짧게(3~12자) 옮긴다.",
+					"6. 질문은 한두 문장으로 짧게. 칭찬이나 요약으로 시작하지 않는다.",
+				].join("\n")
+			: "첫 질문: 이 메시지를 말하고 싶어진 계기 — 그걸 처음 느낀 구체적인 장면이나 경험 — 을 묻는다. 한두 문장. from은 빈 문자열.",
+		'JSON: {"from": "따라간 말", "question": "다음 질문 하나"}',
 	]
 		.filter((x) => x !== "")
 		.join("\n");
