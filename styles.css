@@ -11802,3 +11802,69 @@ body.is-mobile .fw3-ws-cover { height: 110px; }
 .fw3 button.fw3-studio-btn .fw3-faint { font-weight: 400; }
 .st textarea.st-caption, .st textarea.st-body, .st textarea.st-tarea { box-sizing: border-box; }
 .st .st-col .st-pc .st-t { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ===== 콘텐츠 스튜디오 · 채널 디자인 (0.39.2) ===== */
+.st .st-ed { --ch: var(--interactive-accent); --ch-on: var(--text-on-accent); border-radius: 18px; padding: 16px 18px 26px; margin: -6px -8px 0; }
+.st .st-ed.is-li { --ch: #0a66c2; --ch-on: #fff; --ch-soft: color-mix(in srgb, #0a66c2 10%, var(--background-primary)); background: color-mix(in srgb, #0a66c2 3%, var(--background-secondary)); }
+.st .st-ed.is-th { --ch: var(--text-normal); --ch-on: var(--background-primary); --ch-soft: var(--background-modifier-hover); background: var(--background-secondary); }
+.st .st-ed.is-ig { --ch: #d62976; --ch-on: #fff; --ch-soft: color-mix(in srgb, #d62976 9%, var(--background-primary)); --ch-grad: linear-gradient(45deg, #feda75, #fa7e1e 25%, #d62976 50%, #962fbf 75%, #4f5bd5); background: color-mix(in srgb, #d62976 4%, var(--background-primary)); }
+.st .st-ed { --interactive-accent: var(--ch); --interactive-accent-hover: color-mix(in srgb, var(--ch) 85%, #000); --text-on-accent: var(--ch-on); }
+.st .st-ed button.mod-cta { background: var(--ch); color: var(--ch-on); }
+.st .st-ed.is-ig button.mod-cta, .st .st-ed.is-ig .st-stagebar button.is-now { background: var(--ch-grad); color: #fff; }
+.st .st-mark { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 7px; font-weight: 800; font-size: 13px; flex: 0 0 auto; }
+.st .st-mark.c-li, .st .st-dot.c-li { background: #0a66c2; color: #fff; }
+.st .st-mark.c-th, .st .st-dot.c-th { background: var(--text-normal); color: var(--background-primary); }
+.st .st-mark.c-ig, .st .st-dot.c-ig { background: linear-gradient(45deg, #feda75, #fa7e1e 25%, #d62976 50%, #962fbf 75%, #4f5bd5); color: #fff; }
+.st .st-dot { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; font-size: 9px; font-weight: 800; }
+.st .st-ed .st-chswitch button { padding: 0 10px 0 3px; background: var(--background-primary); }
+.st .st-ed .st-chswitch button.is-on { border-color: var(--ch); background: var(--ch-soft); }
+.st .st-ed .st-stagebar button.is-now { background: var(--ch); color: var(--ch-on); }
+.st .st-ed .st-seg { background: color-mix(in srgb, var(--ch) 7%, var(--background-modifier-hover)); }
+.st .st-ed .st-seg button.is-on { color: var(--ch); }
+.st .st-ed.is-th .st-seg button.is-on { color: var(--text-normal); }
+/* side panels as cards */
+.st .st-ed .st-sideg, .st .st-ed .st-sideg.is-last { background: var(--background-primary); border: 0; border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; box-shadow: 0 0 0 1px var(--background-modifier-border); }
+.st .st-ed .st-sideg h2 { color: var(--ch); }
+.st .st-ed.is-th .st-sideg h2 { color: var(--text-normal); }
+.st .st-ed .st-quote { border-left-color: var(--ch); }
+.st .st-ed .st-chk input { accent-color: var(--ch); }
+.st .st-ed .st-route { background: var(--ch-soft); }
+.st .st-ed .st-lock { background: var(--background-primary); border-color: var(--background-modifier-border); }
+
+/* 링크드인: 피드의 게시물 카드 */
+.st .st-lipost { background: var(--background-primary); border-radius: 12px; box-shadow: 0 0 0 1px var(--background-modifier-border), 0 2px 6px rgba(0,0,0,.04); }
+.st .st-liph { display: flex; gap: 10px; align-items: center; padding: 14px 18px 4px; }
+.st .st-liph b { font-size: 14px; }
+.st .st-liav { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #c8d7ef, #8fb1e3); flex: 0 0 auto; }
+.st .st-libody { padding: 6px 18px 8px; }
+.st .st-lipost textarea.st-body { min-height: 380px; }
+.st .st-lifoot { display: flex; gap: 18px; align-items: center; border-top: 1px solid var(--background-modifier-border); padding: 9px 18px; font-size: 12.5px; color: var(--text-muted); }
+.st .st-lifoot .st-count { margin: 0; padding: 0; color: #0a66c2; font-weight: 600; }
+.st .st-lifoot .st-count.is-over { color: var(--st-bad); }
+.st .st-ed.is-li .st-foldpv { border-color: color-mix(in srgb, #0a66c2 45%, var(--background-modifier-border)); background: var(--background-primary); }
+
+/* 스레드: 흰 카드 · 검정 강조 · 원형 게이지 */
+.st .st-thcard { background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 18px; padding: 16px 18px 8px; }
+.st .st-ed.is-th .st-av { width: 38px; height: 38px; background: var(--text-normal); color: var(--background-primary); }
+.st .st-ed.is-th .st-tp { grid-template-columns: 40px 1fr; }
+.st .st-ed.is-th .st-tp::before { left: 18px; top: 44px; }
+.st .st-thhd { font-size: 13.5px; margin-bottom: 2px; }
+.st .st-thhd span { color: var(--text-faint); margin-left: 6px; font-size: 12px; }
+.st .st-ed.is-th .st-tbox { border-color: transparent; padding: 2px 8px; margin-left: -8px; border-radius: 10px; }
+.st .st-ed.is-th .st-tbox:hover { background: var(--background-secondary); }
+.st .st-ed.is-th .st-tbox:focus-within { border-color: var(--background-modifier-border); background: var(--background-primary); }
+.st .st-ring { width: 18px; height: 18px; border-radius: 50%; flex: 0 0 auto; background: conic-gradient(var(--ch) var(--p, 0%), var(--background-modifier-border) 0); }
+.st .st-ring.is-warn { background: conic-gradient(var(--st-warn) var(--p, 0%), var(--background-modifier-border) 0); }
+.st .st-ring.is-over { background: var(--st-bad); }
+.st .st-ed.is-th .st-tfoot { gap: 10px; }
+
+/* 인스타그램: 분홍 바탕 · 그라데이션 테두리 */
+.st .st-ed.is-ig .st-igsec { position: relative; border-color: transparent; background: var(--background-primary); border-radius: 16px; }
+.st .st-ed.is-ig .st-igsec::before { content: ""; position: absolute; inset: 0; border-radius: 16px; padding: 1.5px; background: var(--ch-grad); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; opacity: .55; pointer-events: none; }
+.st .st-ed.is-ig .st-sl.is-cur { outline-color: var(--ch); }
+.st .st-ed.is-ig .st-add { border-color: color-mix(in srgb, #d62976 35%, var(--background-modifier-border)); }
+.st .st-ed.is-ig .st-add b { background: var(--ch-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.st .st-ed.is-ig textarea.st-caption { border-color: color-mix(in srgb, #d62976 22%, var(--background-modifier-border)); }
+.st .st-ed.is-ig button.st-tag { background: var(--ch-soft); color: #b0175a; }
+.st .st-ed.is-ig .st-phone { box-shadow: 0 8px 28px rgba(214, 41, 118, .14); border-color: transparent; }
+.st .st-ed.is-ig .st-ph i { background: var(--ch-grad); }
