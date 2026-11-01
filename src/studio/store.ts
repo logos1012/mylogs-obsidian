@@ -26,6 +26,8 @@ import {
 	hash,
 	appliedLabel,
 	formatPollHit,
+	immediateAt,
+	interpretIntake,
 	interpretResultGet,
 	markDropped,
 	unmarkWritten,
@@ -39,6 +41,7 @@ import {
 	pollFoundCount,
 	type Post,
 	postSkeleton,
+	resultBody,
 	resultPatch,
 	s3Code,
 	shouldRememberPoll,
@@ -284,7 +287,7 @@ export async function ensureIds(plugin: MyLogsPlugin, d: StudioData): Promise<nu
 
 // ───────────────────────── 예약 보내기 · 결과 ─────────────────────────
 
-function channelEndpoint(plugin: MyLogsPlugin, key: Post["channel"]["key"]): string {
+export function channelEndpoint(plugin: MyLogsPlugin, key: Post["channel"]["key"]): string {
 	const sec = loadSecrets(plugin.app);
 	if (key === "th") return sec.threadsIntake.trim();
 	return sec.webhook[key].trim();
@@ -301,20 +304,48 @@ async function postWebhook(plugin: MyLogsPlugin, p: Post, action: "schedule" | "
 		body: JSON.stringify(buildPayload(p, action)),
 		throw: false,
 	});
-	return { status: r.status, text: r.text ?? "" };
+	return { status: r.status, text: resultBody(r) };
+}
+
+function intakeError(read: { error: string }): string {
+	return read.error;
 }
 
 export async function sendSchedule(plugin: MyLogsPlugin, p: Post): Promise<"sent" | "noted"> {
 	const hook = channelEndpoint(plugin, p.channel.key);
 	if (!hook) {
 		if (p.channel.key === "th") throw new Error("스레드 접수 주소를 설정 › 콘텐츠 스튜디오에 넣어 주세요.");
-		await patchPost(plugin, p.path, { stage: "예약", scheduled: p.scheduled, sent: null, error: null });
+		await patchPost(plugin, p.path, { stage: "예약", scheduled: p.scheduled, sent: null, error: null, cancelled: null, now: null });
 		return "noted";
 	}
 	const r = await postWebhook(plugin, p, "schedule");
-	if (r.status < 200 || r.status >= 300) throw new Error(`보내지 못했어요 (${r.status}) ${r.text.slice(0, 120)}`);
-	await patchPost(plugin, p.path, { stage: "예약", scheduled: p.scheduled, sent: nowStamp(), error: null });
+	const intake = interpretIntake(r.status, r.text);
+	if (!intake.ok) {
+		await patchPost(plugin, p.path, { error: intakeError(intake), sent: null, warning: intake.warning || null });
+		throw new Error(intake.error);
+	}
+	await patchPost(plugin, p.path, { stage: "예약", scheduled: p.scheduled, sent: nowStamp(), error: null, cancelled: null, now: null, warning: intake.warning || null });
+	if (intake.warning) new Notice(intake.warning, 12000);
 	return "sent";
+}
+
+/** Schedule for the soonest legal minute and mark the post `now: true`. Returns that `at` (KST `YYYY-MM-DD HH:mm`). */
+export async function sendNow(plugin: MyLogsPlugin, p: Post): Promise<string> {
+	const hook = channelEndpoint(plugin, p.channel.key);
+	if (!hook) {
+		if (p.channel.key === "th") throw new Error("스레드 접수 주소를 설정 › 콘텐츠 스튜디오에 넣어 주세요.");
+		throw new Error("설정 › 콘텐츠 스튜디오에서 보낼 곳을 넣어 주세요.");
+	}
+	const when = immediateAt(p.channel.key);
+	const r = await postWebhook(plugin, { ...p, scheduled: when }, "schedule");
+	const intake = interpretIntake(r.status, r.text);
+	if (!intake.ok) {
+		await patchPost(plugin, p.path, { error: intakeError(intake), sent: null, warning: intake.warning || null });
+		throw new Error(intake.error);
+	}
+	await patchPost(plugin, p.path, { stage: "예약", scheduled: when, sent: nowStamp(), error: null, cancelled: null, now: "true", warning: intake.warning || null });
+	if (intake.warning) new Notice(intake.warning, 12000);
+	return when;
 }
 
 export async function cancelSchedule(plugin: MyLogsPlugin, p: Post): Promise<void> {
@@ -322,9 +353,10 @@ export async function cancelSchedule(plugin: MyLogsPlugin, p: Post): Promise<voi
 	if (p.channel.key === "th" && p.sent && !hook) throw new Error("스레드 접수 주소가 없어서 취소를 보낼 수 없어요.");
 	if (hook && p.sent) {
 		const r = await postWebhook(plugin, p, "cancel");
-		if (r.status < 200 || r.status >= 300) throw new Error(`취소를 보내지 못했어요 (${r.status})`);
+		const intake = interpretIntake(r.status, r.text);
+		if (!intake.ok) throw new Error(intake.error || `취소를 보내지 못했어요 (${r.status})`);
 	}
-	await patchPost(plugin, p.path, { stage: "다듬기", sent: null, error: null });
+	await patchPost(plugin, p.path, { stage: "다듬기", sent: null, error: null, cancelled: nowStamp(), now: null });
 }
 
 /** Hand-marked 발행 (posted by hand, or before a result file exists). */

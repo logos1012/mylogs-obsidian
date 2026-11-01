@@ -25,6 +25,9 @@ import {
 	fastPollEvery,
 	formatPollHit,
 	formatPollSummary,
+	immediateAt,
+	interpretIntake,
+	postState,
 	interpretResultGet,
 	isAbsentResult,
 	needsFastPoll,
@@ -133,7 +136,7 @@ test("인스타그램: caption section, hashtags appended when sent, problems", 
 	assert.equal(pay.channel, "instagram");
 	assert.ok(postProblems(p).some((x) => x.level === "block" && /사진/.test(x.text)));
 	const ok = parsePost("x/t.md", setFm(t, { media: ["https://b/1.jpg"] }), IG);
-	assert.equal(postProblems(ok).filter((x) => x.level === "block").length, 0);
+	assert.equal(postProblems(ok, { now: Date.parse("2026-01-17T00:00:00+09:00") }).filter((x) => x.level === "block").length, 0);
 });
 
 test("스레드: a post over 500 characters blocks sending", () => {
@@ -156,9 +159,9 @@ test("발행 결과: published, failed, 취소; at earlier than sent is ignored"
 	assert.deepEqual(resultPatch(p, { id: p.id, status: "ok", url: "https://lnkd.in/ok", error: "", at: "2026-01-16 08:05" }), { ...published, url: "https://lnkd.in/ok" });
 	assert.deepEqual(resultPatch(p, { id: p.id, status: "failed", url: "", error: "이미지 비율", at: "2026-01-16 08:00" }), { error: "이미지 비율" });
 	assert.deepEqual(resultPatch(p, { id: p.id, status: "실패", url: "", error: "", at: "2026-01-16T08:00:05" }), { error: "이유 없음" });
-	assert.deepEqual(resultPatch(p, { id: p.id, status: "취소", url: "", error: "ignored", at: "2026-01-16 09:00" }), { stage: "다듬기", sent: null, error: null });
+	assert.deepEqual(resultPatch(p, { id: p.id, status: "취소", url: "", error: "ignored", at: "2026-01-16 09:00" }), { stage: "다듬기", sent: null, error: null, cancelled: "2026-01-16 09:00", now: null });
 	// same minute as sent is not earlier
-	assert.deepEqual(resultPatch(p, { id: p.id, status: "취소", url: "", error: "", at: "2026-01-14 14:10" }), { stage: "다듬기", sent: null, error: null });
+	assert.deepEqual(resultPatch(p, { id: p.id, status: "취소", url: "", error: "", at: "2026-01-14 14:10" }), { stage: "다듬기", sent: null, error: null, cancelled: "2026-01-14 14:10", now: null });
 	assert.equal(resultPatch(p, { id: p.id, status: "published", url: "u", error: "", at: "2026-01-10 08:00" }), null);
 	assert.equal(resultPatch(p, { id: p.id, status: "취소", url: "", error: "", at: "2026-01-14 14:09" }), null);
 	assert.equal(resultPatch(p, { id: p.id, status: "failed", url: "", error: "x", at: "2026-01-14 14:09" }), null);
@@ -437,4 +440,46 @@ test("스레드: payload, limits, result path, cancel", () => {
 	assert.equal(cancel.id, "C-20261101-08");
 	assert.deepEqual(cancel.media, []);
 	assert.equal(cancel.parts, undefined);
+});
+
+test("지금 발행 시각, 접수 응답, 예약 상태, 인스타 결과 키, 최소 여유", () => {
+	const t = new Date("2026-11-01T12:00:10.000Z"); // 21:00:10 KST
+	assert.equal(immediateAt("li", t), "2026-11-01 21:02");
+	assert.equal(immediateAt("th", t), "2026-11-01 21:02");
+	assert.equal(immediateAt("ig", t), "2026-11-01 21:03");
+	assert.equal(immediateAt("li", new Date("2026-11-01T11:58:50.000Z")), "2026-11-01 21:00");
+	assert.equal(resultObjectKey("C-20261101-08", "ig"), "studio/results/instagram/C-20261101-08.json");
+	assert.equal(resultObjectKey("C-20261101-08", "instagram"), "studio/results/instagram/C-20261101-08.json");
+	assert.equal(resultObjectKey("C-20261101-08", "li"), "studio/results/C-20261101-08.json");
+	const failed = interpretIntake(200, JSON.stringify({ status: "failed", error: "본문이 너무 김" }));
+	assert.equal(failed.ok, false);
+	assert.equal(failed.failed, true);
+	assert.equal(failed.error, "본문이 너무 김");
+	const ok = interpretIntake(200, JSON.stringify({ ok: true, schedule: "th-C-1", at: "2026-11-01 21:06" }));
+	assert.equal(ok.ok, true);
+	assert.equal(ok.schedule, "th-C-1");
+	assert.equal(ok.at, "2026-11-01 21:06");
+	const warned = interpretIntake(200, JSON.stringify({ ok: true, warning: "이미지가 잘릴 수 있어요" }));
+	assert.equal(warned.ok, true);
+	assert.equal(warned.warning, "이미지가 잘릴 수 있어요");
+	const bad = interpretIntake(400, JSON.stringify({ ok: false, error: "at must be at least 1 minute in the future (KST)" }));
+	assert.equal(bad.ok, false);
+	assert.equal(bad.error, "at must be at least 1 minute in the future (KST)");
+	const base = { stage: "초안", sent: "", published: "", scheduled: "", url: "", error: "", cancelled: "" };
+	assert.equal(postState(base).name, "예약 전");
+	const when = Date.parse("2026-11-01T12:00:00.000Z"); // 21:00 KST
+	assert.equal(postState({ ...base, stage: "예약", sent: "2026-11-01 20:00", scheduled: "2026-11-01 21:06" }, when).name, "예약됨");
+	assert.equal(postState({ ...base, stage: "예약", sent: "2026-11-01 20:00", scheduled: "2026-11-01 21:06" }, when).detail, "11/1 21:06");
+	assert.equal(postState({ ...base, stage: "예약", sent: "2026-11-01 20:50", scheduled: "2026-11-01 21:00" }, when).name, "발행 중");
+	assert.equal(postState({ ...base, stage: "발행", published: "2026-11-01", url: "https://example.com/p", sent: "2026-11-01 20:00", scheduled: "2026-11-01 21:00" }, when).name, "발행됨");
+	assert.equal(postState({ ...base, stage: "예약", sent: "2026-11-01 20:00", scheduled: "2026-11-01 21:06", error: "이유\n둘째" }, when).name, "실패");
+	assert.equal(postState({ ...base, stage: "예약", sent: "2026-11-01 20:00", scheduled: "2026-11-01 21:06", error: "이유\n둘째" }, when).detail, "이유");
+	assert.equal(postState({ ...base, stage: "다듬기", cancelled: "2026-11-01 21:10" }, when).name, "취소됨");
+	const li = parsePost("x/t.md", setFm(setPostBody(postSkeleton(LI, "C-1", []), LI, { text: "본문" }), { scheduled: "2026-11-01 21:00" }), LI);
+	const now = Date.parse("2026-11-01T11:59:30.000Z"); // 20:59:30 KST, 30s before 21:00
+	assert.ok(postProblems(li, { now }).some((x) => /1분 뒤/.test(x.text)));
+	assert.equal(postProblems(li, { now: Date.parse("2026-11-01T11:58:00.000Z") }).some((x) => /1분 뒤/.test(x.text)), false);
+	const ig = parsePost("x/t.md", setFm(setPostBody(postSkeleton(IG, "C-2", []), IG, { text: "캡션" }), { scheduled: "2026-11-01 21:00", media: ["https://example.com/a.jpg"] }), IG);
+	assert.ok(postProblems(ig, { now: Date.parse("2026-11-01T11:58:30.000Z") }).some((x) => /2분 뒤/.test(x.text)));
+	assert.equal(postProblems(ig, { now: Date.parse("2026-11-01T11:57:00.000Z") }).some((x) => /2분 뒤/.test(x.text)), false);
 });
