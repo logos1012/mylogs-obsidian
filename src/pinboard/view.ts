@@ -671,7 +671,8 @@ export class PinboardView extends ItemView {
 				target: fmtGoalValue(s.target, s.measure),
 				unit: s.unit,
 				due: s.due,
-				related: (d.related.get(s.id) ?? []).map((r) => ({ kind: r.kind, contributes: s.progressSource === "projects" && r.kind === "project" && !!r.id && s.projectIds.includes(r.id) && projectWeight(s, r.id) > 0, label: r.label, path: r.path, oneSided: r.oneSided || r.broken || undefined })),
+				// 전략 맵의 Sub Goal 아래에는 프로젝트만 (2026-11-01 사용자 결정). 습관·메모는 목록·목표 노트에서 본다.
+				related: (d.related.get(s.id) ?? []).filter((r) => r.kind === "project").map((r) => ({ kind: r.kind, contributes: s.progressSource === "projects" && r.kind === "project" && !!r.id && s.projectIds.includes(r.id) && projectWeight(s, r.id) > 0, label: r.label, path: r.path, oneSided: r.oneSided || r.broken || undefined })),
 			};
 		};
 		return {

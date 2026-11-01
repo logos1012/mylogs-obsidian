@@ -2,6 +2,11 @@
 
 버전 번호는 `manifest.json`의 `version`과 같고, 같은 이름의 git 태그와 GitHub Release가 있다(앞에 v를 붙이지 않는다).
 
+## 0.38.1 — 2026-11-01
+
+- **Flywheel 커버 이미지**: 요소 허브 frontmatter `cover`(따옴표 위키링크, 예 `"[[12 Flywheel/99 작업실/images/운동.jpg]]"`)가 있으면 홈 카드 위와 「바퀴」 카드, 요소 팝업 머리에 이미지를 보인다. 팝업 ⋯ 「커버 이미지 바꾸기…」(볼트의 이미지 중 고르기, `12 Flywheel/` 먼저) · 「커버 이미지 빼기」. 쉼인 요소는 이미지가 흐려진다. 볼트 `12 Flywheel/AGENTS.md` 3.2
+- **Pinboard 전략 맵**: Sub Goal 아래에는 연결된 프로젝트만 그린다. Flywheel·메모는 맵에서 빼고 목록·목표 상세에서만 보인다(사용자 결정). 범례 「점선 · 연결된 프로젝트 (진행률과 별개)」
+
 ## 0.38.0 — 2026-11-01
 
 - **Flywheel v3 — 요소가 끝없는 프로젝트가 됐다** (볼트 `12 Flywheel/AGENTS.md` 3.1). 데이터: `Flywheel.md` = 바퀴 한 문장 + 「## 요소」 등록부 표, 요소마다 폴더·허브 `이름/이름.md`(정의의 정본, frontmatter `goals`·`channels`·`status`·`since`, 본문 「방법」「지금 다듬는 것」「주요 결정」), 기록 `이름/01 기록/이름 기록 YYYY-MM.md`(`### 날짜` 칸, `#재료`), 산출물 `이름/02 산출물/{채널}/`(게시물 frontmatter `from`·`published`·`url`; `published`가 비면 초안). 요소 수 상한 없음. 화면에 `F-N`을 쓰지 않는다

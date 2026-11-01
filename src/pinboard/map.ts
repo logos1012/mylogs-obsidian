@@ -1,7 +1,8 @@
 /**
  * Pinboard 전략 맵 (Pinboard 개편 스펙 「2. 전략 맵」, 「1-5. 연결」).
  *
- * A left → right tree: 목표 → Main Goal → Sub Goal → 관련 업무 (projects, habits, memos).
+ * A left → right tree: 목표 → Main Goal → Sub Goal → 연결된 프로젝트. The view passes projects only
+ * (2026-11-01 사용자 결정); habits·memos stay in the list view and the goal note.
  * Cards are absolutely positioned HTML inside a transformed canvas; edges are an SVG layer under
  * them. Solid edge = Sub → Main (counts toward progress). Dashed edge = 관련 업무 → Sub (no
  * progress contribution).
@@ -452,7 +453,7 @@ export function renderStrategyMap(parent: HTMLElement, input: MapInput, cb: MapC
 		row.createSpan({ text });
 	};
 	legendLine("pbm-edge-solid", "실선 · 진행률에 반영 (하위 목표·프로젝트)");
-	legendLine("pbm-edge-dashed", "점선 · 관련 업무 (진행률과 별개)");
+	legendLine("pbm-edge-dashed", "점선 · 연결된 프로젝트 (진행률과 별개)");
 	const hRow = legend.createDiv({ cls: "pbm-legend-row pbm-legend-health" });
 	for (const h of ["on-track", "at-risk", "off-track"]) {
 		const item = hRow.createSpan({ cls: "pbm-legend-h" });
