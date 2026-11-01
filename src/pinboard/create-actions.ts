@@ -11,10 +11,12 @@ import { getFmList, setFmValue, parseRegistry, appendLogEntry, formatLogEntry, n
 import { type Goal, parseFrontmatterText, parseSections, bulletItems, findSectionText } from "./model.ts";
 import { linkProject, unlinkProject } from "./goal-edit.ts";
 import { INDEX_FILE, prependChangeLog } from "./index-writer.ts";
-import { planGoal, attachNewProject, readGoal, setFlywheelGoal, upsertGoalRows } from "./create.ts";
+import { planGoal, attachNewProject, readGoal, upsertGoalRows } from "./create.ts";
 import { commitBatch, type BatchIO, type Write } from "./batch.ts";
 import type { GoalAnswer } from "./create-modal.ts";
-import { parseFlywheel, flywheelPath } from "../flywheel/model.ts";
+import type { FlywheelElement } from "../flywheel/model.ts";
+import { readWheel, planElementChange } from "../flywheel/store.ts";
+import { setHubFm } from "../flywheel/wheel.ts";
 
 export function vaultIO(app:App):BatchIO {
 	const createdFolders:string[]=[];
@@ -40,11 +42,13 @@ export async function readProject(host:ProjectsHost,path:string):Promise<{p:Proj
 	const text=await required(vaultIO(host.app),path),fm=parseFrontmatterText(text),loc=hubLocation(path,activeRoot(host),archiveRoot(host));
 	const p=loc?parseProject(fm.data,fm.body,loc,path):null;if(!p)throw new Error(`프로젝트 허브를 읽을 수 없어요: ${path}`);return {p,text};
 }
-export function relatedText(g:Goal,text:string,wheel:string):string{
+export function relatedText(g:Goal,text:string,wheel:FlywheelElement[]):string{
 	const means=bulletItems(findSectionText(parseSections(parseFrontmatterText(text).body),g.type==="main-goal"?"수단 (프로젝트·습관)":"수단")).filter(x=>!x.startsWith("<!--"));
-	const fw=parseFlywheel(wheel).filter(e=>(e.fields.goal??"")===g.id).map(e=>`${e.id} ${e.name}`);
+	const fw=wheel.filter(e=>e.status!=="폐기"&&e.goals.includes(g.id)).map(e=>e.name);
 	return [...g.projects,...fw,...means].join(", ")||"—";
 }
+const wheelRoot=(host:ProjectsHost)=>cleanFolder(host.settings.flywheelPath)||"12 Flywheel";
+async function wheelElements(io:BatchIO,host:ProjectsHost):Promise<FlywheelElement[]>{return (await readWheel(io,wheelRoot(host))).elements;}
 const busy=new WeakSet<object>();
 export async function exclusive<T>(host:ProjectsHost,run:()=>Promise<T>):Promise<T>{if(busy.has(host.app))throw new Error("저장 중이에요. 잠시 기다려 주세요.");busy.add(host.app);try{return await run();}finally{busy.delete(host.app);}}
 
@@ -74,13 +78,13 @@ export async function createGoalFlow(host:ProjectsHost,answer:GoalAnswer,year:nu
 		const {p}=await readProject(host,ex.path);const gw=plan.writes.find(w=>w.path===plan.goal.path)!;gw.after=linkProject(gw.after,p.id,`[[${p.path.replace(/\.md$/,"")}]]`,today);
 		plan.goal=readGoal(gw.after,gw.path);plan.writes.push(...await projectSideWrites(host,p.path,plan.goal.id,true,today));
 	}else if(ex?.mode==="flywheel"){
-		const wp=flywheelPath(host.settings.flywheelPath),w=await required(io,wp),after=setFlywheelGoal(w,ex.id,plan.goal.id,ex.previous,today);plan.writes.push({path:wp,before:w,after});
+		const w=await readWheel(io,wheelRoot(host)),e=w.elements.find(x=>x.id===ex.id);if(!e||e.status==="폐기")throw new Error("사용할 수 없는 Flywheel 요소예요.");
+		plan.writes.push(...await planElementChange(io,w,e,`${e.id} 목표 연결: ${plan.goal.id}`,today,{hub:t=>setHubFm(t,"goals",[...new Set([...e.goals,plan.goal.id])],today)}));
 	}
-	const wp=flywheelPath(host.settings.flywheelPath),wheel=plan.writes.find(w=>w.path===wp)?.after??await io.read(wp)??"";
+	const wheel=await wheelElements(io,host),fwGoal=ex?.mode==="flywheel"?ex.id:"";if(fwGoal)for(const e of wheel)if(e.id===fwGoal&&!e.goals.includes(plan.goal.id))e.goals=[...e.goals,plan.goal.id];
 	const indexWrite=plan.writes.find(w=>w.path===`${root}/${INDEX_FILE}`)!;
 	const note=plan.writes.find(w=>w.path===plan.goal.path)!.after;
 	indexWrite.after=upsertGoalRows(indexWrite.after,year,[plan.goal],new Map([[plan.goal.id,relatedText(plan.goal,note,wheel)]]));
-	if(ex?.mode==="flywheel"&&ex.previous){const old=existing.find(x=>x.goal.id===ex.previous);if(old)indexWrite.after=upsertGoalRows(indexWrite.after,Number(old.goal.id.slice(2,6)),[old.goal],new Map([[old.goal.id,relatedText(old.goal,old.text,wheel)]]));}
 	await commitBatch(io,await withProjectRollup(host,plan.writes,today),plan.folders);
 	return plan.goal;
 });}
@@ -89,7 +93,7 @@ export async function connectProject(host:ProjectsHost,g:Goal,path:string,link:b
 	const io=vaultIO(host.app),before=await required(io,g.path),goal=readGoal(before,g.path),{p}=await readProject(host,path);
 	if(goal.id!==g.id||goal.type!=="sub-goal")throw new Error("하위 목표를 다시 확인해 주세요.");
 	const after=link?linkProject(before,p.id,`[[${p.path.replace(/\.md$/,"")}]]`,today):unlinkProject(before,p.id,p.name,today);
-	const ip=`${cleanFolder(host.settings.pinboardFolder)}/${INDEX_FILE}`,idx=await required(io,ip),wheel=await io.read(flywheelPath(host.settings.flywheelPath))??"";
+	const ip=`${cleanFolder(host.settings.pinboardFolder)}/${INDEX_FILE}`,idx=await required(io,ip),wheel=await wheelElements(io,host);
 	const ng=readGoal(after,g.path);let next=upsertGoalRows(idx,Number(g.id.slice(2,6)),[ng],new Map([[g.id,relatedText(ng,after,wheel)]]));next=setFmValue(prependChangeLog(next,today,`${g.id} ↔ ${p.id} ${link?"연결":"연결 해제"} (플러그인)`),"updated",today);
 	await commitBatch(io,await withProjectRollup(host,[{path:g.path,before,after},...await projectSideWrites(host,path,g.id,link,today),{path:ip,before:idx,after:next}],today));
 });}
@@ -100,29 +104,37 @@ export async function createProjectForGoal(host:ProjectsHost,g:Goal,input:NewPro
 	const r=parseRegistry(reg),taken=[...r.active,...r.done],problems=validateInput(input,{ids:taken.map(p=>p.id),names:taken.map(p=>p.name)});if(problems.length)throw new Error(problems.join("\n"));
 	if(host.app.vault.getAbstractFileByPath(`${activeRoot(host)}/${input.scope}/${input.name}`))throw new Error("같은 프로젝트 폴더가 이미 있어요.");
 	const plan=attachNewProject({goal,folders:[],writes:[{path:g.path,before:text,after:text},{path:ip,before:index,after:index}]},input,await strictTemplates(host),{projectRoot:activeRoot(host),registryPath:registryPath(host),registry:reg,today});
-	const gw=plan.writes.find(w=>w.path===g.path)!,iw=plan.writes.find(w=>w.path===ip)!,wheel=await io.read(flywheelPath(host.settings.flywheelPath))??"";
+	const gw=plan.writes.find(w=>w.path===g.path)!,iw=plan.writes.find(w=>w.path===ip)!,wheel=await wheelElements(io,host);
 	iw.after=upsertGoalRows(iw.after,Number(g.id.slice(2,6)),[plan.goal],new Map([[g.id,relatedText(plan.goal,gw.after,wheel)]]));
 	iw.after=setFmValue(prependChangeLog(iw.after,today,`${g.id} ↔ ${input.id} 프로젝트 생성·연결 (플러그인)`),"updated",today);
 	await commitBatch(io,await withProjectRollup(host,plan.writes,today),plan.folders);
 });}
 
-export async function connectFlywheel(host:ProjectsHost,goal:Goal,id:string,expected:string,link:boolean,today:string):Promise<void>{return exclusive(host,async()=>{
-	const io=vaultIO(host.app),wp=flywheelPath(host.settings.flywheelPath),w=await required(io,wp),after=setFlywheelGoal(w,id,link?goal.id:"",expected,today),ip=`${cleanFolder(host.settings.pinboardFolder)}/${INDEX_FILE}`,idx=await required(io,ip),goals=await readGoals(host);
+/** Add (link) or remove (unlink) a goal on an element: hub `goals` + registry + Pinboard Index, one batch. `expected` is unused since v3 (elements keep several goals). */
+export async function connectFlywheel(host:ProjectsHost,goal:Goal,id:string,_expected:string,link:boolean,today:string):Promise<void>{return exclusive(host,async()=>{
+	const io=vaultIO(host.app),w=await readWheel(io,wheelRoot(host)),e=w.elements.find(x=>x.id===id);
+	if(!e||(link&&e.status==="폐기"))throw new Error("사용할 수 없는 Flywheel 요소예요.");
+	if(e.goals.includes(goal.id)===link)return;
+	const goalsAfter=link?[...e.goals,goal.id]:e.goals.filter(x=>x!==goal.id);
+	const writes=await planElementChange(io,w,e,`${e.id} 목표 ${link?"연결":"연결 해제"}: ${goal.id}`,today,{hub:t=>setHubFm(t,"goals",goalsAfter,today)});
+	const ip=`${cleanFolder(host.settings.pinboardFolder)}/${INDEX_FILE}`,idx=await required(io,ip),goals=await readGoals(host);
 	if(!goals.some(x=>x.goal.id===goal.id))throw new Error("목표가 삭제됐어요. 다시 열어 주세요.");
-	let next=idx;for(const x of goals.filter(x=>[goal.id,expected].includes(x.goal.id)))next=upsertGoalRows(next,Number(x.goal.id.slice(2,6)),[x.goal],new Map([[x.goal.id,relatedText(x.goal,x.text,after)]]));
-	next=setFmValue(prependChangeLog(next,today,`${id} 목표 연결 ${expected||"없음"} → ${link?goal.id:"없음"} (플러그인)`),"updated",today);
-	await commitBatch(io,[{path:wp,before:w,after},{path:ip,before:idx,after:next}]);
+	const after=w.elements.map(x=>x.id===id?{...x,goals:goalsAfter}:x);
+	let next=idx;for(const x of goals.filter(x=>x.goal.id===goal.id))next=upsertGoalRows(next,Number(x.goal.id.slice(2,6)),[x.goal],new Map([[x.goal.id,relatedText(x.goal,x.text,after)]]));
+	next=setFmValue(prependChangeLog(next,today,`${e.name} ↔ ${goal.id} ${link?"연결":"연결 해제"} (플러그인)`),"updated",today);
+	await commitBatch(io,[...writes,{path:ip,before:idx,after:next}]);
 });}
 
 /** No element, artifact or checkbox is removed when a goal is deleted. */
 export async function unlinkDeletedFlywheel(host:ProjectsHost,ids:string[],today:string):Promise<void>{
-	const io=vaultIO(host.app),path=flywheelPath(host.settings.flywheelPath),before=await io.read(path);if(before===null)return;let after=before;
-	for(const e of parseFlywheel(before))if(ids.includes(e.fields.goal??""))after=setFlywheelGoal(after,e.id,"",e.fields.goal,today);
-	if(after!==before)await commitBatch(io,[{path,before,after}]);
+	const io=vaultIO(host.app);let w=await readWheel(io,wheelRoot(host));if(!w.registry)return;
+	for(const e of w.elements){if(!e.goals.some(g=>ids.includes(g)))continue;
+		await commitBatch(io,await planElementChange(io,w,e,`${e.id} 목표 삭제로 연결 해제: ${e.goals.filter(g=>ids.includes(g)).join(", ")}`,today,{hub:t=>setHubFm(t,"goals",e.goals.filter(g=>!ids.includes(g)),today)}));
+		w=await readWheel(io,wheelRoot(host));}
 }
 
 export async function refreshRelatedIndex(host:ProjectsHost,ids:string[],today:string):Promise<void>{
-	const io=vaultIO(host.app),path=`${cleanFolder(host.settings.pinboardFolder)}/${INDEX_FILE}`,before=await required(io,path),wheel=await io.read(flywheelPath(host.settings.flywheelPath))??"";let after=before;
+	const io=vaultIO(host.app),path=`${cleanFolder(host.settings.pinboardFolder)}/${INDEX_FILE}`,before=await required(io,path),wheel=await wheelElements(io,host);let after=before;
 	for(const x of (await readGoals(host)).filter(x=>ids.includes(x.goal.id)))after=upsertGoalRows(after,Number(x.goal.id.slice(2,6)),[x.goal],new Map([[x.goal.id,relatedText(x.goal,x.text,wheel)]]));
 	if(after!==before)await commitBatch(io,[{path,before,after:setFmValue(after,"updated",today)}]);
 }

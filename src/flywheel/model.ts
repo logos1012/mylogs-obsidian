@@ -1,6 +1,8 @@
 /**
- * Flywheel model: `12 Flywheel/Flywheel.md` (`12 Flywheel/AGENTS.md` 「3」) and the Daily Pad
- * lines it produces every morning (「4-2」, `04 Daily Pad/_build/new_day.py` → `flywheel_lines()`).
+ * Flywheel model. Since v3 (`12 Flywheel/AGENTS.md` 3.0) an element lives in its own hub and
+ * `Flywheel.md` is the registry (`./wheel.ts`, `./store.ts`). This file keeps the element type, the
+ * old one-file format (`## F-N …` blocks, read as a fallback) and the old Daily Pad line helpers
+ * (`(flywheel:: F-N)` lines from before 2026-10-28 are still read as history).
  *
  *   ## F-1 몸 만들기
  *   - 최소:: 걷기 15분
@@ -27,6 +29,17 @@ export interface FlywheelElement {
 	 * status is not 사용: the element is left out (treated as 쉼) and the caller warns (`missingStatus`).
 	 */
 	status: string;
+	/** `since` (start date) — "" when unknown. */
+	since: string;
+	/** Linked Pinboard Sub Goal ids (hub `goals`). Related work only; never moves progress. */
+	goals: string[];
+	/** Channels (`02 산출물/{채널}/`). */
+	channels: string[];
+	/** Vault path of the element folder ("" for the old one-file format). */
+	folder: string;
+	/** Vault path of the hub ("" for the old format). */
+	hubPath: string;
+	hasHub: boolean;
 }
 
 export const FLYWHEEL_FILE = "Flywheel.md";
@@ -52,13 +65,15 @@ export function parseFlywheel(text: string | null): FlywheelElement[] {
 			const sp = rest.indexOf(" ");
 			const id = sp === -1 ? rest : rest.slice(0, sp);
 			const name = sp === -1 ? "" : rest.slice(sp + 1).trim();
-			cur = { id, name, fields: {}, status: "" };
+			cur = { id, name, fields: {}, status: "", since: "", goals: [], channels: [], folder: "", hubPath: "", hasHub: false };
 		} else if (cur && raw.startsWith("- ") && raw.includes("::")) {
 			const body = raw.slice(2);
 			const k = body.slice(0, body.indexOf("::")).trim();
 			const v = body.slice(body.indexOf("::") + 2).trim();
 			cur.fields[k] = v;
 			if (k === "status") cur.status = v;
+			if (k === "since") cur.since = v;
+			if (k === "goal") cur.goals = v.split(/[,\s]+/).map((x) => x.replace(/^\[\[|\]\]$/g, "")).filter((x) => /^G-/.test(x));
 		} else if (raw.startsWith("## ") && cur) {
 			out.push(cur);
 			cur = null;

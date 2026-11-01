@@ -42,7 +42,7 @@ test("day marks: Daily Pad line, then 수행 표, 쉼, 기록 없음, before sin
 	assert.equal(dayMark(e, "2026-10-06", pad("x"), "-"), "x", "an older Daily Pad line still counts");
 	assert.equal(dayMark(e, "2026-10-06", null, "쉼"), "쉼");
 	assert.equal(dayMark(e, "2026-10-06", null, undefined), "");
-	assert.equal(dayMark(e, "2026-10-06", "## 오늘 할 일\n", undefined, true), "쉼");
+	assert.equal(dayMark(e, "2026-10-06", "## 오늘 할 일\n", undefined), "", "a blank day is never inferred from today's status");
 	const table = parseLogTable("| 날짜 | F-1 | F-2 | 합 |\n|---|---|---|---|\n| 05 | x | - | 1/2 |\n| 6 | 쉼 | x | 1/1 |\n");
 	assert.equal(table.get("05")?.get("F-1"), "x");
 	assert.equal(table.get("06")?.get("F-1"), "쉼");

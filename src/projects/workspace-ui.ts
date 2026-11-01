@@ -4,6 +4,7 @@ import type { Project } from "./model.ts";
 import type { Goal } from "../pinboard/model.ts";
 import { type FlywheelElement } from "../flywheel/model.ts";
 import { projectGoalLinks, sharedFlywheel, workspaceFiles, workspaceSections } from "./workspace.ts";
+import { getFmList } from "./ops.ts";
 
 export interface WorkspaceHost {
 	app: App; component: Component; goals: Goal[]; elements: FlywheelElement[]; paths: string[]; text: string;
@@ -125,11 +126,15 @@ export function renderWorkspace(root: HTMLElement, p: Project, h: WorkspaceHost)
 		}
 	}
 
-	const wheels = sharedFlywheel(p, h.goals, h.elements);
+	const direct = getFmList(h.text, "flywheel");
+	const wheels = sharedFlywheel(p, h.goals, h.elements, direct);
 	if (wheels.length) {
 		const group = side.createDiv({ cls: "pf-workspace-group" });
-		tip(group.createEl("h2", { text: "같은 목표의 Flywheel" }), "목표를 통해 함께 보이는 매일의 행동이에요. 프로젝트에 직접 연결된 것은 아니에요.");
-		for (const e of wheels) button(group, e.name, () => h.wheel(e), "pf-workspace-link");
+		tip(group.createEl("h2", { text: "Flywheel" }), "이 프로젝트가 나온 요소(허브 flywheel)와 같은 목표에 연결된 매일의 행동이에요.");
+		for (const e of wheels) {
+			const b = button(group, e.name, () => h.wheel(e), "pf-workspace-link");
+			if (direct.includes(e.id)) b.createSpan({ cls: "pf-workspace-muted", text: " · 나온 요소" });
+		}
 	}
 	const files = side.createDiv({ cls: "pf-workspace-group" }); files.createEl("h2", { text: "작업 자료" });
 	for (const [relative, label] of [["01 초안", "초안"], ["02 산출물", "산출물"], ["99 작업실", "작업실"]] as const) {

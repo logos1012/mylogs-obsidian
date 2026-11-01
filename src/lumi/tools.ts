@@ -14,12 +14,12 @@ import { z } from "zod";
 import type { RecordingHost } from "./recorder.ts";
 import { MORE_TOOLS } from "./tools-more.ts";
 import { MAIN_SECTION_KEYS } from "../settings.ts";
-import { findDaySection, parseBodyLines, splitLinesKeepEol, TASK_LINE_RE, toIsoDate } from "../parser.ts";
+import { addDays, findDaySection, parseBodyLines, splitLinesKeepEol, TASK_LINE_RE, toIsoDate } from "../parser.ts";
 import { appendToSection, dailyPadSkeleton, findSection, sectionLineRange, setFrontmatterScalar, toggleCheckbox } from "../writer.ts";
 import { togglePending } from "../pending/actions.ts";
 import { changeProjectTask, loadProjectTasks, newTaskId, type ScheduleTarget, targetLabel, toggleLinkedProjectTask } from "../projects/task-actions.ts";
 import { deskMonthPath, logDeskChange } from "../desk/actions.ts";
-import { prependChangeLog, wallYearSkeleton } from "../desk/ops.ts";
+import { wallYearSkeleton } from "../desk/ops.ts";
 import { addIndexChange, formatNewLine, insertIntoDesk, insertIntoMonth } from "../wall/edit.ts";
 import { putIntoDrawer } from "../drawer/actions.ts";
 import { DRAWER_SECTIONS, type DrawerSection } from "../drawer/model.ts";
@@ -34,8 +34,9 @@ import { activeRoot, archiveRoot, changeStatus, createProject, registryPath } fr
 import { hubLocation, KINDS, type NewProjectInput, type Project, SCOPES, validateInput } from "../projects/model.ts";
 import { parseRegistry } from "../projects/ops.ts";
 import { parseFrontmatterText } from "../pinboard/model.ts";
-import { type FlywheelElement, flywheelPath, parseFlywheel } from "../flywheel/model.ts";
-import { addElement, countActive, MAX_ELEMENTS, nextId, renameElement, REPLACEMENT_MARK, setElementField, setLogCell } from "../flywheel/ops.ts";
+import type { FlywheelElement } from "../flywheel/model.ts";
+import { addRecordLine, changeElement, createElement, loadWheel, nowHm, renameElement as renameFlywheelElement, setDay } from "../flywheel/actions.ts";
+import { setHubFm, setHubMethod } from "../flywheel/wheel.ts";
 
 export interface ToolCtx {
 	host: RecordingHost;
@@ -144,31 +145,17 @@ async function findProject(ctx: ToolCtx, id: string): Promise<{ p: Project; text
 	throw new Error(`프로젝트를 찾지 못했어요: ${want}. 05 Project Folders/99 작업실/Project Folders Index.md에서 id를 확인해 주세요.`);
 }
 
-async function readWheel(ctx: ToolCtx): Promise<{ file: TFile; text: string; elements: FlywheelElement[] }> {
-	const file = fileAt(ctx, flywheelPath(ctx.host.settings.flywheelPath));
-	if (!file) throw new Error("Flywheel.md가 없어요. Flywheel 화면에서 바퀴를 먼저 만들어 주세요.");
-	const text = await ctx.host.app.vault.read(file);
-	return { file, text, elements: parseFlywheel(text) };
+async function readWheel(ctx: ToolCtx): Promise<{ elements: FlywheelElement[] }> {
+	const w = await loadWheel(ctx.host);
+	if (w.text === null) throw new Error("Flywheel.md가 없어요. Flywheel 화면에서 바퀴를 먼저 만들어 주세요.");
+	return { elements: w.elements };
 }
 
 function findElement(elements: FlywheelElement[], key: string): FlywheelElement {
 	const k = key.trim();
 	const e = elements.find((x) => x.id === k) ?? elements.find((x) => x.name === k) ?? elements.find((x) => x.name.includes(k));
-	if (!e) throw new Error(`Flywheel 요소를 찾지 못했어요: ${k}. 있는 요소: ${elements.map((x) => `${x.id} ${x.name}`).join(", ") || "없음"}`);
+	if (!e) throw new Error(`Flywheel 요소를 찾지 못했어요: ${k}. 있는 요소: ${elements.map((x) => x.name).join(", ") || "없음"}`);
 	return e;
-}
-
-/** Same write as the Flywheel screen: element count, `updated`, 「변경 기록」. */
-async function writeWheel(ctx: ToolCtx, what: string, fn: (t: string) => string | null): Promise<void> {
-	const { file } = await readWheel(ctx);
-	let ok = false;
-	await ctx.host.app.vault.process(file, (t) => {
-		const next = fn(t);
-		if (next === null) return t;
-		ok = true;
-		return prependChangeLog(setFrontmatterScalar(next, "elements", String(countActive(parseFlywheel(next)))), ctx.today, what);
-	});
-	if (!ok) throw new Error("Flywheel을 바꾸지 못했어요. 요소가 그새 바뀌었는지 확인해 주세요.");
 }
 
 function goalInput(a: Record<string, unknown>): GoalInput {
@@ -368,7 +355,7 @@ export const LUMI_TOOLS: LumiTool[] = [
 			if (a.link_project) execution = { mode: "project" as const, path: (await findProject(ctx, String(a.link_project))).p.path };
 			else if (a.link_flywheel) {
 				const e = findElement((await readWheel(ctx)).elements, String(a.link_flywheel));
-				execution = { mode: "flywheel" as const, id: e.id, previous: e.fields.goal ?? "" };
+				execution = { mode: "flywheel" as const, id: e.id, previous: "" };
 			}
 			if (!a.parent) i.scope = a.scope ? String(a.scope) : inputSide(ctx.host.settings.sideMode);
 			const g = await createGoalFlow(ctx.host, { input: i, execution }, Number(ctx.today.slice(0, 4)), a.parent ? String(a.parent) : undefined, ctx.today);
@@ -563,44 +550,49 @@ export const LUMI_TOOLS: LumiTool[] = [
 	},
 	{
 		name: "flywheel_check",
-		description: "오늘 Flywheel 요소를 했음(또는 취소)으로 수행 표에 표시. element는 요소 id(F-1) 또는 이름.",
-		shape: { element: z.string(), done: z.boolean().default(true) },
+		description:
+			"Flywheel 요소의 하루 수행을 수행 표에 기록(또는 취소). 사용자가 그 요소의 최소 행동을 했다고 말했을 때만. said에는 사용자가 한 말을 그대로(예: \"점심에 20분 걸었어\") — 근거 줄과 그 요소 기록에 남아요. date를 비우면 오늘. element는 요소 이름(또는 id).",
+		shape: { element: z.string(), done: z.boolean().default(true), said: z.string().default(""), date: isoDate.optional() },
 		async run(ctx, a) {
-			const { elements } = await readWheel(ctx);
-			const e = findElement(elements, String(a.element));
-			const month = ctx.today.slice(0, 7);
-			const path = normalizePath(`${ctx.host.settings.flywheelPath}/99 작업실/수행/${month}.md`);
-			const ids = elements.filter((x) => x.status !== "폐기").map((x) => x.id);
-			const value = a.done === false ? "" : "x";
-			const f = fileAt(ctx, path);
-			if (f) await ctx.host.app.vault.process(f, (t) => setLogCell(t, month, ctx.today.slice(8, 10), e.id, value, ids));
-			else {
-				await ensureFolders(ctx, path);
-				await ctx.host.app.vault.create(path, setLogCell(null, month, ctx.today.slice(8, 10), e.id, value, ids));
+			const e = findElement((await readWheel(ctx)).elements, String(a.element));
+			const iso = a.date ? String(a.date) : ctx.today;
+			if (e.status !== "사용") throw new Error(`「${e.name}」은(는) ${e.status || "상태 없음"}이라 체크하지 않아요.`);
+			if (e.since && iso < e.since) throw new Error(`「${e.name}」은(는) ${e.since}부터 시작해요.`);
+			if (a.done === false) {
+				await setDay(ctx.host, e, iso, "", null);
+				return `${iso} 「${e.name}」 표시를 지웠어요`;
 			}
-			return value ? `오늘 「${e.name}」 했음으로 표시했어요` : `오늘 「${e.name}」 표시를 지웠어요`;
+			const said = String(a.said ?? "").trim();
+			await setDay(ctx.host, e, iso, "x", `사용자 보고 (루미 ${nowHm()})${said ? ` “${said.replace(/[“”"]/g, "")}”` : ""}`);
+			if (said) await addRecordLine(ctx.host, e, iso, said);
+			return `${iso} 「${e.name}」 했음으로 기록했어요${said ? " (말씀하신 내용도 기록에 남겼어요)" : ""}`;
+		},
+	},
+	{
+		name: "flywheel_record",
+		description: "Flywheel 요소의 그날 기록에 한 줄 남기기(체크와 별개). 사용자가 말한 그대로. material=true면 #재료(콘텐츠 재료). date를 비우면 오늘.",
+		shape: { element: z.string(), text: z.string(), material: z.boolean().default(false), date: isoDate.optional() },
+		async run(ctx, a) {
+			const e = findElement((await readWheel(ctx)).elements, String(a.element));
+			const text = String(a.text).trim();
+			if (!text) throw new Error("남길 내용이 비어 있어요.");
+			await addRecordLine(ctx.host, e, a.date ? String(a.date) : ctx.today, a.material ? `${text} #재료` : text);
+			return `「${e.name}」 기록에 남겼어요${a.material ? " (재료)" : ""}`;
 		},
 	},
 	{
 		name: "flywheel_add",
-		description: "Flywheel에 요소 추가(확인 카드). 반복할수록 내가 강해지고, 바쁜 날 2분 버전(min)이 있는 것만. identity는 '나는 매일 ~하는 사람이다'.",
+		description: "Flywheel에 요소 추가(확인 카드) — 폴더와 허브를 만든다. 반복할수록 내가 강해지고, 바쁜 날 2분 버전(min)이 있는 것만. identity는 '나는 매일 ~하는 사람이다'.",
 		shape: { name: z.string(), identity: z.string().default(""), min: z.string(), normal: z.string().default(""), next: z.string().default("") },
 		big: () => true,
-		async preview(ctx, a) {
-			const { elements } = await readWheel(ctx);
-			if (countActive(elements) >= MAX_ELEMENTS) throw new Error(`요소는 ${MAX_ELEMENTS}개까지예요. 하나를 쉬거나 폐기한 뒤에 넣을 수 있어요.`);
+		async preview(_ctx, a) {
 			if (!String(a.name).trim() || !String(a.min).trim()) throw new Error("이름과 최소 행동이 필요해요.");
 			return { title: `Flywheel 요소 추가: ${String(a.name)}`, lines: [String(a.identity), `최소 · ${String(a.min)}`, ...(a.normal ? [`보통 · ${String(a.normal)}`] : []), ...(a.next ? [`다음 · ${String(a.next)}`] : [])].filter(Boolean) };
 		},
 		async run(ctx, a) {
 			const n = String(a.next ?? "").replace(/^→\s*/, "");
-			let id = "";
-			await writeWheel(ctx, `${REPLACEMENT_MARK}: ${String(a.name)} 추가 (루미)`, (t) => {
-				if (countActive(parseFlywheel(t)) >= MAX_ELEMENTS) return null;
-				id = nextId(t);
-				return addElement(t, id, { name: String(a.name), identity: String(a.identity ?? ""), min: String(a.min), normal: String(a.normal ?? ""), next: n ? `→ ${n}` : "" }, ctx.today);
-			});
-			return `Flywheel에 ${id} 「${String(a.name)}」을(를) 넣었어요`;
+			const id = await createElement(ctx.host, { name: String(a.name), identity: String(a.identity ?? ""), min: String(a.min), normal: String(a.normal ?? ""), next: n ? `→ ${n}` : "", since: addDays(ctx.today, 1) });
+			return `Flywheel에 「${String(a.name)}」을(를) 넣었어요 (${id}, 내일부터)`;
 		},
 	},
 	{
@@ -612,10 +604,12 @@ export const LUMI_TOOLS: LumiTool[] = [
 			const v = String(a.value).trim();
 			const field = String(a.field);
 			if (field === "상태" && v !== "사용" && v !== "쉼") throw new Error("상태는 사용 또는 쉼만 바꿀 수 있어요. 폐기는 Flywheel 화면에서 해요.");
-			await writeWheel(ctx, `${e.id} ${e.name} ${field} 고침 (루미)`, (t) =>
-				field === "이름" ? renameElement(t, e.id, v) : setElementField(t, e.id, field === "상태" ? "status" : field, field === "다음" && v && !v.startsWith("→") ? `→ ${v}` : v),
-			);
-			return `${e.id} 「${e.name}」 ${field}: ${short(v)}`;
+			if (field === "이름") await renameFlywheelElement(ctx.host, e, v);
+			else
+				await changeElement(ctx.host, e, `${e.id} ${e.name} ${field} 고침 (루미)`, {
+					hub: (t) => (field === "상태" ? setHubFm(t, "status", v, ctx.today) : setHubFm(setHubMethod(t, field, field === "다음" && v && !v.startsWith("→") ? `→ ${v}` : v), "updated", ctx.today, ctx.today)),
+				});
+			return `「${e.name}」 ${field}: ${short(v)}`;
 		},
 	},
 ];

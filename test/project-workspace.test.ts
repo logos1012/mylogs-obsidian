@@ -16,13 +16,11 @@ test("goal links match exact id or path with extension/alias, not path substring
 	assert.equal(goalPointsToProject(goal("g", { projectIds: [p.id + "-2"] }), p), false);
 	assert.equal(goalPointsToProject(goal("g", { projects: [`[[${p.path} extra]]`] }), p), false);
 });
-test("shared Flywheel means same goal, never an invented direct relation", () => {
-	const elements = [
-		{ id: "F-1", name: "글쓰기", status: "사용", fields: { goal: "G-2026-01.1" } },
-		{ id: "F-2", name: "몸 만들기", status: "사용", fields: { goal: "G-2026-02.1" } },
-		{ id: "F-3", name: "옛 요소", status: "폐기", fields: { goal: "G-2026-01.1" } },
-	];
+test("shared Flywheel: same goal or named in the hub's flywheel; 폐기 left out", () => {
+	const el = (id: string, name: string, status: string, goals: string[]) => ({ id, name, status, goals, fields: {}, since: "", channels: [], folder: "", hubPath: "", hasHub: true });
+	const elements = [el("F-1", "글쓰기", "사용", ["G-2026-01.1"]), el("F-2", "몸 만들기", "사용", ["G-2026-02.1"]), el("F-3", "옛 요소", "폐기", ["G-2026-01.1"])];
 	assert.deepEqual(sharedFlywheel(p, [], elements).map(e => e.id), ["F-1"]);
+	assert.deepEqual(sharedFlywheel(p, [], elements, ["F-2"]).map(e => e.id), ["F-1", "F-2"]);
 });
 test("workspace files stay within the selected project and include nested non-markdown assets", () => {
 	const root = p.folder + "/01 초안/";

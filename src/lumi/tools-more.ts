@@ -29,7 +29,7 @@ import { connectFlywheel, connectProject, readGoals, readProject } from "../pinb
 import { saveGoalFields } from "../pinboard/goal-actions.ts";
 import { removeGoalsFromProjects } from "../projects/actions.ts";
 import { parseFrontmatterText, type Goal, ENDED_STATUSES } from "../pinboard/model.ts";
-import { flywheelPath, parseFlywheel } from "../flywheel/model.ts";
+import { loadWheel } from "../flywheel/actions.ts";
 import { type DeskItem, findPairAlloc, isoWeekNo, mondayOf, type MonthData, parseMonthFile, parseMonthKey, shiftMonth } from "../desk/model.ts";
 import { pairedCopies, planAssignWeek, planCancelEvent, planDelete, planDrawer, planEdit, planFuture, planLetGo, planMoveDay, planMoveWeek, planSetSide, planSplit, planToggle, type Plan } from "../desk/ops.ts";
 import { deskMonthPath, runDeskPlan } from "../desk/actions.ts";
@@ -250,11 +250,10 @@ export const MORE_TOOLS: LumiTool[] = [
 				return `${goal.id} 「${goal.title}」 ${link ? "↔" : "✕"} 프로젝트 「${p.title}」`;
 			}
 			if (a.flywheel) {
-				const f = ctx.host.app.vault.getAbstractFileByPath(normalizePath(flywheelPath(ctx.host.settings.flywheelPath)));
-				if (!(f instanceof TFile)) throw new Error("Flywheel.md가 없어요.");
-				const els = parseFlywheel(await ctx.host.app.vault.read(f));
+				const els = (await loadWheel(ctx.host)).elements;
 				const e = els.find((x) => x.id === String(a.flywheel)) ?? pick(els, String(a.flywheel), (x) => x.name, "Flywheel 요소");
-				await connectFlywheel(ctx.host, goal, e.id, e.fields.goal ?? "", link, ctx.today);
+				if (!link && !e.goals.includes(goal.id)) throw new Error(`「${e.name}」은(는) ${goal.id}에 연결돼 있지 않아요.`);
+				await connectFlywheel(ctx.host, goal, e.id, "", link, ctx.today);
 				return `${goal.id} 「${goal.title}」 ${link ? "↔" : "✕"} Flywheel 「${e.name}」`;
 			}
 			throw new Error("project 또는 flywheel을 주세요.");

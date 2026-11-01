@@ -18,8 +18,9 @@ import { tip } from "../ui/tip.ts";
 import { askForm } from "../ui/modals.ts";
 import { addDays } from "../parser.ts";
 import { setFrontmatterScalar } from "../writer.ts";
-import { type FlywheelElement, flywheelPath, parseFlywheel } from "../flywheel/model.ts";
-import { parseLogTable, setLogCell } from "../flywheel/ops.ts";
+import type { FlywheelElement } from "../flywheel/model.ts";
+import { parseLogTable } from "../flywheel/ops.ts";
+import { loadWheelCached, nowHm, setDay } from "../flywheel/actions.ts";
 import { editVisionBoard } from "./actions.ts";
 import { IMAGES_DIR, imageName, moveCard, parseVisionBoard, setAffirmation, setCards, streak, type VisionBoard, type VisionCard, visionPath, visionSkeleton } from "./model.ts";
 
@@ -122,8 +123,7 @@ export class VisionBoardView extends ItemView {
 		const seq = ++this.seq;
 		const text = await this.read(this.boardPath());
 		const board = parseVisionBoard(text);
-		const wheel = await this.read(normalizePath(flywheelPath(this.wheelFolder())));
-		const element = board.flywheel ? (parseFlywheel(wheel).find((e) => e.id === board.flywheel) ?? null) : null;
+		const element = board.flywheel ? ((await loadWheelCached(this.plugin)).elements.find((e) => e.id === board.flywheel) ?? null) : null;
 		// 오늘 읽음 and the streak from the 수행 표 (this month and the two before).
 		const today = todayIso();
 		const tables = new Map<string, Map<string, Map<string, string>>>();
@@ -495,18 +495,13 @@ export class VisionBoardView extends ItemView {
 			return;
 		}
 		const today = todayIso();
-		const month = today.slice(0, 7);
-		const path = this.logPath(month);
-		const wheel = await this.read(normalizePath(flywheelPath(this.wheelFolder())));
-		const ids = parseFlywheel(wheel).filter((x) => x.status !== "폐기").map((x) => x.id);
+		if (e.since && e.since > today) {
+			new Notice(`Flywheel 「${e.name}」은(는) ${e.since}부터 세요. 오늘은 기록하지 않았어요.`);
+			return;
+		}
 		this.busy = true;
 		try {
-			const f = this.file(path);
-			if (f) await this.app.vault.process(f, (t) => setLogCell(t, month, today.slice(8, 10), e.id, "x", ids));
-			else {
-				await this.ensureFolder(path.slice(0, path.lastIndexOf("/")));
-				await this.app.vault.create(path, setLogCell(null, month, today.slice(8, 10), e.id, "x", ids));
-			}
+			await setDay(this.plugin, e, today, "x", `Vision Board 확언 끝까지 (${nowHm()})`);
 			this.doneToday = true;
 			this.streakDays += 1;
 		} catch (err) {
@@ -640,8 +635,7 @@ export class VisionBoardView extends ItemView {
 	}
 
 	private async linkFlywheel(): Promise<void> {
-		const wheel = await this.read(normalizePath(flywheelPath(this.wheelFolder())));
-		const els = parseFlywheel(wheel).filter((e) => e.status !== "폐기");
+		const els = (await loadWheelCached(this.plugin)).elements.filter((e) => e.status !== "폐기");
 		if (!els.length) {
 			new Notice("Flywheel 요소가 없어요. Flywheel 화면에서 먼저 만들어 주세요.");
 			return;
