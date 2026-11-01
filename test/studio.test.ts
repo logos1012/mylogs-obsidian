@@ -11,6 +11,8 @@ import {
 	glgamSkeleton,
 	markDropped,
 	markWritten,
+	unmarkWritten,
+	defaultSchedule,
 	newPostId,
 	parseGlgam,
 	parsePost,
@@ -206,4 +208,17 @@ test("s3: RFC 3986 keys, upload key under prefix/YYYY/MM (KST), list parsing", (
 	assert.equal(uploadKey(c, "아침 달리기!.JPG", new Date("2026-01-31T16:05:09Z")), "studio/2026/02/20260201-010509-아침-달리기.jpg");
 	const xml = `<ListBucketResult><Contents><Key>studio/2026/01/a&amp;b.png</Key><LastModified>2026-01-14T05:00:00.000Z</LastModified><Size>820</Size></Contents><Contents><Key>studio/2026/01/</Key><Size>0</Size></Contents></ListBucketResult>`;
 	assert.deepEqual(parseList(c, xml), [{ key: "studio/2026/01/a&b.png", url: "https://kimharu-media.s3.ap-northeast-2.amazonaws.com/studio/2026/01/a%26b.png", size: 820, modified: "2026-01-14T05:00:00.000Z" }]);
+});
+
+test("delete a post: its 글감 drops the link, back to 대기 when none is left", () => {
+	const base = "- [ ] 기준을 낮추면 꾸준해진다 (src:: diary) (added:: 2026-01-14) ^g1";
+	const two = markWritten(markWritten(base, "[[s/02 산출물/링크드인/2026-01-14 기준|링크드인]]"), "[[s/02 산출물/스레드/2026-01-14 기준|스레드]]");
+	const one = unmarkWritten(two, "s/02 산출물/링크드인/2026-01-14 기준.md");
+	assert.equal(one, "- [>] 기준을 낮추면 꾸준해진다 → [[s/02 산출물/스레드/2026-01-14 기준|스레드]] (src:: diary) (added:: 2026-01-14) ^g1");
+	assert.equal(unmarkWritten(one, "s/02 산출물/스레드/2026-01-14 기준.md"), base);
+});
+
+test("default 예약: today at the next full hour (KST), late night → tomorrow 08:00", () => {
+	assert.equal(defaultSchedule(new Date("2026-01-14T05:20:00Z")), "2026-01-14 15:00");
+	assert.equal(defaultSchedule(new Date("2026-01-14T14:30:00Z")), "2026-01-15 08:00");
 });
