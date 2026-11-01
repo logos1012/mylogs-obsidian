@@ -12,6 +12,7 @@ import {
 	displayMainProgress,
 	displaySubProgress,
 	findSectionText,
+	fmtGoalValue,
 	fmtNum,
 	type Goal,
 	goalIdsIn,
@@ -218,6 +219,14 @@ test("display helpers: numbers, D-day, year", () => {
 	assert.equal(fmtNum(1000000), "100만");
 	assert.equal(fmtNum(1234), "1,234");
 	assert.equal(fmtNum(2.5), "2.5");
+	// Sub Goal values on the map card and detail panel: metric numbers get separators, text stays.
+	assert.equal(fmtGoalValue("10000000", "metric"), "1,000만");
+	assert.equal(fmtGoalValue("12345678", "metric"), "12,345,678");
+	assert.equal(fmtGoalValue("0", "metric"), "0");
+	assert.equal(fmtGoalValue("", "metric"), "");
+	assert.equal(fmtGoalValue("?", "metric"), "?");
+	assert.equal(fmtGoalValue("10강 출시", "milestone"), "10강 출시");
+	assert.equal(fmtGoalValue("2026", "milestone"), "2026");
 	assert.deepEqual(dday("2026-12-31", "2026-10-24"), { big: "D-68", small: "2026.12.31", cls: "" });
 	assert.deepEqual(dday("2026-10-30", "2026-10-24"), { big: "D-6", small: "2026.10.30", cls: "soon" });
 	assert.deepEqual(dday("2026-10-20", "2026-10-24"), { big: "D+4", small: "2026.10.20 지남", cls: "over" });

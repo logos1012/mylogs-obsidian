@@ -63,6 +63,7 @@ import {
 	displayMainProgress,
 	displaySubProgress,
 	findSectionText,
+	fmtGoalValue,
 	fmtNum,
 	fmtVal,
 	type Goal,
@@ -664,8 +665,8 @@ export class PinboardView extends ItemView {
 				status: s.status,
 				health: s.health,
 				progress: p === null ? null : Math.round(p),
-				current: s.current,
-				target: s.target,
+				current: fmtGoalValue(s.current, s.measure),
+				target: fmtGoalValue(s.target, s.measure),
 				unit: s.unit,
 				due: s.due,
 				related: (d.related.get(s.id) ?? []).map((r) => ({ kind: r.kind, contributes: s.progressSource === "projects" && r.kind === "project" && !!r.id && s.projectIds.includes(r.id) && projectWeight(s, r.id) > 0, label: r.label, path: r.path, oneSided: r.oneSided || r.broken || undefined })),
@@ -1078,10 +1079,10 @@ export class PinboardView extends ItemView {
 			tip(top.createSpan({ cls: "pb-src-chip", text: "프로젝트 기준" }), "연결된 프로젝트의 마일스톤 달성으로 자동 계산해요. 아래 실제 값과는 따로예요. 계산 방식은 오른쪽 「세부 설정」에서 바꿔요.");
 		} else tip(top, "현재 값으로 계산해요");
 		const path = pc.createDiv({ cls: "pb-inline-metrics" });
-		const metric = (field: InlineGoalField, label: string) => {
+		const metric = (field: "baseline" | "current" | "target", label: string) => {
 			const box = path.createDiv({ cls: "pb-inline-metric" });
 			box.createDiv({ cls: "pb-d-label", text: label });
-			this.inlineField(box, s, field, { label });
+			this.inlineField(box, s, field, { label, display: fmtGoalValue(s[field], s.measure) || undefined });
 		};
 		if (s.measure === "metric") metric("baseline", "시작 값");
 		metric("current", "현재 값");
