@@ -11508,3 +11508,14 @@ body.is-mobile .fw3-card { padding: 10px; gap: 5px; }
 body.is-mobile .fw3-card .fw3-last, body.is-mobile .fw3-card .fw3-meta, body.is-mobile .fw3-card .fw3-dots { display: none; }
 body.is-mobile .fw3 button.fw3-did { height: 36px; }
 body.is-mobile .mylogs-daily-pad button.ml-memo-wheel { opacity: 1; }
+
+/* ===== Flywheel 커버 이미지 (0.38.1, 허브 `cover`) ===== */
+.fw3-card-cover { margin: -14px -14px 2px; aspect-ratio: 16 / 7; overflow: hidden; border-radius: 11px 11px 0 0; background: var(--background-secondary); }
+.fw3-card-cover img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform .25s ease; }
+.fw3-card:hover .fw3-card-cover img, .fw3-rcard:hover .fw3-card-cover img { transform: scale(1.03); }
+.fw3-card.is-rest .fw3-card-cover img { filter: grayscale(.6); }
+.fw3-rcard .fw3-card-cover { margin: -14px -14px 2px; aspect-ratio: 16 / 6; }
+.fw3-ws-cover { margin: 0 0 12px; height: 150px; border-radius: 12px; overflow: hidden; cursor: pointer; background: var(--background-secondary); }
+.fw3-ws-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
+body.is-mobile .fw3-card-cover { margin: -10px -10px 2px; aspect-ratio: 16 / 8; }
+body.is-mobile .fw3-ws-cover { height: 110px; }

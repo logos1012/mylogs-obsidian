@@ -186,3 +186,14 @@ test("store: the old one-file Flywheel.md is read but not written", async () => 
 	assert.deepEqual(w.elements[0].goals, ["G-2026-02.1"]);
 	await assert.rejects(planElementChange(io, w, w.elements[0], "x", "2026-01-10", {}));
 });
+
+test("hub cover: quoted wikilink, embed, alias and bare path all resolve to the target", async () => {
+	const { coverTarget, coverValue, elementOf } = await import("../src/flywheel/wheel.ts");
+	assert.equal(coverTarget('[[12 Flywheel/99 작업실/images/운동.jpg]]'), "12 Flywheel/99 작업실/images/운동.jpg");
+	assert.equal(coverTarget("![[운동.jpg|커버]]"), "운동.jpg");
+	assert.equal(coverTarget("images/운동.jpg"), "images/운동.jpg");
+	assert.equal(coverTarget(""), "");
+	assert.equal(coverValue("a/b.jpg"), '"[[a/b.jpg]]"');
+	const hub = '---\ntype: flywheel-element\nid: F-1\ntitle: 운동\nstatus: 사용\ncover: "[[12 Flywheel/99 작업실/images/운동.jpg]]"\n---\n# 운동\n';
+	assert.equal(elementOf(null, hub, "12 Flywheel/운동/운동.md").cover, "12 Flywheel/99 작업실/images/운동.jpg");
+});

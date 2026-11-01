@@ -5,6 +5,7 @@
  */
 
 import { type App, moment, normalizePath, TFile, TFolder } from "obsidian";
+import { coverValue } from "./wheel.ts";
 import type { MyLogsSettings } from "../settings.ts";
 import { cleanFolder } from "../settings.ts";
 import { commitBatch, type Write } from "../pinboard/batch.ts";
@@ -284,3 +285,17 @@ export function appendMemo(padText: string, section: string, line: string): stri
 
 /** Hub text → element (for screens that already have the text). */
 export { elementOf };
+
+/** The element's card image as a resource URL, or null (no `cover`, or the file is gone). */
+export function coverSrc(app: App, e: FlywheelElement): string | null {
+	if (!e.cover) return null;
+	const f = app.metadataCache.getFirstLinkpathDest(e.cover, e.hubPath) ?? app.vault.getAbstractFileByPath(normalizePath(e.cover));
+	return f instanceof TFile ? app.vault.getResourcePath(f) : null;
+}
+
+export const IMAGE_EXT = ["png", "jpg", "jpeg", "webp", "gif", "avif"];
+
+/** Set (path) or clear ("") the hub `cover`. */
+export async function setCover(h: Host, e: FlywheelElement, path: string): Promise<void> {
+	await changeElement(h, e, path ? `커버 이미지: ${e.id} ${e.name}` : `커버 이미지 뺌: ${e.id} ${e.name}`, { hub: (t) => setHubFm(t, "cover", coverValue(path), todayIso()) });
+}
