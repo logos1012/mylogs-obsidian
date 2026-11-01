@@ -757,10 +757,10 @@ export function resultPatch(p: Post, r: ResultRow | undefined): Record<string, F
 	return null;
 }
 
-/** Header for an intake POST. LinkedIn and Threads send `x-studio-key` only when the setting is non-empty. */
+/** Header for an intake POST. LinkedIn, Threads, and Instagram send `x-studio-key` only when the setting is non-empty. */
 export function webhookHeaders(channel: ChannelKey, studioKey: string): Record<string, string> {
 	const key = studioKey.trim();
-	if ((channel !== "li" && channel !== "th") || !key) return {};
+	if ((channel !== "li" && channel !== "th" && channel !== "ig") || !key) return {};
 	return { "x-studio-key": key };
 }
 
