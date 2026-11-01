@@ -4,9 +4,9 @@
  * name. Folder AGENTS.md files are read on demand by the engine itself (it runs in the vault).
  */
 
-import { type App, normalizePath, TFile } from "obsidian";
+import { type App, type TFile } from "obsidian";
 import type { MyLogsSettings } from "../settings.ts";
-import { flywheelPath, parseFlywheel } from "../flywheel/model.ts";
+import { loadWheelCached } from "../flywheel/actions.ts";
 import { isGoalNotePath } from "../pinboard/model.ts";
 
 /** Where 루미 was called from: a MyLogs view and, when one is open, the item on it. */
@@ -89,8 +89,7 @@ export async function buildContext(app: App, s: MyLogsSettings, screen: LumiScre
 		.map((f) => fm(app, f))
 		.filter((p) => p.type === "project")
 		.map((p) => `- ${String(p.id ?? "")} ${String(p.title ?? "")} [${String(p.status ?? "")}${p.scope === "회사" ? " · 회사" : ""}]`);
-	const wheel = app.vault.getAbstractFileByPath(normalizePath(flywheelPath(s.flywheelPath)));
-	const elements = wheel instanceof TFile ? parseFlywheel(await app.vault.cachedRead(wheel)) : [];
+	const elements = (await loadWheelCached({ app, settings: s })).elements;
 	const lines = [
 		`오늘: ${date}`,
 		`개인/회사 모드: ${s.sideMode} — 사용자가 따로 말하지 않으면 새 할 일은 ${s.sideMode === "회사" ? "회사(Daily Pad 회사 할 일, Wall·Desk 줄 끝 #회사)" : "개인(표시 없음)"}로 넣는다. 다른 쪽이 분명하면 그쪽.`,
@@ -105,7 +104,8 @@ export async function buildContext(app: App, s: MyLogsSettings, screen: LumiScre
 		...(projects.length ? projects.slice(0, 40) : ["- 아직 없음"]),
 		"",
 		"Flywheel 요소:",
-		...(elements.length ? elements.map((e) => `- ${e.id} ${e.name} [${e.status || "상태 없음"}] 최소: ${e.fields["최소"] ?? ""}`) : ["- 아직 없음"]),
+		...(elements.length ? elements.map((e) => `- ${e.name} (${e.id}) [${e.status || "상태 없음"}${e.since ? ` · ${e.since}부터` : ""}] 최소: ${e.fields["최소"] ?? ""}${e.goals.length ? ` · 목표 ${e.goals.join(", ")}` : ""}`) : ["- 아직 없음"]),
+		"Flywheel 수행: 사용자가 그 요소의 최소 행동을 했다고 말하면 flywheel_check(said에 사용자 말 그대로). 기록만 원하면 flywheel_record. 화면에는 id 대신 이름을 쓴다.",
 	];
 	return `${PERSONA}\n\n<mylogs-현황>\n${lines.filter((l, i, a) => !(l === "" && a[i - 1] === "")).join("\n")}\n</mylogs-현황>`;
 }

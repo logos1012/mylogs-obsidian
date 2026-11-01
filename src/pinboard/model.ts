@@ -737,7 +737,7 @@ export function relatedOf(g: Pick<Goal, "id" | "projects" | "projectIds">, proje
 		else if (!out.some((x) => x.broken && x.label === wikilinkName(link))) out.push({ kind: "project", label: wikilinkName(link), broken: true });
 	}
 	for (const p of projects) if (p.goals.includes(g.id)) addProject(p, false);
-	for (const h of habits) if (h.goals.includes(g.id)) out.push({ kind: "habit", label: h.name ? `${h.id} ${h.name}` : h.id, id: h.id, status: h.status });
+	for (const h of habits) if (h.goals.includes(g.id) && h.status !== "폐기") out.push({ kind: "habit", label: h.name || h.id, id: h.id, status: h.status });
 	for (const m of means) out.push({ kind: "memo", label: m });
 	return out;
 }

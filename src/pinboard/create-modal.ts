@@ -18,7 +18,7 @@ class CreateModal extends Modal {
 		el.createEl("p",{text:sub?`「${o.parent!.title}」의 측정 기준과 실행 공간을 함께 만들어요.`:`${o.year}년에 이루려는 방향을 적어 주세요.`,cls:"mylogs-modal-desc"});
 		const i:GoalInput={title:"",area:o.parent?.area??"",why:"",measure:"metric",baseline:"",current:"",target:"",unit:"",due:""};
 		const p:NewProjectInput={id:autoId(o),name:"",summary:"",area:i.area,scope:"개인",kind:"",aliases:"",action:""};
-		let mode:"new"|"project"|"flywheel"="new",projectPath="",flywheelId="",confirmed=false,nameTouched=false;
+		let mode:"new"|"project"|"flywheel"="new",projectPath="",flywheelId="",nameTouched=false;
 		let nameInput:HTMLInputElement|null=null;
 		new Setting(el).setName("이름").addText(t=>{t.inputEl.addClass("mylogs-form-wide");t.onChange(v=>{i.title=v;if(!nameTouched){p.name=v;if(nameInput)nameInput.value=v;}});setTimeout(()=>t.inputEl.focus(),0);});
 		new Setting(el).setName("영역").setDesc("사업, 건강, 글쓰기처럼 묶어 볼 분류").addText(t=>t.setValue(i.area).onChange(v=>{i.area=v;p.area=v;}));
@@ -45,8 +45,7 @@ class CreateModal extends Modal {
 			new Setting(existing).setName("프로젝트").addDropdown(d=>{d.addOption("","고르기");for(const x of o.projects.filter(p=>!p.archived))d.addOption(x.path,x.title);d.onChange(v=>projectPath=v);});
 			if(!o.projects.some(p=>!p.archived))existing.createEl("p",{text:"연결할 프로젝트가 없어요. 새 프로젝트 함께 만들기를 선택해 주세요."});
 			const warning=wheel.createEl("p",{cls:"mylogs-modal-desc"});
-			new Setting(wheel).setName("요소").addDropdown(d=>{d.addOption("","고르기");for(const x of o.flywheel.filter(e=>e.status!=="폐기"))d.addOption(x.id,`${x.id} ${x.name}`);d.onChange(v=>{flywheelId=v;confirmed=false;const e=o.flywheel.find(e=>e.id===v);warning.setText(e?.fields.goal?`현재 ${e.fields.goal}에 연결돼 있어요. 새 하위 목표로 교체하려면 아래에 확인해 주세요.`:"요소와 기존 결과물은 그대로 두고 목표만 연결해요.");});});
-			new Setting(wheel).setName("기존 목표 연결 교체에 동의").setDesc("이미 연결된 목표가 있을 때만 필요해요.").addToggle(t=>t.onChange(v=>confirmed=v));
+			new Setting(wheel).setName("요소").addDropdown(d=>{d.addOption("","고르기");for(const x of o.flywheel.filter(e=>e.status!=="폐기"))d.addOption(x.id,x.name);d.onChange(v=>{flywheelId=v;const e=o.flywheel.find(e=>e.id===v);warning.setText(e?.goals.length?`이미 ${e.goals.length}개 목표에 연결돼 있어요. 새 하위 목표도 함께 연결돼요.`:"요소와 기존 결과물은 그대로 두고 목표만 연결해요.");});});
 			if(!o.flywheel.length)wheel.createEl("p",{text:"Flywheel 요소를 먼저 정해 주세요. 여기서 자동으로 요소를 만들지는 않아요."});
 		}
 		const errors=el.createEl("ul",{cls:"mylogs-form-errors",attr:{role:"alert"}});
@@ -56,7 +55,7 @@ class CreateModal extends Modal {
 			if(sub){
 				if(mode==="new"){p.name=p.name.trim();p.summary=p.summary.trim();p.area=i.area;problems.push(...validateInput(p,o.taken));execution={mode,project:p};}
 				if(mode==="project"){if(!projectPath)problems.push("연결할 프로젝트를 골라 주세요.");execution={mode,path:projectPath};}
-				if(mode==="flywheel"){const e=o.flywheel.find(x=>x.id===flywheelId);if(!e)problems.push("Flywheel 요소를 골라 주세요.");else if(e.fields.goal&&!confirmed)problems.push("기존 목표 연결의 교체를 확인해 주세요.");execution={mode,id:flywheelId,previous:e?.fields.goal??""};}
+				if(mode==="flywheel"){const e=o.flywheel.find(x=>x.id===flywheelId);if(!e)problems.push("Flywheel 요소를 골라 주세요.");execution={mode,id:flywheelId,previous:e?.fields.goal??""};}
 			}
 			errors.empty();for(const x of problems)errors.createEl("li",{text:x});if(!problems.length)this.finish({input:i,execution});
 		})).settingEl.addClass("mylogs-form-actions");

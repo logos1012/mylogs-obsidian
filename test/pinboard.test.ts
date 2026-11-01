@@ -321,7 +321,7 @@ test("newest first and chart series (baseline first, valued lines in date order)
 
 // ───────────────────────── 관련 업무 (SPEC 1-5) ─────────────────────────
 
-test("관련 업무: projects both ways (one-sided marked), habits by goal::, 수단 as 메모", () => {
+test("관련 업무: projects both ways (one-sided marked), habits by goals (name only), 수단 as 메모", () => {
 	const { goals } = load();
 	const rev = goals.find((g) => g.id === "G-2026-01.2")!;
 	const projects = [
@@ -337,7 +337,7 @@ test("관련 업무: projects both ways (one-sided marked), habits by goal::, �
 	assert.deepEqual(r, [
 		{ kind: "project", label: "뉴스레터 창간", path: projects[0].path, id: "P-newsletter", status: "진행", oneSided: true },
 		{ kind: "project", label: "분기 보고서 자동화", path: projects[1].path, id: "P-report", status: "진행", oneSided: true },
-		{ kind: "habit", label: "F-2 글쓰기", id: "F-2", status: "사용" },
+		{ kind: "habit", label: "글쓰기", id: "F-2", status: "사용" },
 		{ kind: "memo", label: "뉴스레터 유료 구독" },
 	]);
 	// both sides linked → not one-sided; an id without a hub is broken
@@ -353,7 +353,7 @@ test("관련 업무: projects both ways (one-sided marked), habits by goal::, �
 	const merged = mergeRelated([{ kind: "memo", label: "m" }], [r, r]);
 	assert.deepEqual(
 		merged.map((x) => `${x.kind}:${x.label}`),
-		["memo:m", "project:뉴스레터 창간", "project:분기 보고서 자동화", "habit:F-2 글쓰기"],
+		["memo:m", "project:뉴스레터 창간", "project:분기 보고서 자동화", "habit:글쓰기"],
 	);
 });
 

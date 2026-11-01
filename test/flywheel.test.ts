@@ -72,7 +72,7 @@ test("flywheelLine formats exactly like new_day.py (omits ' — ' when 최소 is
 	const els = parseFlywheel(mixed);
 	assert.equal(flywheelLine(els[0]), "- [ ] F-1 몸 만들기 — 걷기 15분 (flywheel:: F-1)");
 	assert.equal(flywheelLine(els[1]), "- [ ] F-2 공부 (flywheel:: F-2)");
-	assert.equal(flywheelLine({ id: "F-9", name: "이름", fields: {}, status: "사용" }), "- [ ] F-9 이름 (flywheel:: F-9)");
+	assert.equal(flywheelLine({ id: "F-9", name: "이름", fields: {}, status: "사용", since: "", goals: [], channels: [], folder: "", hubPath: "", hasHub: false }), "- [ ] F-9 이름 (flywheel:: F-9)");
 	assert.deepEqual(flywheelLines(els), [
 		"- [ ] F-1 몸 만들기 — 걷기 15분 (flywheel:: F-1)",
 		"- [ ] F-2 공부 (flywheel:: F-2)",
