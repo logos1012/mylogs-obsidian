@@ -45,6 +45,7 @@ import {
 	PRIVATE_HINT,
 	type Source,
 	type SourceUnit,
+	lumiSearchPrompt,
 	type Stage,
 	STAGES,
 	strategyPath,
@@ -436,18 +437,8 @@ export class StudioView extends ItemView {
 	private async askLumi(query: string): Promise<void> {
 		if (!this.plugin.lumi?.available) return void new Notice("루미는 데스크톱 앱에서만 쓸 수 있어요.");
 		lumiBus.ask(query);
-		const src = this.d?.sources.filter((s) => s.on).map((s) => `${s.name}(${s.path}/)`).join(", ");
 		await openLumi(this.plugin, this);
-		await this.plugin.lumi.active.send(
-			[
-				`[콘텐츠 스튜디오 · 글감 찾기] ${query}`,
-				"",
-				`볼트에서 위 조건에 맞는 글감 후보를 찾아 줘. 특히 10 Archive Box/Sessions/ 의 AI 대화 세션을 봐 줘. 다른 소스: ${src ?? ""}.`,
-				"- 사용자(나)가 직접 한 말만, 원문 그대로 짧게(한두 문장) 인용해. AI가 한 말이나 요약은 넣지 마.",
-				"- 최대 8개. 각 후보에 그 파일의 볼트 경로, 인용, 왜 골랐는지 한 줄, 날짜(YYYY-MM-DD).",
-				"- 찾은 뒤 studio_candidates 도구 한 번으로 보내. 파일은 쓰지 마.",
-			].join("\n"),
-		);
+		await this.plugin.lumi.active.send(lumiSearchPrompt(query, this.d?.sources ?? []));
 	}
 
 	private renderCands(grid: HTMLElement, d: StudioData): void {
@@ -886,8 +877,8 @@ export class StudioView extends ItemView {
 			fields: [
 				{ key: "name", label: "이름", type: "text", value: cur?.name ?? "", placeholder: "예: 독서 모임 기록" },
 				{ key: "path", label: "폴더", type: "text", value: cur?.path ?? "", placeholder: "예: 05 Project Folders/개인/독서 모임/01 회의록" },
-				{ key: "unit", label: "무엇을 후보 하나로 볼까요", type: "select", value: cur?.unit ?? "줄", options: [["줄", "줄 — 목록 한 줄씩"], ["섹션", "섹션 — 제목 아래 덩어리"], ["파일", "파일 — 파일 한 개"], ["루미", "루미 — 자동으로 훑지 않음"]] },
-				{ key: "where", label: "어느 제목 아래만 (선택)", type: "text", value: cur?.where.join(", ") ?? "", placeholder: "줄: ## 메모, ## 로그 · 섹션: ###" },
+				{ key: "unit", label: "무엇을 후보 하나로 볼까요", type: "select", value: cur?.unit ?? "줄", options: [["줄", "줄 — 목록 한 줄씩"], ["항목", "항목 — 맨 앞 목록 하나씩(아래 줄은 설명)"], ["섹션", "섹션 — 제목 아래 덩어리"], ["파일", "파일 — 파일 한 개"], ["루미", "루미 — 자동으로 훑지 않음"]] },
+				{ key: "where", label: "어느 제목 아래만 (선택)", type: "text", value: cur?.where.join(", ") ?? "", placeholder: "줄·항목: ## 메모, ## 로그 · 섹션: ###" },
 			],
 			cta: cur ? "고치기" : "더하기",
 			validate: (x) => {
@@ -1538,3 +1529,4 @@ export async function activateStudio(plugin: MyLogsPlugin, from?: WorkspaceLeaf,
 }
 
 export { channelByKey };
+

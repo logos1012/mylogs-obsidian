@@ -20,7 +20,7 @@
 import { normalizePath, TFile, type App } from "obsidian";
 import { z } from "zod";
 import { lumiBus } from "../studio/bus.ts";
-import { cleanLine, type Candidate, hash } from "../studio/model.ts";
+import { cleanLine, type Candidate, DEFAULT_SOURCES, hash, isReferenceSource } from "../studio/model.ts";
 import type { LumiTool, ToolCtx } from "./tools.ts";
 import { activeRoot, archiveRoot, aliasesOf, completeProject, deleteProject, editProject } from "../projects/actions.ts";
 import { hubLocation, KINDS, type Project, SCOPES, type Scope } from "../projects/model.ts";
@@ -568,7 +568,7 @@ export const MORE_TOOLS: LumiTool[] = [
 	{
 		name: "studio_candidates",
 		description:
-			"콘텐츠 스튜디오 「글감」 화면에 루미가 찾은 글감 후보를 보여 준다(파일에 쓰지 않는다 — 사용자가 화면에서 「글감으로」를 눌러야 글감이 된다). 스튜디오에서 「[콘텐츠 스튜디오 · 글감 찾기]」로 부탁받았을 때 찾은 결과를 한 번에 보낸다. items마다 path(볼트 상대 경로, .md 포함), quote(사용자가 직접 한 말을 원문 그대로 한두 문장 — AI의 말이나 요약 금지), why(왜 골랐는지 한 줄), date(YYYY-MM-DD). 최대 8개.",
+			"콘텐츠 스튜디오 「글감」 화면에 루미가 찾은 글감 후보를 보여 준다(파일에 쓰지 않는다 — 사용자가 화면에서 「글감으로」를 눌러야 글감이 된다). 스튜디오에서 「[콘텐츠 스튜디오 · 글감 찾기]」로 부탁받았을 때 찾은 결과를 한 번에 보낸다. items마다 path(볼트 상대 경로, .md 포함), quote(원문 그대로 한두 문장. 내 글 소스 — AI 대화·Daily Pad·Diary·Flywheel 기록 — 는 사용자가 직접 한 말만, AI의 말이나 요약 금지. 자료 소스 — AI 뉴스·LLM Wiki — 는 그 항목의 문장을 그대로, 요약·고쳐 쓰기 금지), why(왜 골랐는지 한 줄. 자료 소스면 앞에 [자료]), date(YYYY-MM-DD). 최대 8개.",
 		shape: {
 			query: z.string().default(""),
 			items: z.array(z.object({ path: z.string(), quote: z.string(), why: z.string().default(""), date: z.string().default("") })).max(12),
@@ -589,8 +589,9 @@ export const MORE_TOOLS: LumiTool[] = [
 				if (!session) {
 					// a line of a note → link that line (sessions are kept as they are: link the file)
 					const lines = (await ctx.host.app.vault.cachedRead(f)).split(/\r?\n/);
-					const head = cleanLine(quote).slice(0, 24);
-					const i = lines.findIndex((l) => /^\s*[-*+]\s/.test(l) && cleanLine(l).includes(head));
+					const plain = (x: string) => cleanLine(x).replace(/\*\*/g, "");
+					const head = plain(quote).slice(0, 24);
+					const i = lines.findIndex((l) => /^\s*(?:[-*+]|\d+\.)\s/.test(l) && plain(l).includes(head));
 					if (i >= 0) {
 						line = i;
 						key = `${path}#L${hash(lines[i])}`;
@@ -598,13 +599,18 @@ export const MORE_TOOLS: LumiTool[] = [
 					}
 				}
 				const date = /^\d{4}-\d{2}-\d{2}$/.test(it.date) ? it.date : (/(\d{4}-\d{2}-\d{2})/.exec(path)?.[1] ?? ctx.today);
-				out.push({ key, source: session ? "session" : "lumi", path, date, where: f.basename, text: quote, line, heading: "", block, why: it.why.trim() });
+				let why = it.why.trim();
+				if (REF_PATHS.some((p) => path.startsWith(`${p}/`)) && !why.startsWith("[자료]")) why = `[자료] ${why}`.trim();
+				out.push({ key, source: session ? "session" : "lumi", path, date, where: f.basename, text: quote, line, heading: "", block, why });
 			}
 			lumiBus.put(out, String(a.query ?? "") || undefined);
 			return out.length ? `스튜디오 「글감」 화면에 후보 ${out.length}개를 띄웠어요` : "맞는 후보를 찾지 못했어요";
 		},
 	},
 ];
+
+/** 자료 소스 folders (AI 뉴스 · LLM Wiki): their quotes are the material itself, so the card says [자료]. */
+const REF_PATHS = DEFAULT_SOURCES.filter(isReferenceSource).map((s) => s.path);
 
 // ───────────────────────── targets ─────────────────────────
 

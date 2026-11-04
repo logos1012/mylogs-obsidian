@@ -1085,7 +1085,7 @@ export function newBlockId(prefix = "g"): string {
 
 // ───────────────────────── 글감 소스 (99 작업실/글감 소스.md) ─────────────────────────
 
-export type SourceUnit = "줄" | "섹션" | "파일" | "루미";
+export type SourceUnit = "줄" | "항목" | "섹션" | "파일" | "루미";
 
 export interface Source {
 	key: string;
@@ -1098,16 +1098,43 @@ export interface Source {
 	on: boolean;
 }
 
+/** AI 뉴스 briefings — 주제 찾기(루미) always looks here, whatever the registry says (Flywheel AGENTS 「2-1」 3). */
+export const NEWS_PATH = "07 Shelf/LLM Wiki/raw/articles/ai-news";
+export const SESSIONS_PATH = "10 Archive Box/Sessions";
+/** 자료 소스: material an AI gathered (quote the item as written). Every other source is the user's own words. */
+export const REFERENCE_SOURCE_KEYS = ["news", "wiki"];
+export const isReferenceSource = (s: Pick<Source, "key">): boolean => REFERENCE_SOURCE_KEYS.includes(s.key);
+
 export const DEFAULT_SOURCES: Source[] = [
 	{ key: "daily", name: "Daily Pad", path: "04 Daily Pad", unit: "줄", where: ["## 메모", "## 로그"], on: true },
 	{ key: "fw", name: "Flywheel 기록", path: "12 Flywheel/*/01 기록", unit: "줄", where: [], on: true },
-	{ key: "news", name: "AI 뉴스", path: "07 Shelf/LLM Wiki/raw/articles/ai-news", unit: "섹션", where: ["###"], on: true },
+	{ key: "news", name: "AI 뉴스", path: NEWS_PATH, unit: "항목", where: ["## 오늘의 셋", "## 새 기술·제품", "## 사용 방식의 변화", "## 사람들이 쓰는 모습", "## 한국"], on: true },
 	{ key: "wiki", name: "LLM Wiki", path: "07 Shelf/LLM Wiki/wiki/concepts", unit: "파일", where: [], on: true },
 	{ key: "diary", name: "Diary", path: "09 Diary", unit: "파일", where: [], on: true },
 	{ key: "session", name: "AI 대화", path: "10 Archive Box/Sessions", unit: "루미", where: [], on: true },
 ];
 
-const UNITS: SourceUnit[] = ["줄", "섹션", "파일", "루미"];
+/**
+ * The request 「✦ 루미에게 찾기」 sends (Flywheel AGENTS 「2-1」 3): sessions and AI 뉴스 are always searched,
+ * whatever the registry says; the user's own sources are quoted as said, 자료 sources as written.
+ */
+export function lumiSearchPrompt(query: string, sources: Source[]): string {
+	const on = sources.filter((s) => s.on);
+	const label = (s: Source) => `${s.name}(${s.path}/)`;
+	const own = [`AI 대화(${SESSIONS_PATH}/)`, ...on.filter((s) => !isReferenceSource(s) && s.path !== SESSIONS_PATH).map(label)];
+	const ref = [`AI 뉴스(${NEWS_PATH}/)`, ...on.filter((s) => isReferenceSource(s) && s.path !== NEWS_PATH).map(label)];
+	return [
+		`[콘텐츠 스튜디오 · 글감 찾기] ${query}`,
+		"",
+		"볼트에서 위 조건에 맞는 글감 후보를 찾아 줘. 아래 두 종류를 모두 봐 줘.",
+		`- 내 글 소스: ${own.join(", ")}. 사용자(나)가 직접 한 말만 원문 그대로 짧게(한두 문장) 인용해. AI가 한 말이나 요약은 넣지 마.`,
+		`- 자료 소스: ${ref.join(", ")}. 그 항목의 문장을 원문 그대로 짧게(한두 문장) 인용해. 요약하거나 고쳐 쓰지 마. why 앞에 [자료]를 붙이고, AI 뉴스 항목에 원문 링크가 있으면 why에 함께 적어.`,
+		"- 최대 8개. 각 후보에 그 파일의 볼트 경로, 인용, 왜 골랐는지 한 줄, 날짜(YYYY-MM-DD).",
+		"- 찾은 뒤 studio_candidates 도구 한 번으로 보내. 파일은 쓰지 마.",
+	].join("\n");
+}
+
+const UNITS: SourceUnit[] = ["줄", "항목", "섹션", "파일", "루미"];
 
 export function parseSources(text: string | null): Source[] {
 	if (text === null) return DEFAULT_SOURCES.map((s) => ({ ...s }));
@@ -1180,6 +1207,8 @@ export interface Candidate {
 
 const ISO_IN = /(\d{4}-\d{2}-\d{2})/;
 const LIST_RE = /^\s*[-*+]\s+(?:\[[ x>\-]\]\s+)?(.*)$/;
+/** A top-level item: bulleted or numbered, no indent. */
+const ITEM_RE = /^(?:[-*+]|\d+\.)\s+(.*)$/;
 const DATE_H = /^#{2,4}\s+(\d{4}-\d{2}-\d{2})\b/;
 
 export function fileDate(path: string, mtime: number): string {
@@ -1225,6 +1254,34 @@ export function candidatesOf(src: Source, path: string, text: string, mtime: num
 			const t = cleanLine(m[1]);
 			if (t.length < 6 || date < since) return;
 			out.push({ key: `${path}#L${hash(l)}`, source: src.key, path, date, where: sec, text: t, line: i, heading: "", block: /\s\^([\w-]+)\s*$/.exec(l)?.[1] ?? "" });
+		});
+	} else if (src.unit === "항목") {
+		// one top-level item (`- …` or `1. …`) = one candidate; nested lines are its detail
+		if (fdate < since) return out;
+		const wanted = src.where.map((w) => w.replace(/^#+\s*/, ""));
+		let sec = "";
+		let cur: Candidate | null = null;
+		lines.forEach((l, i) => {
+			if (i <= fmEnd) return;
+			const h = /^(#{1,6})\s+(.+?)\s*$/.exec(l);
+			if (h) {
+				cur = null;
+				if (h[1].length === 2) sec = h[2];
+				return;
+			}
+			if (wanted.length && !wanted.includes(sec)) return;
+			const m = ITEM_RE.exec(l);
+			if (m) {
+				const raw = cleanLine(m[1]);
+				const b = /^\*\*(.+?)\*\*\s*(?:[—–:-]\s*)?(.*)$/.exec(raw);
+				const t = (b ? b[1] : raw).trim();
+				cur = null;
+				if (t.length < 6) return;
+				cur = { key: `${path}#L${hash(l)}`, source: src.key, path, date: fdate, where: sec, text: t, line: i, heading: "", block: /\s\^([\w-]+)\s*$/.exec(l)?.[1] ?? "", why: (b ? b[2] : "").replace(/\*\*/g, "").slice(0, 160) };
+				out.push(cur);
+			} else if (cur && !cur.why && l.trim()) {
+				cur.why = cleanLine(l.replace(/^[\s\-*+>]+/, "")).replace(/\*\*/g, "").slice(0, 160);
+			}
 		});
 	} else if (src.unit === "섹션") {
 		if (fdate < since) return out;
