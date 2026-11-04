@@ -21,6 +21,8 @@ import {
 	parseGlgam,
 	parsePost,
 	parseSources,
+	lumiSearchPrompt,
+	isReferenceSource,
 	postProblems,
 	postSkeleton,
 	readFm,
@@ -276,16 +278,58 @@ test("candidates: Daily Pad 메모·로그 lines, dated by file, fields stripped
 	assert.equal(candidatesOf(src, "04 Daily Pad/2026/2026-01-13.md", pad, 0, "2026-01-14").length, 0);
 });
 
-test("candidates: Flywheel 기록 dated by ### headings; AI 뉴스 by ### sections; files", () => {
+test("candidates: Flywheel 기록 dated by ### headings; AI 뉴스 by top-level items; files", () => {
 	const rec = `# 운동 기록 2026-01\n\n### 2026-01-05\n- 걷기 15분, 별일 없음\n\n### 2026-01-12\n- 10km 완주! 다음엔 서브 1시간\n`;
 	const c = candidatesOf(DEFAULT_SOURCES[1], "12 Flywheel/운동/01 기록/운동 기록 2026-01.md", rec, 0, "2026-01-08");
 	assert.deepEqual(c.map((x) => [x.date, x.text]), [["2026-01-12", "10km 완주! 다음엔 서브 1시간"]]);
-	const news = `# AI 뉴스 브리핑\n\n## 오늘의 셋\n\n### 1. 데스크톱 에이전트 공개\n- 프로그램을 직접 눌러 준다\n\n### 2. 레드팀 자동화\n본문\n\n## 뺀 것\n- x\n`;
+	const news = [
+		"# AI 뉴스 브리핑 2026-01-14",
+		"",
+		"## 오늘의 셋",
+		"1. **데스크톱 에이전트 공개 — 프로그램을 직접 눌러 준다**",
+		"   - **무슨 일**: 에이전트가 화면을 보고 클릭한다",
+		"   - [공식 자료](https://example.com/a)",
+		"",
+		"## 새 기술·제품",
+		"- **동네 서점 지도 앱 출시** — 배경: 김하루가 즐겨 쓰는 앱",
+		"",
+		"## 뺀 것",
+		"- 광고 게시물 약 10건",
+		"",
+		"## 입문자를 위한 다시 읽기",
+		"### 1. 데스크톱 에이전트가 뭐야?",
+		"- 쉬운 설명",
+	].join("\n");
 	const n = candidatesOf(DEFAULT_SOURCES[2], "07 Shelf/LLM Wiki/raw/articles/ai-news/2026-01-14_AI 뉴스 브리핑.md", news, 0, "2026-01-08");
-	assert.deepEqual(n.map((x) => x.text), ["1. 데스크톱 에이전트 공개", "2. 레드팀 자동화"]);
-	assert.equal(candidateLink(n[0], ""), "07 Shelf/LLM Wiki/raw/articles/ai-news/2026-01-14_AI 뉴스 브리핑#1. 데스크톱 에이전트 공개");
+	assert.deepEqual(
+		n.map((x) => [x.where, x.text, x.why, x.line]),
+		[
+			["오늘의 셋", "데스크톱 에이전트 공개 — 프로그램을 직접 눌러 준다", "무슨 일: 에이전트가 화면을 보고 클릭한다", 3],
+			["새 기술·제품", "동네 서점 지도 앱 출시", "배경: 김하루가 즐겨 쓰는 앱", 8],
+		],
+	);
+	assert.equal(candidateLink(n[0], "gn1"), "07 Shelf/LLM Wiki/raw/articles/ai-news/2026-01-14_AI 뉴스 브리핑#^gn1");
+	assert.equal(withBlock("1. **데스크톱 에이전트 공개**", "gn1"), "1. **데스크톱 에이전트 공개** ^gn1");
 	const f = candidatesOf(DEFAULT_SOURCES[3], "07 Shelf/LLM Wiki/wiki/concepts/노트 무덤.md", `---\ntitle: 노트 무덤\n---\n모으기만 하고 잇지 못한 노트.\n`, Date.UTC(2026, 0, 11), "2026-01-08");
 	assert.deepEqual(f.map((x) => [x.text, x.date, x.line]), [["노트 무덤", "2026-01-11", -1]]);
+});
+
+test("루미 search prompt: sessions and AI 뉴스 always, own words vs 자료 quoted differently", () => {
+	const off = DEFAULT_SOURCES.map((s) => ({ ...s, on: s.key !== "news" }));
+	const p = lumiSearchPrompt("동네 서점", off);
+	assert.match(p, /^\[콘텐츠 스튜디오 · 글감 찾기\] 동네 서점/);
+	const own = p.split("\n").find((l) => l.startsWith("- 내 글 소스:"))!;
+	const ref = p.split("\n").find((l) => l.startsWith("- 자료 소스:"))!;
+	assert.match(own, /AI 대화\(10 Archive Box\/Sessions\/\)/);
+	assert.match(own, /Daily Pad\(04 Daily Pad\/\)/);
+	assert.match(own, /사용자\(나\)가 직접 한 말만/);
+	assert.equal(own.match(/10 Archive Box\/Sessions/g)!.length, 1);
+	assert.match(ref, /AI 뉴스\(07 Shelf\/LLM Wiki\/raw\/articles\/ai-news\/\)/);
+	assert.match(ref, /LLM Wiki\(07 Shelf\/LLM Wiki\/wiki\/concepts\/\)/);
+	assert.match(ref, /\[자료\]/);
+	assert.doesNotMatch(own, /ai-news|LLM Wiki/);
+	assert.match(lumiSearchPrompt("x", []), /AI 뉴스\(07 Shelf\/LLM Wiki\/raw\/articles\/ai-news\/\)/);
+	assert.ok(isReferenceSource({ key: "wiki" }) && !isReferenceSource({ key: "daily" }));
 });
 
 test("sources: folder match with *, registry round trip keeps the log", () => {
