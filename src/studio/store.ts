@@ -24,6 +24,10 @@ import {
 	glgamPath,
 	glgamSkeleton,
 	hash,
+	appliedLabel,
+	formatPollHit,
+	immediateAt,
+	interpretIntake,
 	interpretResultGet,
 	markDropped,
 	unmarkWritten,
@@ -33,9 +37,16 @@ import {
 	parseGlgam,
 	parsePost,
 	parseSources,
+	type PollHit,
+	pollFoundCount,
 	type Post,
 	postSkeleton,
+	resultBody,
 	resultPatch,
+	resultReadPlan,
+	s3Code,
+	shouldRememberPoll,
+	shouldThrottlePoll,
 	webhookHeaders,
 	rewriteSources,
 	safeTitle,
@@ -49,7 +60,7 @@ import {
 	underSource,
 	withBlock,
 } from "./model.ts";
-import { getObject, isS3Ready, resultObjectKey } from "./s3.ts";
+import { getObject, isS3Ready } from "./s3.ts";
 import { loadSecrets, obsidianSend, s3Config } from "./settings.ts";
 
 export const todayIso = () => moment().format("YYYY-MM-DD");
@@ -277,39 +288,76 @@ export async function ensureIds(plugin: MyLogsPlugin, d: StudioData): Promise<nu
 
 // ───────────────────────── 예약 보내기 · 결과 ─────────────────────────
 
+export function channelEndpoint(plugin: MyLogsPlugin, key: Post["channel"]["key"]): string {
+	const sec = loadSecrets(plugin.app);
+	if (key === "th") return sec.threadsIntake.trim();
+	return sec.webhook[key].trim();
+}
+
 async function postWebhook(plugin: MyLogsPlugin, p: Post, action: "schedule" | "cancel"): Promise<{ status: number; text: string }> {
 	const sec = loadSecrets(plugin.app);
 	const headers = webhookHeaders(p.channel.key, sec.studioKey);
 	const r = await requestUrl({
-		url: sec.webhook[p.channel.key].trim(),
+		url: channelEndpoint(plugin, p.channel.key),
 		method: "POST",
 		contentType: "application/json",
 		...(Object.keys(headers).length ? { headers } : {}),
 		body: JSON.stringify(buildPayload(p, action)),
 		throw: false,
 	});
-	return { status: r.status, text: r.text ?? "" };
+	return { status: r.status, text: resultBody(r) };
+}
+
+function intakeError(read: { error: string }): string {
+	return read.error;
 }
 
 export async function sendSchedule(plugin: MyLogsPlugin, p: Post): Promise<"sent" | "noted"> {
-	const hook = loadSecrets(plugin.app).webhook[p.channel.key].trim();
+	const hook = channelEndpoint(plugin, p.channel.key);
 	if (!hook) {
-		await patchPost(plugin, p.path, { stage: "예약", scheduled: p.scheduled, sent: null, error: null });
+		if (p.channel.key === "th") throw new Error("스레드 접수 주소를 설정 › 콘텐츠 스튜디오에 넣어 주세요.");
+		await patchPost(plugin, p.path, { stage: "예약", scheduled: p.scheduled, sent: null, error: null, cancelled: null, now: null });
 		return "noted";
 	}
 	const r = await postWebhook(plugin, p, "schedule");
-	if (r.status < 200 || r.status >= 300) throw new Error(`보내지 못했어요 (${r.status}) ${r.text.slice(0, 120)}`);
-	await patchPost(plugin, p.path, { stage: "예약", scheduled: p.scheduled, sent: nowStamp(), error: null });
+	const intake = interpretIntake(r.status, r.text);
+	if (!intake.ok) {
+		await patchPost(plugin, p.path, { error: intakeError(intake), sent: null, warning: intake.warning || null });
+		throw new Error(intake.error);
+	}
+	await patchPost(plugin, p.path, { stage: "예약", scheduled: p.scheduled, sent: nowStamp(), error: null, cancelled: null, now: null, warning: intake.warning || null });
+	if (intake.warning) new Notice(intake.warning, 12000);
 	return "sent";
 }
 
+/** Schedule for the soonest legal minute and mark the post `now: true`. Returns that `at` (KST `YYYY-MM-DD HH:mm`). */
+export async function sendNow(plugin: MyLogsPlugin, p: Post): Promise<string> {
+	const hook = channelEndpoint(plugin, p.channel.key);
+	if (!hook) {
+		if (p.channel.key === "th") throw new Error("스레드 접수 주소를 설정 › 콘텐츠 스튜디오에 넣어 주세요.");
+		throw new Error("설정 › 콘텐츠 스튜디오에서 보낼 곳을 넣어 주세요.");
+	}
+	const when = immediateAt(p.channel.key);
+	const r = await postWebhook(plugin, { ...p, scheduled: when }, "schedule");
+	const intake = interpretIntake(r.status, r.text);
+	if (!intake.ok) {
+		await patchPost(plugin, p.path, { error: intakeError(intake), sent: null, warning: intake.warning || null });
+		throw new Error(intake.error);
+	}
+	await patchPost(plugin, p.path, { stage: "예약", scheduled: when, sent: nowStamp(), error: null, cancelled: null, now: "true", warning: intake.warning || null });
+	if (intake.warning) new Notice(intake.warning, 12000);
+	return when;
+}
+
 export async function cancelSchedule(plugin: MyLogsPlugin, p: Post): Promise<void> {
-	const hook = loadSecrets(plugin.app).webhook[p.channel.key].trim();
+	const hook = channelEndpoint(plugin, p.channel.key);
+	if (p.channel.key === "th" && p.sent && !hook) throw new Error("스레드 접수 주소가 없어서 취소를 보낼 수 없어요.");
 	if (hook && p.sent) {
 		const r = await postWebhook(plugin, p, "cancel");
-		if (r.status < 200 || r.status >= 300) throw new Error(`취소를 보내지 못했어요 (${r.status})`);
+		const intake = interpretIntake(r.status, r.text);
+		if (!intake.ok) throw new Error(intake.error || `취소를 보내지 못했어요 (${r.status})`);
 	}
-	await patchPost(plugin, p.path, { stage: "다듬기", sent: null, error: null });
+	await patchPost(plugin, p.path, { stage: "다듬기", sent: null, error: null, cancelled: nowStamp(), now: null });
 }
 
 /** Hand-marked 발행 (posted by hand, or before a result file exists). */
@@ -325,49 +373,70 @@ export interface PollOutcome {
 	errors: number;
 	/** Bucket, region, or keys are missing, and there was something to check. */
 	unconfigured: boolean;
+	eligible: number;
+	/** Skipped because of the 5-minute throttle. Forced and fast reads are never throttled. */
+	throttled: boolean;
+	hits: PollHit[];
 }
 
-/** Read `studio/results/{id}.json` for each 예약 post that was sent and is not published yet. */
-export async function pollResults(plugin: MyLogsPlugin, d: StudioData, force = false): Promise<PollOutcome> {
-	const waiting = d.posts.filter((p) => p.stage === "예약" && p.sent && !p.published && p.id);
-	if (!waiting.length) return { changed: 0, errors: 0, unconfigured: false };
+const emptyPoll = (extra: Partial<PollOutcome>): PollOutcome => ({ changed: 0, errors: 0, unconfigured: false, eligible: 0, throttled: false, hits: [], ...extra });
+
+/** Manual and automatic reads. Keys come only from `resultReadPlan` → `resultObjectKey`. */
+export async function pollResults(plugin: MyLogsPlugin, d: StudioData, force = false, opts?: { bypassThrottle?: boolean }): Promise<PollOutcome> {
+	const plan = resultReadPlan(d.posts.map((p) => ({ id: p.id, channel: p.channel.key, stage: p.stage, sent: p.sent, published: p.published })));
+	const byId = new Map(plan.map((x) => [x.id, x.key]));
+	const waiting = d.posts.filter((p) => byId.has(p.id));
+	const now = Date.now();
+	if (!waiting.length) {
+		if (shouldRememberPoll(0, 0)) lastPoll = now;
+		return emptyPoll({});
+	}
 	const cfg = s3Config(plugin);
-	if (!isS3Ready(cfg)) return { changed: 0, errors: 0, unconfigured: true };
-	if (!force && Date.now() - lastPoll < 5 * 60_000) return { changed: 0, errors: 0, unconfigured: false };
-	lastPoll = Date.now();
+	if (!isS3Ready(cfg)) return emptyPoll({ unconfigured: true, eligible: waiting.length });
+	if (shouldThrottlePoll(lastPoll, now, force || !!opts?.bypassThrottle)) return emptyPoll({ eligible: waiting.length, throttled: true });
+	const hits: PollHit[] = [];
 	let changed = 0;
-	const problems: string[] = [];
 	for (const p of waiting) {
-		const key = resultObjectKey(p.id);
+		const key = byId.get(p.id) ?? "";
 		if (!key) {
-			problems.push(`${p.id}: 결과 키가 올바르지 않아요`);
+			hits.push({ id: p.id, kind: "error", detail: "결과 키가 올바르지 않아요" });
 			continue;
 		}
 		try {
 			const res = await getObject(cfg, obsidianSend, key);
 			const read = interpretResultGet(res.status, res.text);
-			if (read.kind === "missing") continue;
+			if (read.kind === "missing") {
+				const code = s3Code(res.text);
+				hits.push({ id: p.id, kind: "missing", detail: code ? `${res.status} ${code}` : String(res.status) });
+				continue;
+			}
 			if (read.kind === "error") {
-				problems.push(`${p.id}: ${read.message}`);
+				hits.push({ id: p.id, kind: "error", detail: read.message.replace(/^S3 발행 결과 읽기 실패 \(/, "").replace(/\)$/, "") || read.message });
 				continue;
 			}
 			if (read.row.id !== p.id) {
-				problems.push(`${p.id}: 결과 id가 달라요`);
+				hits.push({ id: p.id, kind: "error", detail: "결과 id가 달라요" });
 				continue;
 			}
 			const patch = resultPatch(p, read.row);
-			if (!patch) continue;
+			if (!patch) {
+				hits.push({ id: p.id, kind: "unchanged", detail: "결과 있음 · 반영 안 함" });
+				continue;
+			}
 			await patchPost(plugin, p.path, patch);
+			hits.push({ id: p.id, kind: "applied", detail: appliedLabel(patch) });
 			changed++;
 		} catch (e) {
-			problems.push(`${p.id}: ${e instanceof Error ? e.message : String(e)}`);
+			hits.push({ id: p.id, kind: "error", detail: e instanceof Error ? e.message : String(e) });
 		}
 	}
-	if (problems.length) {
-		console.warn("[MyLogs] studio results", problems);
-		new Notice(`발행 결과 일부를 읽지 못했어요. ${problems[0]}`, 8000);
+	if (shouldRememberPoll(waiting.length, pollFoundCount(hits))) lastPoll = now;
+	const bad = hits.filter((h) => h.kind === "error");
+	if (!force) {
+		for (const h of hits) console.log(`[MyLogs studio] ${formatPollHit(h)}`);
+		if (bad.length) new Notice(bad.map(formatPollHit).join("\n"), 8000);
 	}
-	return { changed, errors: problems.length, unconfigured: false };
+	return emptyPoll({ changed, errors: bad.length, eligible: waiting.length, hits });
 }
 
 // ───────────────────────── 소스 등록부 ─────────────────────────

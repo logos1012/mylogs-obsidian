@@ -6,12 +6,14 @@
  *   <요소>/99 작업실/글감 소스.md          글감 소스 등록부 — 한 행 = 소스 하나
  *
  * md is the only source of truth. Media live in S3 (only their https addresses are written here).
- * 「예약 보내기」 posts the payload to the channel webhook. LinkedIn results come back as
- * `studio/results/{id}.json` in the same bucket (outside the upload prefix); the plugin copies
- * that file into the post's frontmatter.
+ * 「예약 보내기」 posts the payload to the channel webhook. Results come back in the same bucket,
+ * outside the upload prefix: LinkedIn `studio/results/{id}.json`, Threads `…/threads/{id}.json`,
+ * Instagram `…/instagram/{id}.json`. Manual and automatic reads use one key function.
  *
  * Pure module (no Obsidian imports).
  */
+
+import { resultObjectKey } from "./s3.ts";
 
 export type ChannelKey = "li" | "th" | "ig";
 
@@ -176,7 +178,8 @@ export function setFm(text: string, patch: Record<string, FmValue | null>, order
 			if (i >= 0) lines.splice(i, blockEnd(i) - i);
 			continue;
 		}
-		const line = `${k}: ${yamlValue(v)}`.replace(/\s+$/, "");
+		const rendered = k === "now" && v === "true" ? "true" : yamlValue(v);
+		const line = `${k}: ${rendered}`.replace(/\s+$/, "");
 		if (i >= 0) {
 			lines.splice(i, blockEnd(i) - i, line);
 			continue;
@@ -279,6 +282,12 @@ export interface Post {
 	url: string;
 	/** Publish-result failure reason, cleared on a new send or a 취소 result. */
 	error: string;
+	/** Set when a schedule was cancelled (`YYYY-MM-DD HH:mm`). Empty on older posts. */
+	cancelled: string;
+	/** Immediate publish (`now: true` in frontmatter). */
+	now: boolean;
+	/** Intake warning, shown once and kept until the next send. */
+	warning: string;
 	media: string[];
 	from: string[];
 	topic: string;
@@ -291,7 +300,7 @@ export interface Post {
 	parts: ThreadPart[];
 }
 
-export const FM_ORDER = ["id", "channel", "format", "stage", "from", "topic", "media", "ratio", "alt", "hashtags", "scheduled", "sent", "published", "url", "error"];
+export const FM_ORDER = ["id", "channel", "format", "stage", "from", "topic", "media", "ratio", "alt", "hashtags", "scheduled", "sent", "published", "url", "error", "cancelled", "now", "warning"];
 
 const str = (v: FmValue | undefined) => (Array.isArray(v) ? v.join(", ") : (v ?? "")).trim();
 const list = (v: FmValue | undefined) => (Array.isArray(v) ? v : v ? [v] : []).map((x) => x.trim()).filter(Boolean);
@@ -334,6 +343,9 @@ export function parsePost(path: string, text: string, ch: ChannelDef): Post {
 		published,
 		url: str(fm.url),
 		error: str(fm.error),
+		cancelled: str(fm.cancelled),
+		now: str(fm.now) === "true",
+		warning: str(fm.warning),
 		media: list(fm.media),
 		from: list(fm.from),
 		topic: str(fm.topic),
@@ -422,12 +434,11 @@ export interface Problem {
 }
 
 /** What stops 「예약 보내기」 (and what only warns). */
-export function postProblems(p: Post): Problem[] {
+export function postProblems(p: Post, ctx?: { now?: number; mediaPrefix?: string }): Problem[] {
 	const out: Problem[] = [];
 	const ch = p.channel;
 	if (ch.key === "th") {
-		if (!p.parts.some((x) => x.text.trim())) out.push({ level: "block", text: "글이 비어 있어요." });
-		p.parts.forEach((x, i) => charCount(x.text) > ch.limit && out.push({ level: "block", text: `${i + 1}번 글이 ${ch.limit}자를 넘어요 (${charCount(x.text)}자).` }));
+		for (const text of threadsProblems(threadsDraft(p), ctx)) out.push({ level: "block", text });
 	} else {
 		if (!p.text.trim()) out.push({ level: "block", text: ch.key === "ig" ? "캡션이 비어 있어요." : "본문이 비어 있어요." });
 		const n = charCount(captionOut(p));
@@ -441,11 +452,138 @@ export function postProblems(p: Post): Problem[] {
 		if (p.hashtags.length > HASHTAG_MAX) out.push({ level: "block", text: `해시태그가 ${HASHTAG_MAX}개를 넘어요.` });
 	}
 	if (ch.key === "li" && (p.format === "이미지" || p.format === "영상" || p.format === "문서") && !p.media.length) out.push({ level: "warn", text: `형식이 「${p.format}」인데 미디어가 없어요.` });
+	if ((ch.key === "li" || ch.key === "ig") && p.scheduled) {
+		const lead = leadProblem(ch.key, p.scheduled, ctx?.now ?? Date.now());
+		if (lead) out.push({ level: "block", text: lead });
+	}
 	if (!p.scheduled) out.push({ level: "block", text: "예약 날짜와 시각을 정해 주세요." });
 	return out;
 }
 
+/** Editor 「지금 발행」: same hue as 「예약 보내기」 (`mod-cta`), lighter fill. Not `is-ghost`. */
+export const SEND_NOW_BUTTON_CLASS = "st-btn st-now st-wide";
+/** Board-menu row class so 「지금 발행…」 reads as a button. */
+export const SEND_NOW_MENU_CLASS = "st-now-menu";
+
+/** 「지금 발행」 ignores a missing time and a time that is too soon — it picks its own `at`. */
+export function blocksNow(problems: Problem[]): boolean {
+	return problems.some((x) => x.level === "block" && !x.text.startsWith("예약 날짜") && !x.text.includes("1분 뒤") && !x.text.includes("2분 뒤"));
+}
+
+/** LinkedIn and Threads need 60s; Instagram needs 120s. Null when the time is far enough or unset. */
+export function leadProblem(channel: ChannelKey, scheduled: string, now = Date.now()): string | null {
+	if (!scheduled || channel === "th") return null;
+	const at = scheduledInstant(scheduled);
+	if (at == null) return null;
+	const need = channel === "ig" ? 120_000 : 60_000;
+	if (at >= now + need) return null;
+	return channel === "ig" ? "예약 시각은 지금보다 2분 뒤여야 해요." : "예약 시각은 지금보다 1분 뒤여야 해요.";
+}
+
 export const isVideo = (u: string) => /\.(mp4|mov|m4v|webm)(\?|$)/i.test(u);
+
+// ───────────────────────── Threads intake (same rules as studio-threads-intake) ─────────────────────────
+
+export const THREADS_MEDIA_EXT = new Set(["jpg", "jpeg", "png", "gif", "mp4", "mov", "webp"]);
+export const THREADS_MAX_TEXT = 500;
+export const THREADS_MAX_LINKS = 5;
+export const THREADS_MAX_MEDIA = 20;
+export const THREADS_MAX_ALT = 1000;
+export const THREADS_MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+export const THREADS_MAX_VIDEO_BYTES = 1024 * 1024 * 1024;
+export const THREADS_MIN_LEAD_MS = 60_000;
+const THREADS_ID_RE = /^[A-Za-z0-9_-]{1,61}$/;
+const THREADS_LINK_RE = /https?:\/\/[^\s<>"']+/gi;
+
+/** Threads length: 1 per character, except emoji / ZWJ / the BMP symbol block, which count as UTF-8 bytes. */
+export function threadsTextLength(text: string): number {
+	let n = 0;
+	for (const ch of text) {
+		const cp = ch.codePointAt(0) ?? 0;
+		if (cp >= 0x10000 || (cp >= 0x2000 && cp <= 0x2bff) || (cp >= 0xfe00 && cp <= 0xfe0f) || cp === 0x200d) n += new TextEncoder().encode(ch).length;
+		else n += 1;
+	}
+	return n;
+}
+
+export function threadsUniqueLinks(text: string): string[] {
+	return [...new Set([...text.matchAll(THREADS_LINK_RE)].map((m) => m[0].replace(/[.,!?)\]}>\'\"]+$/, "").toLowerCase()))];
+}
+
+export function mediaExtOf(ref: string): string | null {
+	const path = ref.split("?")[0].split("#")[0];
+	const last = path.replace(/\/+$/, "").split("/").pop() ?? "";
+	if (!last.includes(".")) return null;
+	return last.split(".").pop()!.toLowerCase();
+}
+
+/** Local file gate before upload. Null means the file may go up. */
+export function threadsUploadProblem(name: string, size: number): string | null {
+	const ext = mediaExtOf(name);
+	if (!ext || !THREADS_MEDIA_EXT.has(ext)) return `지원하지 않는 미디어: ${ext || "알 수 없음"} (jpg/jpeg/png/gif/mp4/mov/webp만 가능)`;
+	const video = ext === "mp4" || ext === "mov";
+	if (video && size > THREADS_MAX_VIDEO_BYTES) return "영상이 1GB를 넘어요.";
+	if (!video && size > THREADS_MAX_IMAGE_BYTES) return "이미지가 8MB를 넘어요.";
+	return null;
+}
+
+export interface ThreadsDraft {
+	text: string;
+	media: (string | { url: string; alt?: string })[];
+	partsCount: number;
+	topic: string;
+	scheduled: string;
+	id: string;
+}
+
+/** One filled 타래 part, or the single body. Multi-part is reported, not sent. */
+export function threadsDraft(p: Post): ThreadsDraft {
+	const parts = p.parts.filter((x) => x.text.trim() || x.media.length);
+	const first = parts[0];
+	const text = (first?.text ?? p.text).trim();
+	const urls = first ? first.media : p.media;
+	const media = urls.map((url, i) => {
+		const alt = (p.alt[i] ?? "").trim();
+		return alt ? { url, alt } : url;
+	});
+	return { text, media, partsCount: parts.length, topic: p.topic.trim(), scheduled: p.scheduled, id: p.id.trim() };
+}
+
+/** Korean block messages. `mediaPrefix` is `https://{bucket}.s3.{region}.amazonaws.com/{prefix}/` from settings — never a hard-coded host. */
+export function threadsProblems(d: ThreadsDraft, ctx: { now?: number; mediaPrefix?: string } = {}): string[] {
+	const out: string[] = [];
+	if (d.partsCount > 1) out.push("이어쓰기(글 2개 이상)는 아직 보낼 수 없어요.");
+	if (!d.text && !d.media.length) out.push("본문도 미디어도 없어요.");
+	const n = threadsTextLength(d.text);
+	if (n > THREADS_MAX_TEXT) out.push(`본문이 500자를 넘어요: ${n}/${THREADS_MAX_TEXT} (이모티콘은 바이트 수로 셈)`);
+	const links = threadsUniqueLinks(d.text);
+	if (links.length > THREADS_MAX_LINKS) out.push(`링크가 너무 많음: ${links.length}/${THREADS_MAX_LINKS}`);
+	if (d.media.length > THREADS_MAX_MEDIA) out.push(`미디어가 너무 많음: ${d.media.length}/${THREADS_MAX_MEDIA}`);
+	const prefix = (ctx.mediaPrefix ?? "").trim();
+	if (d.media.length && !prefix) out.push("S3 버킷과 리전을 설정해야 스레드 미디어 주소를 확인할 수 있어요.");
+	for (const item of d.media) {
+		const url = typeof item === "string" ? item : item.url;
+		const alt = typeof item === "string" ? "" : (item.alt ?? "");
+		if (!url) {
+			out.push("미디어 항목에 url이 없어요.");
+			continue;
+		}
+		if (prefix && (!url.startsWith(prefix) || url.includes(".."))) out.push("허용되지 않은 미디어 주소예요. 설정의 S3 폴더 공개 주소만 보낼 수 있어요.");
+		const ext = mediaExtOf(url);
+		if (!ext || !THREADS_MEDIA_EXT.has(ext)) out.push(`지원하지 않는 미디어: ${ext || "알 수 없음"} (jpg/jpeg/png/gif/mp4/mov/webp만 가능)`);
+		if (alt && [...alt].length > THREADS_MAX_ALT) out.push("alt는 1000자 이하여야 해요.");
+	}
+	if (d.topic && (d.topic.length < 1 || d.topic.length > 50 || d.topic.includes(".") || d.topic.includes("&"))) out.push("주제는 1~50자이고 . 와 & 는 쓸 수 없어요.");
+	if (d.id && !THREADS_ID_RE.test(d.id)) out.push("글 id는 영문·숫자·_·- 만, 61자 이하여야 해요.");
+	if (!d.id) out.push("글을 보낼 id가 없어요.");
+	if (d.scheduled) {
+		const at = scheduledInstant(d.scheduled);
+		const now = ctx.now ?? Date.now();
+		if (at == null) out.push("예약 시각을 읽을 수 없어요.");
+		else if (at < now + THREADS_MIN_LEAD_MS) out.push("예약 시각은 지금보다 1분 뒤여야 해요.");
+	}
+	return out;
+}
 
 export interface Payload {
 	id: string;
@@ -456,7 +594,8 @@ export interface Payload {
 	title: string;
 	text: string;
 	parts?: { text: string; media: string[] }[];
-	media: string[];
+	/** URL string, or `{url, alt}` for Threads. */
+	media: (string | { url: string; alt?: string })[];
 	alt?: string[];
 	ratio?: string;
 	topic?: string;
@@ -472,8 +611,9 @@ export function buildPayload(p: Post, action: "schedule" | "cancel" = "schedule"
 	const base: Payload = { id: p.id, action, channel: p.channel.api, format: p.format, at: atIso(p.scheduled), title: p.title, text: "", media: [] };
 	if (action === "cancel") return base;
 	if (p.channel.key === "th") {
-		const parts = p.parts.filter((x) => x.text.trim() || x.media.length).map((x) => ({ text: x.text, media: x.media }));
-		return { ...base, text: parts[0]?.text ?? "", parts, media: parts.flatMap((x) => x.media), ...(p.topic ? { topic: p.topic } : {}) };
+		const d = threadsDraft(p);
+		// One post only. `parts` is omitted so a 타래 is never sent as 이어쓰기. Title stays in the JSON; intake does not publish it.
+		return { ...base, text: d.text, media: d.media, ...(d.topic ? { topic: d.topic } : {}) };
 	}
 	return { ...base, text: captionOut(p), media: p.media, ...(p.channel.key === "ig" ? { ratio: p.ratio, alt: p.alt } : {}) };
 }
@@ -528,12 +668,209 @@ export type ResultRead = { kind: "missing" } | { kind: "ok"; row: ResultRow } | 
 export function interpretResultGet(status: number, body: string): ResultRead {
 	if (isAbsentResult(status, body)) return { kind: "missing" };
 	if (status !== 200) {
-		const code = /<Code>\s*([^<]+?)\s*<\/Code>/.exec(body)?.[1];
+		const code = s3Code(body);
 		return { kind: "error", message: `S3 발행 결과 읽기 실패 (${status}${code ? ` ${code}` : ""})` };
 	}
 	const row = parseResultJson(body);
 	if (!row) return { kind: "error", message: "발행 결과 JSON을 읽지 못했어요" };
 	return { kind: "ok", row };
+}
+
+export const s3Code = (body: string) => /<Code>\s*([^<]+?)\s*<\/Code>/.exec(body)?.[1] ?? "";
+
+/** Use `text` when it has a body; otherwise `requestUrl`'s parsed `json`. */
+export function resultBody(res: { text?: string | null; json?: unknown }): string {
+	const text = (res.text ?? "").replace(/^\uFEFF/, "");
+	if (text.trim()) return text;
+	let j: unknown;
+	try {
+		j = res.json;
+	} catch {
+		return "";
+	}
+	if (j == null || j === "") return "";
+	if (typeof j === "string") return j.replace(/^\uFEFF/, "");
+	try {
+		return JSON.stringify(j);
+	} catch {
+		return "";
+	}
+}
+
+/** Five minutes. Not started by an all-miss round. */
+export const POLL_THROTTLE_MS = 5 * 60_000;
+/** While a sent post is past its scheduled time and still has no result. */
+export const FAST_POLL_MS = 90_000;
+
+/** `bypass` is a forced read or the fast overdue timer. */
+export function shouldThrottlePoll(lastPoll: number, now: number, bypass: boolean): boolean {
+	if (bypass || lastPoll <= 0) return false;
+	return now - lastPoll < POLL_THROTTLE_MS;
+}
+
+/**
+ * Remember `lastPoll` only after a real result file, or when nothing was eligible.
+ * An all-miss round (404 / 403 AccessDenied / NoSuchKey) must not start the throttle.
+ */
+export function shouldRememberPoll(eligible: number, found: number): boolean {
+	if (eligible <= 0) return true;
+	return found > 0;
+}
+
+export type PollHitKind = "applied" | "missing" | "error" | "unchanged";
+
+export interface PollHit {
+	id: string;
+	kind: PollHitKind;
+	/** `발행 반영`, `403 AccessDenied`, `500 …`, … */
+	detail: string;
+}
+
+export function appliedLabel(patch: Record<string, FmValue | null>): string {
+	if (patch.stage === "발행") return "발행 반영";
+	if (patch.stage === "다듬기") return "취소 반영";
+	if (typeof patch.error === "string") return "실패 반영";
+	return "반영";
+}
+
+export function formatPollHit(h: PollHit): string {
+	// 403/404 are "no result yet" (no ListBucket). On a manual read the notice still names the post.
+	if (h.kind === "missing") return `${h.id}: 결과 파일 없음(또는 권한 없음)${h.detail ? ` (${h.detail})` : ""}`;
+	if (h.kind === "error") return `${h.id}: 오류 ${h.detail}`;
+	return `${h.id}: ${h.detail}`;
+}
+
+export function formatPollSummary(hits: PollHit[]): string {
+	return hits.map(formatPollHit).join("\n");
+}
+
+export interface ResultReadPost {
+	id: string;
+	/** Channel key (`li` · `th` · `ig`) or the API name (`instagram`). */
+	channel: string;
+	stage: string;
+	sent: string;
+	published: string;
+	/** Ignored. A time already past still qualifies. */
+	scheduled?: string;
+}
+
+/**
+ * Who a result read fetches, and the S3 key. Manual (button, 글 증폭, command) and the
+ * timer share this. A past `scheduled` time does not drop the post. Every channel is included.
+ */
+export function resultReadPlan(posts: ResultReadPost[]): { id: string; channel: string; key: string }[] {
+	const out: { id: string; channel: string; key: string }[] = [];
+	for (const p of posts) {
+		if (p.stage !== "예약" || !p.sent || p.published || !p.id) continue;
+		const key = resultObjectKey(p.id, p.channel);
+		if (!key) continue;
+		out.push({ id: p.id, channel: p.channel, key });
+	}
+	return out;
+}
+
+export function pollFoundCount(hits: { kind: string }[]): number {
+	return hits.filter((h) => h.kind === "applied" || h.kind === "unchanged").length;
+}
+
+/** `YYYY-MM-DD HH:mm` read as Asia/Seoul. */
+export function scheduledInstant(scheduled: string): number | null {
+	const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(scheduled.trim());
+	if (!m) return null;
+	return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5])) - 9 * 3600_000;
+}
+
+/** Soonest minute-precision `at` the intake will accept. LinkedIn·Threads +70s, Instagram +130s, then round up to the next minute (KST). */
+export function immediateAt(channel: ChannelKey, now: Date = new Date()): string {
+	const lead = channel === "ig" ? 130_000 : 70_000;
+	const kst = new Date(now.getTime() + lead + 9 * 3600_000);
+	let ms = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate(), kst.getUTCHours(), kst.getUTCMinutes());
+	if (kst.getUTCSeconds() > 0 || kst.getUTCMilliseconds() > 0) ms += 60_000;
+	const out = new Date(ms);
+	const p = (n: number) => String(n).padStart(2, "0");
+	return `${out.getUTCFullYear()}-${p(out.getUTCMonth() + 1)}-${p(out.getUTCDate())} ${p(out.getUTCHours())}:${p(out.getUTCMinutes())}`;
+}
+
+export interface IntakeRead {
+	ok: boolean;
+	/** HTTP 200 whose body says the intake rejected the post. */
+	failed: boolean;
+	error: string;
+	warning: string;
+	schedule: string;
+	at: string;
+}
+
+/** What an intake POST means. A 200 with `status: "failed"` is not a success. 400 text is kept as-is. */
+export function interpretIntake(status: number, body: string): IntakeRead {
+	let json: Record<string, unknown> | null = null;
+	const raw = body.trim().replace(/^\uFEFF/, "");
+	if (raw) {
+		try {
+			const parsed = JSON.parse(raw) as unknown;
+			if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) json = parsed as Record<string, unknown>;
+		} catch {
+			json = null;
+		}
+	}
+	const strField = (k: string) => (json && typeof json[k] === "string" ? (json[k] as string).trim() : "");
+	const warning = strField("warning");
+	const schedule = strField("schedule");
+	const at = strField("at");
+	const bodyStatus = strField("status").toLowerCase();
+	const errField = json && json.error != null && json.error !== "" ? String(json.error).trim() : "";
+	if (status === 200 && bodyStatus === "failed") return { ok: false, failed: true, error: errField || "이유 없음", warning, schedule, at };
+	if (status >= 200 && status < 300) return { ok: true, failed: false, error: "", warning, schedule, at };
+	const message = errField || raw.slice(0, 300) || `보내지 못했어요 (${status})`;
+	return { ok: false, failed: false, error: message, warning, schedule, at };
+}
+
+export type PostStateKind = "before" | "scheduled" | "going" | "published" | "failed" | "cancelled";
+
+export interface PostState {
+	kind: PostStateKind;
+	/** 예약 전 · 예약됨 · 발행 중 · 발행됨 · 실패 · 취소됨 */
+	name: string;
+	detail: string;
+	cls: "wait" | "sent" | "going" | "pub" | "fail" | "cancel";
+}
+
+const shortWhen = (scheduled: string) => {
+	const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(scheduled.trim());
+	return m ? `${Number(m[2])}/${Number(m[3])} ${m[4]}:${m[5]}` : "";
+};
+
+/** Board / editor status. 발행 중 is computed (scheduled time has passed, no result yet) and is not stored. */
+export function postState(p: { stage: string; sent: string; published: string; scheduled: string; url: string; error: string; cancelled: string }, now = Date.now()): PostState {
+	if (p.published || p.stage === "발행") return { kind: "published", name: "발행됨", detail: p.url, cls: "pub" };
+	if (p.cancelled) return { kind: "cancelled", name: "취소됨", detail: "", cls: "cancel" };
+	if (p.error) return { kind: "failed", name: "실패", detail: p.error.split("\n")[0] ?? "", cls: "fail" };
+	const at = p.scheduled ? scheduledInstant(p.scheduled) : null;
+	if (p.sent && at != null && at <= now) return { kind: "going", name: "발행 중", detail: "", cls: "going" };
+	if (p.sent) return { kind: "scheduled", name: "예약됨", detail: shortWhen(p.scheduled), cls: "sent" };
+	return { kind: "before", name: "예약 전", detail: "", cls: "wait" };
+}
+
+export interface FastPollPost {
+	stage: string;
+	sent: string;
+	published: string;
+	id: string;
+	scheduled: string;
+	error: string;
+}
+
+/** Eligible, scheduled time has come, and no failure result has been written yet. */
+export function needsFastPoll(p: FastPollPost, now = Date.now()): boolean {
+	if (p.stage !== "예약" || !p.sent || p.published || !p.id || p.error) return false;
+	const at = scheduledInstant(p.scheduled);
+	return at != null && at <= now;
+}
+
+/** Interval while any post needs a fast re-check; null stops the timer. */
+export function fastPollEvery(posts: FastPollPost[], now = Date.now()): number | null {
+	return posts.some((p) => needsFastPoll(p, now)) ? FAST_POLL_MS : null;
 }
 
 /** A result → the post's frontmatter patch (null = nothing to change). */
@@ -550,14 +887,19 @@ export function resultPatch(p: Post, r: ResultRow | undefined): Record<string, F
 		return p.error === why ? null : { error: why };
 	}
 	// Same frontmatter as `cancelSchedule`: back to 다듬기, clear sent and error.
-	if (CANCELLED.test(status)) return { stage: "다듬기", sent: null, error: null };
+	if (CANCELLED.test(status)) {
+		const stamp = (r.at || "").slice(0, 16).replace("T", " ");
+		const cancelled = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(stamp) ? stamp : r.at.trim() || stamp;
+		if (p.stage === "다듬기" && !p.sent && !p.error && p.cancelled === cancelled) return null;
+		return { stage: "다듬기", sent: null, error: null, cancelled, now: null };
+	}
 	return null;
 }
 
-/** Header for a channel webhook POST. LinkedIn sends `x-studio-key` only when the setting is non-empty. */
+/** Header for an intake POST. LinkedIn, Threads, and Instagram send `x-studio-key` only when the setting is non-empty. */
 export function webhookHeaders(channel: ChannelKey, studioKey: string): Record<string, string> {
 	const key = studioKey.trim();
-	if (channel !== "li" || !key) return {};
+	if ((channel !== "li" && channel !== "th" && channel !== "ig") || !key) return {};
 	return { "x-studio-key": key };
 }
 
@@ -669,6 +1011,64 @@ export function defaultSchedule(now: Date): string {
 		h = 8;
 	}
 	return `${day} ${String(h).padStart(2, "0")}:00`;
+}
+
+/** Local wall clock as `YYYY-MM-DD HH:mm` (seconds dropped). */
+function formatLocalMinute(d: Date): string {
+	const p = (n: number) => String(n).padStart(2, "0");
+	return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** Round up to the next local minute. An exact minute (0s, 0ms) stays. */
+export function ceilLocalMinute(at: Date): Date {
+	const out = new Date(at.getTime());
+	if (out.getSeconds() === 0 && out.getMilliseconds() === 0) return out;
+	out.setSeconds(0, 0);
+	out.setMinutes(out.getMinutes() + 1);
+	return out;
+}
+
+/**
+ * Empty 예약 field: this device's current local time, rounded up to the next minute.
+ * Shown until the user edits or sends; it does not replace a time already stored.
+ * The intake still reads the saved string as KST, and the lead pre-check is unchanged.
+ */
+export function prefillSchedule(now: Date = new Date()): string {
+	return formatLocalMinute(ceilLocalMinute(now));
+}
+
+/** Minimum lead the schedule pre-check uses. Instagram 120s; LinkedIn and Threads 60s. */
+export function channelMinLeadMs(channel: ChannelKey): number {
+	return channel === "ig" ? 120_000 : 60_000;
+}
+
+export type SchedulePreset = "plus5" | "am7" | "noon" | "pm1730";
+
+export const SCHEDULE_PRESETS: { id: SchedulePreset; label: string }[] = [
+	{ id: "plus5", label: "5분 뒤" },
+	{ id: "am7", label: "오전 7시" },
+	{ id: "noon", label: "점심 12시" },
+	{ id: "pm1730", label: "퇴근 5시 반" },
+];
+
+const PRESET_CLOCK: Record<Exclude<SchedulePreset, "plus5">, [number, number]> = {
+	am7: [7, 0],
+	noon: [12, 0],
+	pm1730: [17, 30],
+};
+
+/**
+ * Preset 예약 instant on the local clock.
+ * 「5분 뒤」 is now + 5 minutes, then rounded up to the next minute.
+ * Fixed clocks use the next occurrence: today when that time is still at least
+ * the channel lead ahead, otherwise tomorrow.
+ */
+export function schedulePresetAt(preset: SchedulePreset, channel: ChannelKey, now: Date = new Date()): string {
+	if (preset === "plus5") return formatLocalMinute(ceilLocalMinute(new Date(now.getTime() + 5 * 60_000)));
+	const [hour, minute] = PRESET_CLOCK[preset];
+	const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0);
+	if (target.getTime() < now.getTime() + channelMinLeadMs(channel)) target.setDate(target.getDate() + 1);
+	return formatLocalMinute(target);
 }
 
 export function markDropped(raw: string, why: string): string {

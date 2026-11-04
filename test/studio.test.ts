@@ -12,7 +12,11 @@ import {
 	markDropped,
 	markWritten,
 	unmarkWritten,
+	channelMinLeadMs,
 	defaultSchedule,
+	prefillSchedule,
+	SCHEDULE_PRESETS,
+	schedulePresetAt,
 	newPostId,
 	parseGlgam,
 	parsePost,
@@ -20,14 +24,35 @@ import {
 	postProblems,
 	postSkeleton,
 	readFm,
+	appliedLabel,
+	FAST_POLL_MS,
+	fastPollEvery,
+	formatPollHit,
+	formatPollSummary,
+	immediateAt,
+	interpretIntake,
+	postState,
+	resultReadPlan,
+	SEND_NOW_BUTTON_CLASS,
+	SEND_NOW_MENU_CLASS,
 	interpretResultGet,
 	isAbsentResult,
+	needsFastPoll,
 	parseResultJson,
+	pollFoundCount,
+	resultBody,
 	resultPatch,
+	shouldRememberPoll,
+	shouldThrottlePoll,
 	rewriteSources,
 	webhookHeaders,
 	setFm,
 	setPostBody,
+	threadsDraft,
+	threadsProblems,
+	threadsTextLength,
+	threadsUniqueLinks,
+	threadsUploadProblem,
 	underSource,
 	withBlock,
 } from "../src/studio/model.ts";
@@ -118,14 +143,18 @@ test("인스타그램: caption section, hashtags appended when sent, problems", 
 	assert.equal(pay.channel, "instagram");
 	assert.ok(postProblems(p).some((x) => x.level === "block" && /사진/.test(x.text)));
 	const ok = parsePost("x/t.md", setFm(t, { media: ["https://b/1.jpg"] }), IG);
-	assert.equal(postProblems(ok).filter((x) => x.level === "block").length, 0);
+	assert.equal(postProblems(ok, { now: Date.parse("2026-01-17T00:00:00+09:00") }).filter((x) => x.level === "block").length, 0);
 });
 
 test("스레드: a post over 500 characters blocks sending", () => {
 	const t = setFm(setPostBody(postSkeleton(TH, "C-1", []), TH, { parts: [{ text: "가".repeat(501), media: [] }] }), { scheduled: "2026-01-15 07:30" });
 	const p = parsePost("x/t.md", t, TH);
-	assert.ok(postProblems(p).some((x) => x.level === "block" && /500자/.test(x.text)));
-	assert.equal(buildPayload(p).parts?.length, 1);
+	assert.ok(postProblems(p, { now: Date.parse("2026-01-15T00:00:00+09:00") }).some((x) => x.level === "block" && /500자/.test(x.text)));
+	const pay = buildPayload(p);
+	assert.equal(pay.parts, undefined);
+	assert.equal(pay.channel, "threads");
+	assert.equal(pay.text, "가".repeat(501));
+	assert.equal(pay.action, "schedule");
 });
 
 test("발행 결과: published, failed, 취소; at earlier than sent is ignored", () => {
@@ -137,9 +166,9 @@ test("발행 결과: published, failed, 취소; at earlier than sent is ignored"
 	assert.deepEqual(resultPatch(p, { id: p.id, status: "ok", url: "https://lnkd.in/ok", error: "", at: "2026-01-16 08:05" }), { ...published, url: "https://lnkd.in/ok" });
 	assert.deepEqual(resultPatch(p, { id: p.id, status: "failed", url: "", error: "이미지 비율", at: "2026-01-16 08:00" }), { error: "이미지 비율" });
 	assert.deepEqual(resultPatch(p, { id: p.id, status: "실패", url: "", error: "", at: "2026-01-16T08:00:05" }), { error: "이유 없음" });
-	assert.deepEqual(resultPatch(p, { id: p.id, status: "취소", url: "", error: "ignored", at: "2026-01-16 09:00" }), { stage: "다듬기", sent: null, error: null });
+	assert.deepEqual(resultPatch(p, { id: p.id, status: "취소", url: "", error: "ignored", at: "2026-01-16 09:00" }), { stage: "다듬기", sent: null, error: null, cancelled: "2026-01-16 09:00", now: null });
 	// same minute as sent is not earlier
-	assert.deepEqual(resultPatch(p, { id: p.id, status: "취소", url: "", error: "", at: "2026-01-14 14:10" }), { stage: "다듬기", sent: null, error: null });
+	assert.deepEqual(resultPatch(p, { id: p.id, status: "취소", url: "", error: "", at: "2026-01-14 14:10" }), { stage: "다듬기", sent: null, error: null, cancelled: "2026-01-14 14:10", now: null });
 	assert.equal(resultPatch(p, { id: p.id, status: "published", url: "u", error: "", at: "2026-01-10 08:00" }), null);
 	assert.equal(resultPatch(p, { id: p.id, status: "취소", url: "", error: "", at: "2026-01-14 14:09" }), null);
 	assert.equal(resultPatch(p, { id: p.id, status: "failed", url: "", error: "x", at: "2026-01-14 14:09" }), null);
@@ -188,8 +217,12 @@ test("linkedin webhook header: x-studio-key only when the linkedin key is set", 
 	assert.deepEqual(webhookHeaders("li", "  studio-key  "), { "x-studio-key": "studio-key" });
 	assert.deepEqual(webhookHeaders("li", ""), {});
 	assert.deepEqual(webhookHeaders("li", "   "), {});
-	assert.deepEqual(webhookHeaders("th", "studio-key"), {});
-	assert.deepEqual(webhookHeaders("ig", "studio-key"), {});
+	assert.deepEqual(webhookHeaders("th", "studio-key"), { "x-studio-key": "studio-key" });
+	assert.deepEqual(webhookHeaders("th", ""), {});
+	assert.deepEqual(webhookHeaders("ig", "studio-key"), { "x-studio-key": "studio-key" });
+	assert.deepEqual(webhookHeaders("ig", "  studio-key  "), { "x-studio-key": "studio-key" });
+	assert.deepEqual(webhookHeaders("ig", ""), {});
+	assert.deepEqual(webhookHeaders("ig", "   "), {});
 });
 
 test("s3 prefix: default is artifacts/studio; only the old default studio migrates", () => {
@@ -294,4 +327,242 @@ test("delete a post: its 글감 drops the link, back to 대기 when none is left
 test("default 예약: today at the next full hour (KST), late night → tomorrow 08:00", () => {
 	assert.equal(defaultSchedule(new Date("2026-01-14T05:20:00Z")), "2026-01-14 15:00");
 	assert.equal(defaultSchedule(new Date("2026-01-14T14:30:00Z")), "2026-01-15 08:00");
+});
+
+test("예약 시각 미리 채우기: local time rounded up to the next minute", () => {
+	const at = (h: number, min: number, s = 0, ms = 0, day = 1) => new Date(2026, 10, day, h, min, s, ms);
+	assert.equal(prefillSchedule(at(12, 0, 0, 0)), "2026-11-01 12:00");
+	assert.equal(prefillSchedule(at(12, 0, 0, 1)), "2026-11-01 12:01");
+	assert.equal(prefillSchedule(at(12, 4, 59, 999)), "2026-11-01 12:05");
+	assert.equal(prefillSchedule(at(23, 59, 1, 0)), "2026-11-02 00:00");
+});
+
+test("예약 프리셋: 5분 뒤는 5분 더한 뒤 다음 분으로 올림", () => {
+	const at = (h: number, min: number, s = 0, ms = 0) => new Date(2026, 10, 1, h, min, s, ms);
+	assert.deepEqual(SCHEDULE_PRESETS.map((x) => x.label), ["5분 뒤", "오전 7시", "점심 12시", "퇴근 5시 반"]);
+	assert.equal(schedulePresetAt("plus5", "li", at(12, 0, 0, 0)), "2026-11-01 12:05");
+	assert.equal(schedulePresetAt("plus5", "th", at(12, 0, 0, 1)), "2026-11-01 12:06");
+	assert.equal(schedulePresetAt("plus5", "ig", at(12, 0, 59, 0)), "2026-11-01 12:06");
+	assert.equal(schedulePresetAt("plus5", "li", at(23, 55, 0, 0)), "2026-11-02 00:00");
+	assert.equal(schedulePresetAt("plus5", "ig", at(23, 56, 30, 0)), "2026-11-02 00:02");
+});
+
+test("예약 프리셋: 고정 시각은 채널 여유(li·th 60초, ig 120초) 안이면 내일", () => {
+	assert.equal(channelMinLeadMs("li"), 60_000);
+	assert.equal(channelMinLeadMs("th"), 60_000);
+	assert.equal(channelMinLeadMs("ig"), 120_000);
+	const at = (h: number, min: number, s = 0, ms = 0, day = 1) => new Date(2026, 10, day, h, min, s, ms);
+	assert.equal(schedulePresetAt("am7", "li", at(6, 58, 0)), "2026-11-01 07:00");
+	assert.equal(schedulePresetAt("am7", "th", at(6, 58, 0)), "2026-11-01 07:00");
+	assert.equal(schedulePresetAt("am7", "ig", at(6, 58, 0)), "2026-11-01 07:00");
+	assert.equal(schedulePresetAt("am7", "li", at(6, 59, 0)), "2026-11-01 07:00");
+	assert.equal(schedulePresetAt("am7", "ig", at(6, 59, 0)), "2026-11-02 07:00");
+	assert.equal(schedulePresetAt("am7", "li", at(6, 59, 0, 1)), "2026-11-02 07:00");
+	assert.equal(schedulePresetAt("am7", "th", at(7, 0, 0)), "2026-11-02 07:00");
+	assert.equal(schedulePresetAt("noon", "li", at(11, 59, 0)), "2026-11-01 12:00");
+	assert.equal(schedulePresetAt("noon", "ig", at(11, 59, 0)), "2026-11-02 12:00");
+	assert.equal(schedulePresetAt("noon", "ig", at(9, 0, 0)), "2026-11-01 12:00");
+	assert.equal(schedulePresetAt("pm1730", "li", at(17, 29, 0)), "2026-11-01 17:30");
+	assert.equal(schedulePresetAt("pm1730", "th", at(17, 29, 0)), "2026-11-01 17:30");
+	assert.equal(schedulePresetAt("pm1730", "ig", at(17, 29, 0)), "2026-11-02 17:30");
+	assert.equal(schedulePresetAt("pm1730", "li", at(17, 30, 0)), "2026-11-02 17:30");
+	assert.equal(schedulePresetAt("pm1730", "ig", at(18, 0, 0, 0, 30)), "2026-12-01 17:30");
+	assert.equal(schedulePresetAt("am7", "li", new Date(2026, 11, 31, 8, 0, 0)), "2027-01-01 07:00");
+});
+
+test("발행 결과 throttle: an all-miss round does not start the 5-minute wait", () => {
+	const t0 = 1_700_000_000_000;
+	let last = 0;
+	const remember = (eligible: number, found: number, now: number) => {
+		if (shouldRememberPoll(eligible, found)) last = now;
+	};
+	remember(1, pollFoundCount([{ kind: "missing" }, { kind: "missing" }]), t0);
+	assert.equal(last, 0);
+	assert.equal(shouldThrottlePoll(last, t0 + 30_000, false), false);
+	remember(1, pollFoundCount([{ kind: "applied" }, { kind: "missing" }]), t0);
+	assert.equal(shouldThrottlePoll(last, t0 + 60_000, false), true);
+	assert.equal(shouldThrottlePoll(last, t0 + 60_000, true), false);
+	assert.equal(shouldThrottlePoll(last, t0 + 5 * 60_000, false), false);
+	let none = 0;
+	if (shouldRememberPoll(0, 0)) none = t0;
+	assert.equal(shouldThrottlePoll(none, t0 + 1_000, false), true);
+	assert.equal(shouldRememberPoll(2, pollFoundCount([{ kind: "unchanged" }])), true);
+	assert.equal(shouldRememberPoll(2, pollFoundCount([{ kind: "error" }])), false);
+});
+
+test("발행 결과 fast re-poll: past-scheduled 예약 posts only, every 90s", () => {
+	const at = Date.parse("2026-11-01T12:06:00.000Z");
+	assert.equal(FAST_POLL_MS, 90_000);
+	const post = { stage: "예약", sent: "2026-11-01 21:04", published: "", id: "C-20261101-08", scheduled: "2026-11-01 21:06", error: "" };
+	assert.equal(needsFastPoll(post, at - 1), false);
+	assert.equal(needsFastPoll(post, at), true);
+	assert.equal(needsFastPoll({ ...post, scheduled: "2026-11-01 21:07" }, at), false);
+	assert.equal(needsFastPoll({ ...post, stage: "다듬기" }, at + 60_000), false);
+	assert.equal(needsFastPoll({ ...post, published: "2026-11-01" }, at + 60_000), false);
+	assert.equal(needsFastPoll({ ...post, sent: "" }, at + 60_000), false);
+	assert.equal(needsFastPoll({ ...post, id: "" }, at + 60_000), false);
+	assert.equal(needsFastPoll({ ...post, error: "이미지 비율" }, at + 60_000), false);
+	assert.equal(fastPollEvery([post], at + 60_000), 90_000);
+	assert.equal(fastPollEvery([{ ...post, scheduled: "2026-11-01 22:00" }], at), null);
+});
+
+test("발행 결과 summary: per-id outcome, and json fallback when text is empty", () => {
+	const published = { id: "C-20261101-08", kind: "applied" as const, detail: appliedLabel({ stage: "발행", published: "2026-11-01", url: "https://www.linkedin.com/feed/update/x/", error: null }) };
+	assert.equal(formatPollHit(published), "C-20261101-08: 발행 반영");
+	assert.equal(formatPollHit({ id: "C-20261101-08", kind: "missing", detail: "403 AccessDenied" }), "C-20261101-08: 결과 파일 없음(또는 권한 없음) (403 AccessDenied)");
+	assert.equal(formatPollHit({ id: "C-20261101-09", kind: "error", detail: "500 InternalError" }), "C-20261101-09: 오류 500 InternalError");
+	assert.equal(formatPollSummary([published, { id: "C-20261101-08", kind: "missing", detail: "404" }]), "C-20261101-08: 발행 반영\nC-20261101-08: 결과 파일 없음(또는 권한 없음) (404)");
+	assert.equal(appliedLabel({ stage: "다듬기", sent: null, error: null }), "취소 반영");
+	assert.equal(appliedLabel({ error: "이유 없음" }), "실패 반영");
+	const json = { id: "C-20261101-08", status: "published", url: "https://www.linkedin.com/feed/update/x/", error: null, at: "2026-11-01 21:06" };
+	const fromJson = parseResultJson(resultBody({ text: "", json }));
+	assert.equal(fromJson?.status, "published");
+	assert.equal(fromJson?.error, "");
+	assert.equal(fromJson?.at, "2026-11-01 21:06");
+	assert.equal(resultBody({ text: "  {\"id\":\"keep\"}  ", json: { id: "drop" } }).trim(), "{\"id\":\"keep\"}");
+	assert.equal(resultBody({ text: "", json: null }), "");
+	assert.equal(parseResultJson(resultBody({ text: "\uFEFF{\"id\":\"C-1\",\"status\":\"published\",\"url\":\"u\",\"error\":null,\"at\":\"2026-11-01 21:06\"}" }))?.id, "C-1");
+});
+
+test("스레드: payload, limits, result path, cancel", () => {
+	const prefix = "https://example-bucket.s3.ap-northeast-2.amazonaws.com/artifacts/studio/";
+	const now = Date.parse("2026-11-01T12:00:00.000Z"); // 21:00 KST
+	const later = "2026-11-01 21:06";
+	const media = (n: number) => Array.from({ length: n }, (_, i) => `${prefix}2026/11/p${i}.jpg`);
+	const post = (over: Partial<ReturnType<typeof threadsDraft>> = {}) => {
+		const d = { text: "안녕", media: [] as (string | { url: string; alt?: string })[], partsCount: 1, topic: "", scheduled: later, id: "C-20261101-08", ...over };
+		return threadsProblems(d, { now, mediaPrefix: prefix });
+	};
+	assert.equal(threadsTextLength("안녕"), 2);
+	assert.equal(threadsTextLength("😀"), 4);
+	assert.equal(threadsTextLength("👨‍👩‍👧"), 18);
+	assert.equal(threadsTextLength("가".repeat(500)), 500);
+	assert.equal(threadsTextLength("😀".repeat(125)), 500);
+	assert.deepEqual(post({ text: "가".repeat(500) }), []);
+	assert.ok(post({ text: "가".repeat(501) }).some((x) => /500자/.test(x)));
+	assert.ok(post({ text: "😀".repeat(126) }).some((x) => /500자/.test(x)));
+	const five = Array.from({ length: 5 }, (_, i) => `https://example.com/${i}`).join(" ");
+	assert.deepEqual(post({ text: five }), []);
+	assert.equal(threadsUniqueLinks("http://A.com http://a.com.").length, 1);
+	assert.ok(post({ text: `${five} https://example.com/5` }).some((x) => /링크/.test(x)));
+	assert.deepEqual(post({ text: "", media: media(20) }), []);
+	assert.ok(post({ text: "", media: media(21) }).some((x) => /미디어가 너무 많음/.test(x)));
+	assert.deepEqual(post({ text: "", media: [] }), ["본문도 미디어도 없어요."]);
+	assert.deepEqual(post({ text: "글", media: [`${prefix}a.webp`] }), []);
+	assert.ok(post({ text: "글", media: [`${prefix}a.pdf`] }).some((x) => /지원하지 않는 미디어/.test(x)));
+	assert.ok(post({ text: "글", media: [`${prefix}../secret.jpg`] }).some((x) => /허용되지 않은/.test(x)));
+	assert.ok(post({ text: "글", media: ["https://other.example/a.jpg"] }).some((x) => /허용되지 않은/.test(x)));
+	assert.deepEqual(post({ text: "글", media: [{ url: `${prefix}a.jpg`, alt: "가".repeat(1000) }] }), []);
+	assert.ok(post({ text: "글", media: [{ url: `${prefix}a.jpg`, alt: "가".repeat(1001) }] }).some((x) => /alt/.test(x)));
+	assert.deepEqual(post({ topic: "기록" }), []);
+	assert.deepEqual(post({ topic: "a".repeat(50) }), []);
+	assert.ok(post({ topic: "a".repeat(51) }).some((x) => /주제/.test(x)));
+	assert.ok(post({ topic: "a.b" }).some((x) => /주제/.test(x)));
+	assert.ok(post({ topic: "a&b" }).some((x) => /주제/.test(x)));
+	assert.ok(post({ partsCount: 2 }).some((x) => /이어쓰기/.test(x)));
+	assert.deepEqual(post({ scheduled: "2026-11-01 21:01" }), []);
+	assert.ok(post({ scheduled: "2026-11-01 21:00" }).some((x) => /1분/.test(x)));
+	assert.equal(threadsUploadProblem("a.jpg", 8 * 1024 * 1024), null);
+	assert.ok(threadsUploadProblem("a.jpg", 8 * 1024 * 1024 + 1)?.includes("8MB"));
+	assert.equal(threadsUploadProblem("a.mp4", 1024 * 1024 * 1024), null);
+	assert.ok(threadsUploadProblem("a.mov", 1024 * 1024 * 1024 + 1)?.includes("1GB"));
+	assert.equal(threadsUploadProblem("a.gif", 1), null);
+	assert.equal(resultObjectKey("C-20261101-08", "li"), "studio/results/C-20261101-08.json");
+	assert.equal(resultObjectKey("C-20261101-08", "th"), "studio/results/threads/C-20261101-08.json");
+	assert.equal(resultObjectKey("_token", "th"), "");
+	assert.equal(resultObjectKey("TEST-THREADS-001", "th"), "");
+	const file = setFm(setPostBody(postSkeleton(TH, "C-20261101-08", []), TH, { parts: [{ text: "한 줄", media: [`${prefix}a.png`] }, { text: "둘", media: [] }] }), { topic: "기록", scheduled: later, alt: ["설명"] });
+	const parsed = parsePost("x/2026-11-01 t.md", file, TH);
+	const schedule = buildPayload(parsed);
+	assert.equal(schedule.action, "schedule");
+	assert.equal(schedule.channel, "threads");
+	assert.equal(schedule.title, parsed.title);
+	assert.equal(schedule.text, "한 줄");
+	assert.equal(schedule.parts, undefined);
+	assert.deepEqual(schedule.media, [{ url: `${prefix}a.png`, alt: "설명" }]);
+	assert.equal(schedule.topic, "기록");
+	assert.equal(schedule.text.includes(parsed.title), false);
+	const cancel = buildPayload(parsed, "cancel");
+	assert.equal(cancel.action, "cancel");
+	assert.equal(cancel.channel, "threads");
+	assert.equal(cancel.id, "C-20261101-08");
+	assert.deepEqual(cancel.media, []);
+	assert.equal(cancel.parts, undefined);
+});
+
+test("지금 발행 시각, 접수 응답, 예약 상태, 인스타 결과 키, 최소 여유", () => {
+	const t = new Date("2026-11-01T12:00:10.000Z"); // 21:00:10 KST
+	assert.equal(immediateAt("li", t), "2026-11-01 21:02");
+	assert.equal(immediateAt("th", t), "2026-11-01 21:02");
+	assert.equal(immediateAt("ig", t), "2026-11-01 21:03");
+	assert.equal(immediateAt("li", new Date("2026-11-01T11:58:50.000Z")), "2026-11-01 21:00");
+	assert.equal(resultObjectKey("C-20261101-08", "ig"), "studio/results/instagram/C-20261101-08.json");
+	assert.equal(resultObjectKey("C-20261101-08", "instagram"), "studio/results/instagram/C-20261101-08.json");
+	assert.equal(resultObjectKey("C-20261101-08", "li"), "studio/results/C-20261101-08.json");
+	const failed = interpretIntake(200, JSON.stringify({ status: "failed", error: "본문이 너무 김" }));
+	assert.equal(failed.ok, false);
+	assert.equal(failed.failed, true);
+	assert.equal(failed.error, "본문이 너무 김");
+	const ok = interpretIntake(200, JSON.stringify({ ok: true, schedule: "th-C-1", at: "2026-11-01 21:06" }));
+	assert.equal(ok.ok, true);
+	assert.equal(ok.schedule, "th-C-1");
+	assert.equal(ok.at, "2026-11-01 21:06");
+	const warned = interpretIntake(200, JSON.stringify({ ok: true, warning: "이미지가 잘릴 수 있어요" }));
+	assert.equal(warned.ok, true);
+	assert.equal(warned.warning, "이미지가 잘릴 수 있어요");
+	const bad = interpretIntake(400, JSON.stringify({ ok: false, error: "at must be at least 1 minute in the future (KST)" }));
+	assert.equal(bad.ok, false);
+	assert.equal(bad.error, "at must be at least 1 minute in the future (KST)");
+	const base = { stage: "초안", sent: "", published: "", scheduled: "", url: "", error: "", cancelled: "" };
+	assert.equal(postState(base).name, "예약 전");
+	const when = Date.parse("2026-11-01T12:00:00.000Z"); // 21:00 KST
+	assert.equal(postState({ ...base, stage: "예약", sent: "2026-11-01 20:00", scheduled: "2026-11-01 21:06" }, when).name, "예약됨");
+	assert.equal(postState({ ...base, stage: "예약", sent: "2026-11-01 20:00", scheduled: "2026-11-01 21:06" }, when).detail, "11/1 21:06");
+	assert.equal(postState({ ...base, stage: "예약", sent: "2026-11-01 20:50", scheduled: "2026-11-01 21:00" }, when).name, "발행 중");
+	assert.equal(postState({ ...base, stage: "발행", published: "2026-11-01", url: "https://example.com/p", sent: "2026-11-01 20:00", scheduled: "2026-11-01 21:00" }, when).name, "발행됨");
+	assert.equal(postState({ ...base, stage: "예약", sent: "2026-11-01 20:00", scheduled: "2026-11-01 21:06", error: "이유\n둘째" }, when).name, "실패");
+	assert.equal(postState({ ...base, stage: "예약", sent: "2026-11-01 20:00", scheduled: "2026-11-01 21:06", error: "이유\n둘째" }, when).detail, "이유");
+	assert.equal(postState({ ...base, stage: "다듬기", cancelled: "2026-11-01 21:10" }, when).name, "취소됨");
+	const li = parsePost("x/t.md", setFm(setPostBody(postSkeleton(LI, "C-1", []), LI, { text: "본문" }), { scheduled: "2026-11-01 21:00" }), LI);
+	const now = Date.parse("2026-11-01T11:59:30.000Z"); // 20:59:30 KST, 30s before 21:00
+	assert.ok(postProblems(li, { now }).some((x) => /1분 뒤/.test(x.text)));
+	assert.equal(postProblems(li, { now: Date.parse("2026-11-01T11:58:00.000Z") }).some((x) => /1분 뒤/.test(x.text)), false);
+	const ig = parsePost("x/t.md", setFm(setPostBody(postSkeleton(IG, "C-2", []), IG, { text: "캡션" }), { scheduled: "2026-11-01 21:00", media: ["https://example.com/a.jpg"] }), IG);
+	assert.ok(postProblems(ig, { now: Date.parse("2026-11-01T11:58:30.000Z") }).some((x) => /2분 뒤/.test(x.text)));
+	assert.equal(postProblems(ig, { now: Date.parse("2026-11-01T11:57:00.000Z") }).some((x) => /2분 뒤/.test(x.text)), false);
+});
+
+test("수동 발행 결과 읽기: 지난 인스타 글도 instagram/ 키로 published를 반영", () => {
+	const past = "2026-11-01 20:00";
+	const future = "2026-11-01 23:00";
+	const plan = resultReadPlan([
+		{ id: "C-IG-1", channel: "ig", stage: "예약", sent: "2026-11-01 19:50", published: "", scheduled: past },
+		{ id: "C-LI-1", channel: "li", stage: "예약", sent: "2026-11-01 19:50", published: "", scheduled: future },
+		{ id: "C-TH-1", channel: "th", stage: "예약", sent: "2026-11-01 19:50", published: "", scheduled: past },
+		{ id: "C-IG-2", channel: "ig", stage: "발행", sent: "2026-11-01 19:50", published: "2026-11-01", scheduled: past },
+		{ id: "C-IG-3", channel: "ig", stage: "예약", sent: "", published: "", scheduled: past },
+	]);
+	assert.deepEqual(
+		plan.map((x) => x.key),
+		["studio/results/instagram/C-IG-1.json", "studio/results/C-LI-1.json", "studio/results/threads/C-TH-1.json"],
+	);
+	const ig = parsePost(
+		"x/2026-11-01 인스타.md",
+		setFm(setPostBody(postSkeleton(IG, "C-IG-1", []), IG, { text: "캡션" }), { stage: "예약", scheduled: past, sent: "2026-11-01 19:50", media: ["https://example.com/a.jpg"] }),
+		IG,
+	);
+	assert.equal(ig.channel.key, "ig");
+	assert.equal(ig.stage, "예약");
+	const row = parseResultJson(`{"id":"C-IG-1","status":"published","url":"https://www.instagram.com/p/example/","error":null,"at":"2026-11-01 20:01"}`);
+	if (!row) throw new Error("result json");
+	assert.deepEqual(resultPatch(ig, row), { published: "2026-11-01", url: "https://www.instagram.com/p/example/", stage: "발행", error: null });
+	assert.equal(formatPollHit({ id: "C-IG-1", kind: "missing", detail: "403 AccessDenied" }), "C-IG-1: 결과 파일 없음(또는 권한 없음) (403 AccessDenied)");
+	assert.equal(isAbsentResult(403, "<Error><Code>AccessDenied</Code></Error>"), true);
+});
+
+test("지금 발행 control is a tinted button class, not ghost text", () => {
+	assert.match(SEND_NOW_BUTTON_CLASS, /\bst-btn\b/);
+	assert.match(SEND_NOW_BUTTON_CLASS, /\bst-now\b/);
+	assert.equal(SEND_NOW_BUTTON_CLASS.includes("is-ghost"), false);
+	assert.equal(SEND_NOW_MENU_CLASS, "st-now-menu");
 });

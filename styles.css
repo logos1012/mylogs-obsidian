@@ -11574,6 +11574,16 @@ body.is-mobile .fw3-ws-cover { height: 110px; }
 .st .st-st.s-pub { background: color-mix(in srgb, var(--st-ok) 14%, var(--background-primary)); color: var(--st-ok); }
 .st .st-st.s-fail { background: color-mix(in srgb, var(--st-bad) 12%, var(--background-primary)); color: var(--st-bad); }
 .st .st-st.s-wait { background: var(--background-modifier-hover); color: var(--text-muted); }
+.st .st-st.s-going { background: color-mix(in srgb, var(--st-warn) 18%, var(--background-primary)); color: var(--st-warn); }
+.st .st-st.s-cancel { background: var(--background-modifier-hover); color: var(--text-faint); }
+.st .st-st.is-link { cursor: pointer; text-decoration: underline; }
+.st .st-nowmark { margin-right: 2px; }
+.st .st-statechips { margin-top: 6px; }
+.st .st-statecount { font-size: 12px; color: var(--text-muted); margin-left: 4px; }
+.st .st-state-line { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.st .st-warn-banner { background: color-mix(in srgb, var(--st-warn) 16%, var(--background-primary)); color: var(--text-normal); border: 1px solid color-mix(in srgb, var(--st-warn) 45%, var(--background-modifier-border)); border-radius: 10px; padding: 8px 12px; margin: 0 0 10px; font-size: 13px; }
+.st .st-slot.s-going { border-color: color-mix(in srgb, var(--st-warn) 50%, var(--background-modifier-border)); background: color-mix(in srgb, var(--st-warn) 8%, var(--background-primary)); }
+.st .st-slot.s-cancel { border-style: dashed; opacity: 0.75; }
 
 /* 머리 · 탭 */
 .st .st-head { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
@@ -11745,6 +11755,10 @@ body.is-mobile .fw3-ws-cover { height: 110px; }
 .st .is-doc { display: flex; align-items: center; justify-content: center; font-weight: 700; color: var(--text-muted); }
 .st .st-schedin { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
 .st .st-schedin input { height: 32px; border-radius: 8px; }
+.st .st-timepresets { grid-column: 1 / -1; margin: 0; }
+.st .st-timepresets button { height: 24px; padding: 0 8px; font-size: 11.5px; cursor: pointer; }
+.st .st-timepresets button:hover { color: var(--text-normal); border-color: var(--background-modifier-border-hover); background: var(--background-modifier-hover); }
+.st .st-timepresets button:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 1px; }
 .st .st-prob { font-size: 12px; padding: 4px 8px; border-radius: 7px; margin-bottom: 4px; }
 .st .st-prob.is-block { color: var(--st-bad); background: color-mix(in srgb, var(--st-bad) 8%, var(--background-primary)); }
 .st .st-prob.is-warn { color: var(--st-warn); background: color-mix(in srgb, var(--st-warn) 8%, var(--background-primary)); }
@@ -11811,6 +11825,48 @@ body.is-mobile .fw3-ws-cover { height: 110px; }
 .st .st-ed { --interactive-accent: var(--ch); --interactive-accent-hover: color-mix(in srgb, var(--ch) 85%, #000); --text-on-accent: var(--ch-on); }
 .st .st-ed button.mod-cta { background: var(--ch); color: var(--ch-on); }
 .st .st-ed.is-ig button.mod-cta, .st .st-ed.is-ig .st-stagebar button.is-now { background: var(--ch-grad); color: #fff; }
+/* 「지금 발행」: same hue as 예약 보내기, lighter fill. */
+.st .st-ed button.st-btn.st-now {
+	background: color-mix(in srgb, var(--ch) 18%, var(--background-primary));
+	color: var(--ch);
+	border: 1px solid color-mix(in srgb, var(--ch) 42%, var(--background-modifier-border));
+	box-shadow: none;
+	font-weight: 600;
+}
+.st .st-ed button.st-btn.st-now:hover:not(:disabled) {
+	background: color-mix(in srgb, var(--ch) 30%, var(--background-primary));
+}
+.st .st-ed button.st-btn.st-now:focus-visible {
+	outline: 2px solid color-mix(in srgb, var(--ch) 55%, transparent);
+	outline-offset: 2px;
+}
+.st .st-ed button.st-btn.st-now:disabled { opacity: 0.45; }
+.st .st-ed.is-th button.st-btn.st-now {
+	color: var(--text-normal);
+	background: color-mix(in srgb, var(--text-normal) 12%, var(--background-primary));
+	border-color: color-mix(in srgb, var(--text-normal) 32%, var(--background-modifier-border));
+}
+.st .st-ed.is-ig button.st-btn.st-now {
+	background: color-mix(in srgb, var(--ch) 16%, var(--background-primary));
+	color: var(--ch);
+	border-color: color-mix(in srgb, var(--ch) 40%, var(--background-modifier-border));
+}
+.menu-item.st-now-menu {
+	margin: 4px 8px;
+	border-radius: 8px;
+	padding-top: 6px;
+	padding-bottom: 6px;
+	background: color-mix(in srgb, var(--interactive-accent) 16%, var(--background-primary));
+	border: 1px solid color-mix(in srgb, var(--interactive-accent) 38%, var(--background-modifier-border));
+	font-weight: 600;
+}
+.menu-item.st-now-menu .menu-item-title,
+.menu-item.st-now-menu .menu-item-icon { color: var(--interactive-accent); }
+.menu-item.st-now-menu:hover,
+.menu-item.st-now-menu.is-selected,
+.menu-item.st-now-menu:focus-visible {
+	background: color-mix(in srgb, var(--interactive-accent) 28%, var(--background-primary));
+}
 .st .st-mark { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 7px; font-weight: 800; font-size: 13px; flex: 0 0 auto; }
 .st .st-mark.c-li, .st .st-dot.c-li { background: #0a66c2; color: #fff; }
 .st .st-mark.c-th, .st .st-dot.c-th { background: var(--text-normal); color: var(--background-primary); }

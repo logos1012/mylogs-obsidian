@@ -11,14 +11,16 @@
 
 import { type App, Notice, requestUrl, Setting } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
-import type { ChannelKey } from "./model.ts";
+import { resultBody, type ChannelKey } from "./model.ts";
 import { DEFAULT_S3_PREFIX, isS3Ready, listObjects, type S3Config, type Send } from "./s3.ts";
 
 export interface StudioSecrets {
 	s3KeyId: string;
 	s3Secret: string;
-	/** LinkedIn `x-studio-key`. Empty = do not send the header. */
+	/** LinkedIn, Threads, and Instagram `x-studio-key`. Empty = do not send the header. */
 	studioKey: string;
+	/** Threads intake URL. Empty = do not send. Never a hard-coded endpoint. */
+	threadsIntake: string;
 	webhook: Record<ChannelKey, string>;
 }
 
@@ -26,7 +28,7 @@ const KEY = "mylogs-studio-secrets";
 
 export function loadSecrets(app: App): StudioSecrets {
 	const raw = (app.loadLocalStorage(KEY) ?? {}) as Partial<StudioSecrets>;
-	return { s3KeyId: raw.s3KeyId ?? "", s3Secret: raw.s3Secret ?? "", studioKey: raw.studioKey ?? "", webhook: { li: "", th: "", ig: "", ...(raw.webhook ?? {}) } };
+	return { s3KeyId: raw.s3KeyId ?? "", s3Secret: raw.s3Secret ?? "", studioKey: raw.studioKey ?? "", threadsIntake: raw.threadsIntake ?? "", webhook: { li: "", th: "", ig: "", ...(raw.webhook ?? {}) } };
 }
 
 export function saveSecrets(app: App, s: StudioSecrets): void {
@@ -42,7 +44,7 @@ export function s3Config(plugin: MyLogsPlugin): S3Config {
 /** Obsidian `requestUrl` (no CORS) as the S3 module's `send`. */
 export const obsidianSend: Send = async (r) => {
 	const res = await requestUrl({ url: r.url, method: r.method, headers: r.headers, body: r.body, throw: false });
-	return { status: res.status, text: res.text ?? "" };
+	return { status: res.status, text: resultBody(res) };
 };
 
 export function renderStudioSettings(el: HTMLElement, plugin: MyLogsPlugin): void {
@@ -89,7 +91,7 @@ export function renderStudioSettings(el: HTMLElement, plugin: MyLogsPlugin): voi
 			}),
 		);
 	text("링크드인 웹훅", "「예약 보내기」·「예약 취소」가 POST 할 곳 (API Gateway). 본문 형식은 그대로예요.", () => sec.webhook.li, (v) => ((sec.webhook.li = v), saveSec()), true, "https://….execute-api.….amazonaws.com/…");
-	text("링크드인 키 (x-studio-key)", "값이 있으면 링크드인 예약·취소 POST에만 헤더 x-studio-key 로 붙여요. 비우면 헤더를 안 보내요. 이 기기에만 저장", () => sec.studioKey, (v) => ((sec.studioKey = v), saveSec()), true);
-	text("스레드 웹훅", "Make → Buffer (타래를 못 받으면 Make → Threads API)", () => sec.webhook.th, (v) => ((sec.webhook.th = v), saveSec()), true, "https://hook.…make.com/…");
+	text("링크드인 키 (x-studio-key)", "값이 있으면 링크드인·스레드·인스타그램 예약·취소 POST에 헤더 x-studio-key 로 붙여요. 비우면 헤더를 안 보내요. 이 기기에만 저장", () => sec.studioKey, (v) => ((sec.studioKey = v), saveSec()), true);
+	text("스레드 접수 주소", "스레드 「예약 보내기」·「예약 취소」가 POST 할 곳. 비어 있으면 보내지 않아요. 링크드인과 같은 x-studio-key 를 붙여요.", () => sec.threadsIntake, (v) => ((sec.threadsIntake = v), saveSec()), true, "https://….execute-api.….amazonaws.com/…");
 	text("인스타그램 웹훅", "API Gateway → Lambda", () => sec.webhook.ig, (v) => ((sec.webhook.ig = v), saveSec()), true, "https://….execute-api.….amazonaws.com/…");
 }

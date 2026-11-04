@@ -19,19 +19,29 @@ import { lumiBus } from "./bus.ts";
 import { AmpScreen } from "./amp-view.ts";
 import { chooseFiles, dropZone, pickMedia, thumb, uploadFiles } from "./media.ts";
 import {
+	blocksNow,
+	SEND_NOW_BUTTON_CLASS,
+	SEND_NOW_MENU_CLASS,
 	type Candidate,
 	captionOut,
 	type ChannelDef,
 	channelByKey,
 	CHANNELS,
 	charCount,
-	defaultSchedule,
+	fastPollEvery,
+	formatPollSummary,
 	FORMATS,
 	type GlgamLine,
 	HASHTAG_MAX,
 	isStage,
 	type Post,
 	postProblems,
+	postState,
+	type PostStateKind,
+	prefillSchedule,
+	SCHEDULE_PRESETS,
+	schedulePresetAt,
+	scheduledInstant,
 	PRIVATE_HINT,
 	type Source,
 	type SourceUnit,
@@ -39,10 +49,13 @@ import {
 	STAGES,
 	strategyPath,
 	type ThreadPart,
+	threadsTextLength,
+	threadsUploadProblem,
 } from "./model.ts";
 import {
 	addManualGlgam,
 	cancelSchedule,
+	channelEndpoint,
 	createPost,
 	deletePost,
 	dropGlgam,
@@ -59,10 +72,12 @@ import {
 	renamePost,
 	saveSources,
 	scanCandidates,
+	sendNow,
 	sendSchedule,
 	type StudioData,
 } from "./store.ts";
-import { loadSecrets } from "./settings.ts";
+import { loadSecrets, s3Config } from "./settings.ts";
+import { publicPrefix } from "./s3.ts";
 
 export const VIEW_TYPE_STUDIO = "mylogs-studio";
 
@@ -70,7 +85,7 @@ type Tab = "glgam" | "board" | "sched" | "src";
 const TABS: [Tab, string][] = [["glgam", "글감"], ["board", "보드"], ["sched", "예약"], ["src", "소스"]];
 const SRC_LABEL: Record<string, string> = { daily: "Daily Pad", fw: "Flywheel 기록", news: "AI 뉴스", wiki: "LLM Wiki", diary: "Diary", session: "AI 대화", hand: "직접", lumi: "✦ 루미" };
 const CH_MARK: Record<string, string> = { li: "in", th: "@", ig: "◎" };
-const ROUTE: Record<string, string> = { li: "API Gateway → Lambda", th: "Make → Buffer (또는 Threads API)", ig: "API Gateway → Lambda" };
+const ROUTE: Record<string, string> = { li: "API Gateway → Lambda", th: "API Gateway → Threads", ig: "API Gateway → Lambda" };
 
 const err = (e: unknown) => new Notice(`MyLogs: ${e instanceof Error ? e.message : String(e)}`, 10000);
 const md = (iso: string) => (iso ? moment(iso, "YYYY-MM-DD").format("M/D") : "");
@@ -86,6 +101,7 @@ export class StudioView extends ItemView {
 	private srcFilter = "";
 	private q = "";
 	private boardCh = "";
+	private boardKind: "all" | PostStateKind = "all";
 	private week = moment().startOf("isoWeek").format("YYYY-MM-DD");
 	private seq = 0;
 	private busy = false;
@@ -132,12 +148,14 @@ export class StudioView extends ItemView {
 		this.registerEvent(this.app.vault.on("delete", (f) => watch(f)));
 		this.registerEvent(this.app.vault.on("rename", (f, old) => watch(f, old)));
 		this.register(lumiBus.on(() => this.tab === "glgam" && !this.editing && this.render()));
+		this.register(() => this.stopFastPoll());
 		this.registerInterval(window.setInterval(() => void this.poll(false), 10 * 60_000));
 		await this.refresh(true);
 		void this.poll(false);
 	}
 
 	async onClose(): Promise<void> {
+		this.stopFastPoll();
 		await this.amp?.flush();
 		this.amp?.stop();
 		await this.flushBody();
@@ -170,6 +188,7 @@ export class StudioView extends ItemView {
 				else await this.amp.load();
 			}
 			this.render();
+			this.syncFastPoll();
 		} catch (e) {
 			console.error("[MyLogs] studio load failed", e);
 			this.rootEl.empty();
@@ -177,15 +196,33 @@ export class StudioView extends ItemView {
 		}
 	}
 
-	private async poll(force: boolean): Promise<void> {
+	private fastPoll: number | null = null;
+
+	private stopFastPoll(): void {
+		if (this.fastPoll != null) window.clearInterval(this.fastPoll);
+		this.fastPoll = null;
+	}
+
+	/** 90s while a sent post is past `scheduled` and still unpublished. Board, editor, and 글 증폭 share this view. */
+	private syncFastPoll(): void {
+		const every = this.d ? fastPollEvery(this.d.posts) : null;
+		if (every && this.fastPoll == null) this.fastPoll = window.setInterval(() => void this.poll(false, true), every);
+		else if (!every) this.stopFastPoll();
+	}
+
+	/** Editor header, 글 증폭 header, and the command palette. Same read as the timer. */
+	async readResults(): Promise<void> {
+		if (!this.d) await this.refresh();
+		await this.poll(true);
+	}
+
+	private async poll(force: boolean, bypassThrottle = false): Promise<void> {
 		if (!this.d) return;
 		try {
-			const r = await pollResults(this.plugin, this.d, force);
-			if (r.changed) {
-				new Notice(`발행 결과 ${r.changed}건을 게시물에 옮겼어요.`);
-				await this.refresh();
-			} else if (force && r.unconfigured) new Notice("설정 › 콘텐츠 스튜디오에서 S3를 연결해 주세요.");
-			else if (force && !r.errors) new Notice("새 발행 결과가 없어요.");
+			const r = await pollResults(this.plugin, this.d, force, { bypassThrottle: force || bypassThrottle });
+			if (r.changed) await this.refresh();
+			else this.syncFastPoll();
+			if (force) announcePoll(r);
 		} catch (e) {
 			console.error("[MyLogs] studio results", e);
 			if (force) err(e);
@@ -214,6 +251,7 @@ export class StudioView extends ItemView {
 				plugin: this.plugin,
 				hush: (ms) => this.hush(ms),
 				rerender: () => this.render(),
+				readResults: () => void this.readResults(),
 				exit: () => {
 					this.amp = null;
 					void this.refresh();
@@ -553,9 +591,22 @@ export class StudioView extends ItemView {
 				this.render();
 			});
 		}
+		const kinds: ["all" | PostStateKind, string][] = [["all", "전체"], ["before", "예약 전"], ["scheduled", "예약됨"], ["going", "발행 중"], ["published", "발행됨"], ["failed", "실패"], ["cancelled", "취소됨"]];
+		const stateRow = root.createDiv({ cls: "st-chips st-statechips" });
+		for (const [k, label] of kinds) {
+			const b = stateRow.createEl("button", { cls: k === this.boardKind ? "is-on" : "", text: label, attr: { type: "button" } });
+			b.addEventListener("click", () => {
+				this.boardKind = k;
+				this.render();
+			});
+		}
+		const inCh = d.posts.filter((p) => !this.boardCh || p.channel.key === this.boardCh);
+		const nSched = inCh.filter((p) => postState(p).kind === "scheduled").length;
+		const nFail = inCh.filter((p) => postState(p).kind === "failed").length;
+		stateRow.createSpan({ cls: "st-statecount", text: `예약됨 ${nSched} · 실패 ${nFail}` });
 		const board = root.createDiv({ cls: "st-board" });
 		const weekAgo = moment().subtract(7, "days").format("YYYY-MM-DD");
-		const posts = d.posts.filter((p) => !this.boardCh || p.channel.key === this.boardCh);
+		const posts = d.posts.filter((p) => (!this.boardCh || p.channel.key === this.boardCh) && (this.boardKind === "all" || postState(p).kind === this.boardKind));
 		const col = (key: string, label: string, hint: string) => {
 			const c = board.createDiv({ cls: "st-col" });
 			const h = c.createEl("h3");
@@ -612,15 +663,30 @@ export class StudioView extends ItemView {
 		root.createDiv({ cls: "st-small st-muted st-pad", text: "카드를 끌면 `stage` 한 칸만 바뀌어요. 「예약」으로 끌면 편집 화면에서 시각을 정해 보내요. 「발행」으로 끌면 주소를 물어요." });
 	}
 
+	private stateBadge(parent: HTMLElement, p: Post): HTMLElement {
+		const s = postState(p);
+		const el = parent.createSpan({ cls: `st-st s-${s.cls}` });
+		if (p.now) el.createSpan({ cls: "st-nowmark", text: "⚡" });
+		el.appendText(s.kind === "scheduled" && s.detail ? `${s.name} ${s.detail}` : s.name);
+		if (s.kind === "failed" && s.detail) el.createSpan({ cls: "st-tiny", text: ` ${s.detail.split("\n")[0]}` });
+		if (s.kind === "published" && p.url) {
+			el.addClass("is-link");
+			el.addEventListener("click", (ev) => {
+				ev.preventDefault();
+				ev.stopPropagation();
+				window.open(p.url, "_blank", "noopener");
+			});
+		}
+		return el;
+	}
+
 	private postCard(list: HTMLElement, p: Post): void {
 		const card = list.createDiv({ cls: `st-pc c-${p.channel.key}${p.error ? " is-fail" : ""}`, attr: { draggable: "true" } });
 		if (p.media[0]) thumb(card, p.media[0], "st-pc-thumb");
 		card.createDiv({ cls: "st-t", text: p.title });
 		const m = card.createDiv({ cls: "st-m" });
 		m.createSpan({ cls: `st-ch c-${p.channel.key}`, text: p.channel.name });
-		if (p.stage === "예약" && p.scheduled) m.createSpan({ text: moment(p.scheduled, "YYYY-MM-DD HH:mm").format("M/D HH:mm") });
-		if (p.stage === "발행") m.createSpan({ text: md(p.published) });
-		if (p.stage === "예약") m.createSpan({ cls: `st-st ${p.error ? "s-fail" : p.sent ? "s-sent" : "s-wait"}`, text: p.error ? "실패" : p.sent ? "보냄" : "안 보냄" });
+		this.stateBadge(m, p);
 		if (p.channel.key === "th" && p.parts.length > 1) m.createSpan({ text: `타래 ${p.parts.length}` });
 		if (p.media.length) m.createSpan({ text: `🖼 ${p.media.length}` });
 		card.addEventListener("dragstart", (ev) => ev.dataTransfer?.setData("text/x-studio", `p|${p.path}`));
@@ -639,6 +705,12 @@ export class StudioView extends ItemView {
 		m.addItem((i) => i.setTitle("열기").setIcon("pencil").onClick(() => this.openPost(p.path)));
 		m.addItem((i) => i.setTitle("원문 열기").setIcon("file-text").onClick(() => void openPath(this.plugin, p.path)));
 		if (p.stage !== "발행") m.addItem((i) => i.setTitle("발행했어요…").setIcon("check").onClick(() => void this.askPublished(p)));
+		if (p.stage !== "발행" && channelEndpoint(this.plugin, p.channel.key) && !blocksNow(postProblems(p, { mediaPrefix: publicPrefix(s3Config(this.plugin)) }))) {
+			m.addItem((i) => {
+				i.setTitle("지금 발행…").setIcon("zap").onClick(() => void this.confirmSendNow(p));
+				(i as unknown as { dom?: HTMLElement }).dom?.classList.add(SEND_NOW_MENU_CLASS);
+			});
+		}
 		m.addSeparator();
 		m.addItem((i) =>
 			i
@@ -724,18 +796,18 @@ export class StudioView extends ItemView {
 				const cell = cal.createDiv({ cls: "st-cell" });
 				const list = d.posts.filter((p) => p.channel.key === ch.key && (p.scheduled.slice(0, 10) === iso || (!p.scheduled && p.published === iso))).sort((a, b) => a.scheduled.localeCompare(b.scheduled));
 				for (const p of list) {
-					const st = p.published ? "pub" : p.error ? "fail" : p.sent ? "sent" : "wait";
-					const s = cell.createDiv({ cls: `st-slot s-${st}` });
+					const s = cell.createDiv({ cls: `st-slot s-${postState(p).cls}` });
 					s.createSpan({ cls: "st-tm", text: p.scheduled.slice(11, 16) || "" });
+					if (p.now) s.createSpan({ cls: "st-nowmark", text: "⚡" });
 					s.appendText(` ${p.title}`);
-					tip(s, `${p.stage}${p.error ? ` · 실패: ${p.error}` : ""}`);
+					tip(s, `${postState(p).name}${p.error ? ` · ${p.error.split("\n")[0]}` : ""}`);
 					s.addEventListener("click", () => this.openPost(p.path));
 				}
 				if (!list.length) cell.createDiv({ cls: "st-empty-cell", text: "" });
 			}
 		}
 		const lg = root.createDiv({ cls: "st-legend" });
-		for (const [k, t] of [["wait", "다듬는 중 · 안 보냄"], ["sent", "보냄 (예약됨)"], ["pub", "발행"], ["fail", "실패"]]) lg.createSpan({ cls: `st-st s-${k}`, text: t });
+		for (const [k, t] of [["wait", "예약 전"], ["sent", "예약됨"], ["going", "발행 중"], ["pub", "발행됨"], ["fail", "실패"], ["cancel", "취소됨"]]) lg.createSpan({ cls: `st-st s-${k}`, text: t });
 
 		const rows = d.posts
 			.filter((p) => p.scheduled || p.sent || p.published)
@@ -746,19 +818,17 @@ export class StudioView extends ItemView {
 		for (const h of ["예약", "채널", "제목", "보낸 곳", "상태", "링크", ""]) hr.createEl("th", { text: h });
 		const tb = tbl.createEl("tbody");
 		if (!rows.length) tb.createEl("tr").createEl("td", { attr: { colspan: "7" }, cls: "st-faint", text: "아직 예약한 글이 없어요." });
-		const hooks = loadSecrets(this.app).webhook;
+		const sec = loadSecrets(this.app);
+		const hooked = (key: Post["channel"]["key"]) => (key === "th" ? sec.threadsIntake : sec.webhook[key]).trim();
 		for (const p of rows) {
 			const tr = tb.createEl("tr");
 			tr.createEl("td", { text: p.scheduled ? moment(p.scheduled, "YYYY-MM-DD HH:mm").format("M/D HH:mm") : "—" });
 			tr.createEl("td").createSpan({ cls: `st-ch c-${p.channel.key}`, text: p.channel.name });
 			const t = tr.createEl("td").createEl("a", { text: p.title });
 			t.addEventListener("click", () => this.openPost(p.path));
-			tr.createEl("td", { cls: "st-muted", text: hooks[p.channel.key] ? ROUTE[p.channel.key] : "웹훅 없음" });
+			tr.createEl("td", { cls: "st-muted", text: hooked(p.channel.key) ? ROUTE[p.channel.key] : "웹훅 없음" });
 			const stc = tr.createEl("td");
-			const st = p.published ? "pub" : p.error ? "fail" : p.sent ? "sent" : "wait";
-			stc.createSpan({ cls: `st-st s-${st}`, text: { pub: "발행", fail: "실패", sent: "보냄", wait: "안 보냄" }[st] });
-			if (p.error) stc.createSpan({ cls: "st-tiny st-faint", text: ` ${p.error}` });
-			else if (p.sent && !p.published) stc.createSpan({ cls: "st-tiny st-faint", text: ` ${moment(p.sent, "YYYY-MM-DD HH:mm").format("M/D HH:mm")}` });
+			this.stateBadge(stc, p);
 			const lc = tr.createEl("td");
 			if (p.url) lc.createEl("a", { text: p.url.replace(/^https?:\/\//, "").slice(0, 28) + "…", href: p.url });
 			else lc.setText("—");
@@ -897,6 +967,8 @@ export class StudioView extends ItemView {
 		}
 		const orig = top.createEl("button", { cls: "st-btn is-sm is-ghost", text: "원문 열기", attr: { type: "button" } });
 		orig.addEventListener("click", () => void openPath(this.plugin, p.path));
+		const read = top.createEl("button", { cls: "st-btn is-sm is-ghost", text: "발행 결과 지금 읽기", attr: { type: "button" } });
+		read.addEventListener("click", () => void this.readResults());
 
 		const layout = ed.createDiv({ cls: "st-edgrid" });
 		const main = layout.createDiv({ cls: "st-edmain" });
@@ -945,11 +1017,10 @@ export class StudioView extends ItemView {
 			if (s === "초안" || s === "다듬기" || s === "미디어") b.addEventListener("click", () => p.stage !== "예약" && p.stage !== "발행" && void this.setFields({ stage: s }));
 		});
 
-		if (p.stage === "예약" && p.sent) {
-			const lock = main.createDiv({ cls: "st-lock" });
-			lock.createSpan({ cls: "st-st s-sent", text: "보냄" });
-			lock.createSpan({ text: ` ${moment(p.scheduled, "YYYY-MM-DD HH:mm").format("M/D HH:mm")} 예약으로 보냈어요. 고치면 「다시 보내기」로 받은 쪽 예약을 바꿔요.` });
-		}
+		const stateLine = main.createDiv({ cls: "st-lock" });
+		this.stateBadge(stateLine, p);
+		stateLine.createSpan({ text: p.sent && p.scheduled ? ` ${moment(p.scheduled, "YYYY-MM-DD HH:mm").format("M/D HH:mm")}에 보낼 예약이에요.` : "" });
+		if (p.warning) main.createDiv({ cls: "st-warn-banner", text: p.warning });
 		if (p.error) main.createDiv({ cls: "st-banner is-bad", text: `발행 실패: ${p.error}` });
 
 		if (p.channel.key === "li") this.editLinkedIn(main, side, p);
@@ -1056,7 +1127,7 @@ export class StudioView extends ItemView {
 			const bar = foot.createSpan({ cls: "st-ring" });
 			const n = foot.createSpan({ text: "" });
 			const upd = (v: string) => {
-				const c = charCount(v);
+				const c = threadsTextLength(v);
 				bar.style.setProperty("--p", `${Math.min(100, (c / p.channel.limit) * 100)}%`);
 				bar.toggleClass("is-warn", c > p.channel.limit * 0.9 && c <= p.channel.limit);
 				bar.toggleClass("is-over", c > p.channel.limit);
@@ -1086,8 +1157,8 @@ export class StudioView extends ItemView {
 				part.media.push(...urls);
 				this.dirtyBody = true;
 				void this.flushBody().then(() => this.render());
-			}));
-			dropZone(box, (files) => void uploadFiles(this.plugin, files).then((urls) => {
+			}, (f) => threadsUploadProblem(f.name, f.size)));
+			dropZone(box, (files) => void uploadFiles(this.plugin, files, undefined, (f) => threadsUploadProblem(f.name, f.size)).then((urls) => {
 				if (!urls.length) return;
 				part.media.push(...urls);
 				this.dirtyBody = true;
@@ -1104,7 +1175,7 @@ export class StudioView extends ItemView {
 		});
 		const add = main.createDiv({ cls: "st-tadd" });
 		const b = add.createEl("button", { cls: "st-btn is-sm", text: "＋ 이어 쓰기", attr: { type: "button" } });
-		add.createSpan({ cls: "st-small st-faint", text: " 글 하나에 500자. 빈 글은 보내지 않아요." });
+		add.createSpan({ cls: "st-small st-faint", text: " 이어쓰기는 아직 보낼 수 없어요. 글은 하나만, 500자(이모티콘은 바이트)까지." });
 		b.addEventListener("click", () => {
 			p.parts.push({ text: "", media: [] } as ThreadPart);
 			this.dirtyBody = true;
@@ -1116,7 +1187,7 @@ export class StudioView extends ItemView {
 		});
 		const tip1 = side.createDiv({ cls: "st-sideg" });
 		tip1.createEl("h2", { text: "미디어" });
-		tip1.createDiv({ cls: "st-small st-muted", text: "사진은 글마다 따로 붙어요. 각 글의 「＋ 사진」이나 글 칸에 파일을 끌어 놓으세요." });
+		tip1.createDiv({ cls: "st-small st-muted", text: "jpg·jpeg·png·gif·webp는 8MB, mp4·mov는 1GB까지. 글 하나에 미디어 20개. 주소는 설정의 S3 폴더 공개 주소여야 해요." });
 	}
 
 	private editInstagram(main: HTMLElement, side: HTMLElement, p: Post): void {
@@ -1248,10 +1319,10 @@ export class StudioView extends ItemView {
 		if (t.length > 125) el.createSpan({ cls: "st-faint", text: " …더 보기" });
 	}
 
-	private addMediaMenu(ev: MouseEvent, put: (urls: string[]) => void): void {
+	private addMediaMenu(ev: MouseEvent, put: (urls: string[]) => void, gate?: (f: File) => string | null): void {
 		const m = new Menu();
 		m.addItem((i) => i.setTitle("S3에서 고르기").setIcon("cloud").onClick(() => void pickMedia(this.plugin).then((u) => u.length && put(u))));
-		m.addItem((i) => i.setTitle("이 컴퓨터에서 올리기").setIcon("upload").onClick(() => void chooseFiles().then((f) => uploadFiles(this.plugin, f)).then((u) => u.length && put(u))));
+		m.addItem((i) => i.setTitle("이 컴퓨터에서 올리기").setIcon("upload").onClick(() => void chooseFiles().then((f) => uploadFiles(this.plugin, f, undefined, gate)).then((u) => u.length && put(u))));
 		m.showAtMouseEvent(ev);
 	}
 
@@ -1342,31 +1413,70 @@ export class StudioView extends ItemView {
 		g.createDiv({ cls: "st-tiny st-faint", text: "체크는 이 화면에서만 보여요. 파일에 쓰지 않아요." });
 	}
 
+	private armResultRead(scheduled: string): void {
+		const at = scheduledInstant(scheduled);
+		if (at == null) return;
+		const delay = Math.max(0, at + 30_000 - Date.now());
+		const id = window.setTimeout(() => {
+			void this.poll(false, true).finally(() => this.syncFastPoll());
+		}, delay);
+		this.register(() => window.clearTimeout(id));
+	}
+
+	private async confirmSendNow(p: Post): Promise<void> {
+		const ok = await askForm(this.app, {
+			title: "지금 발행",
+			desc: `지금 ${p.channel.name}에 올려요. 1~3분 뒤 게시돼요. 되돌릴 수 없어요.`,
+			fields: [],
+			cta: "지금 발행",
+		});
+		if (!ok) return;
+		await this.run(async () => {
+			const at = await sendNow(this.plugin, p);
+			this.armResultRead(at);
+			new Notice(`${p.channel.name}에 지금 발행을 보냈어요.`);
+		});
+	}
+
 	private renderSchedule(side: HTMLElement, real: Post): void {
 		const g = side.createDiv({ cls: "st-sideg is-last" });
+		const status = g.createDiv({ cls: "st-state-line" });
+		this.stateBadge(status, real);
+		if (real.warning) g.createDiv({ cls: "st-warn-banner", text: real.warning });
 		g.createEl("h2", { text: "예약" });
 		const assumed = !real.scheduled && real.stage !== "발행";
-		// shown as today; written when sent or changed
-		const p: Post = assumed ? { ...real, scheduled: defaultSchedule(new Date()) } : real;
-		const problems = postProblems(p);
+		// shown as the current local minute; written when sent, edited, or a preset is chosen
+		const p: Post = assumed ? { ...real, scheduled: prefillSchedule(new Date()) } : real;
+		const problems = postProblems(p, { mediaPrefix: publicPrefix(s3Config(this.plugin)) });
 		const row = g.createDiv({ cls: "st-schedin" });
 		const date = row.createEl("input", { attr: { type: "date" } });
-		const time = row.createEl("input", { attr: { type: "time", step: "300" } });
+		const time = row.createEl("input", { attr: { type: "time", step: "60" } });
 		date.value = p.scheduled.slice(0, 10);
-		time.value = p.scheduled.slice(11, 16) || "08:00";
+		time.value = p.scheduled.slice(11, 16) || "00:00";
 		const save = () => {
 			if (!date.value) return;
-			void this.setFields({ scheduled: `${date.value} ${time.value || "08:00"}` });
+			void this.setFields({ scheduled: `${date.value} ${time.value || "00:00"}` });
 		};
 		date.addEventListener("change", save);
 		time.addEventListener("change", save);
-		if (assumed) g.createDiv({ cls: "st-tiny st-faint", text: "오늘로 잡아 뒀어요. 바꾸거나 보내면 저장돼요." });
+		const chips = row.createDiv({ cls: "st-chips st-timepresets" });
+		for (const preset of SCHEDULE_PRESETS) {
+			const b = chips.createEl("button", { text: preset.label, attr: { type: "button" } });
+			b.addEventListener("click", () => {
+				const at = schedulePresetAt(preset.id, p.channel.key, new Date());
+				date.value = at.slice(0, 10);
+				time.value = at.slice(11, 16);
+				void this.setFields({ scheduled: at });
+			});
+		}
+		if (assumed) g.createDiv({ cls: "st-tiny st-faint", text: "지금 시각으로 잡아 뒀어요. 바꾸거나 보내면 저장돼요." });
 		for (const x of problems) if (!(x.text.startsWith("예약 날짜") && !p.scheduled)) g.createDiv({ cls: `st-prob is-${x.level}`, text: x.text });
-		const hook = loadSecrets(this.app).webhook[p.channel.key];
+		const hook = channelEndpoint(this.plugin, p.channel.key);
+		if (p.channel.key === "th" && !hook) g.createDiv({ cls: "st-prob is-block", text: "스레드 접수 주소를 설정 › 콘텐츠 스튜디오에 넣어 주세요." });
 		const blocked = problems.some((x) => x.level === "block");
 		const sent = p.stage === "예약" && !!p.sent;
-		const go = g.createEl("button", { cls: "st-btn mod-cta st-wide", text: !hook ? "예약만 적기 (웹훅 없음)" : sent ? "다시 보내기" : "예약 보내기", attr: { type: "button" } });
-		go.disabled = blocked || p.stage === "발행";
+		const go = g.createEl("button", { cls: "st-btn mod-cta st-wide", text: p.channel.key === "th" && !hook ? "접수 주소 필요" : !hook ? "예약만 적기 (웹훅 없음)" : postState(real).kind === "failed" || sent ? "다시 보내기" : "예약 보내기", attr: { type: "button" } });
+		go.disabled = blocked || p.stage === "발행" || (p.channel.key === "th" && !hook);
 		go.addEventListener("click", () =>
 			void this.run(async () => {
 				await this.flushBody();
@@ -1374,11 +1484,16 @@ export class StudioView extends ItemView {
 				new Notice(r === "sent" ? `${p.channel.name}에 예약을 보냈어요 (${p.scheduled}).` : "예약 시각만 적었어요. 설정에서 웹훅을 넣으면 보낼 수 있어요.");
 			}),
 		);
+		if (hook && p.stage !== "발행") {
+			const nowBtn = g.createEl("button", { cls: SEND_NOW_BUTTON_CLASS, text: "지금 발행", attr: { type: "button" } });
+			nowBtn.disabled = blocksNow(problems);
+			nowBtn.addEventListener("click", () => void this.confirmSendNow(p));
+		}
 		if (sent) {
 			const c = g.createEl("button", { cls: "st-btn is-ghost st-wide", text: "예약 취소", attr: { type: "button" } });
 			c.addEventListener("click", () => void this.run(() => cancelSchedule(this.plugin, p)));
 		}
-		g.createDiv({ cls: "st-route", text: `보낼 곳: ${hook ? ROUTE[p.channel.key] : "아직 없음 — 설정 › 콘텐츠 스튜디오"}${p.sent ? ` · ${moment(p.sent, "YYYY-MM-DD HH:mm").format("M/D HH:mm")} 보냄` : ""}` });
+		g.createDiv({ cls: "st-route", text: `보낼 곳: ${hook ? ROUTE[p.channel.key] : "아직 없음 — 설정 › 콘텐츠 스튜디오"}${p.sent ? ` · ${moment(p.sent, "YYYY-MM-DD HH:mm").format("M/D HH:mm")} 예약됨` : ""}` });
 		if (p.stage !== "발행") {
 			const pub = g.createEl("button", { cls: "st-btn is-ghost is-sm", text: "발행했어요… (주소 넣기)", attr: { type: "button" } });
 			pub.addEventListener("click", () => void this.askPublished(p));
@@ -1390,6 +1505,27 @@ export class StudioView extends ItemView {
 }
 
 /** Open (or reveal) the studio, optionally on a post. */
+function announcePoll(r: { unconfigured: boolean; eligible: number; hits: Parameters<typeof formatPollSummary>[0] }): void {
+	if (r.unconfigured) new Notice("설정 › 콘텐츠 스튜디오에서 S3를 연결해 주세요.");
+	else if (r.eligible === 0) new Notice("새 발행 결과가 없어요.");
+	else new Notice(formatPollSummary(r.hits) || "새 발행 결과가 없어요.", 12000);
+}
+
+/** Forced read from the command palette. Uses the open studio when there is one. */
+export async function readPublishResults(plugin: MyLogsPlugin): Promise<void> {
+	const leaf = plugin.app.workspace.getLeavesOfType(VIEW_TYPE_STUDIO)[0];
+	if (leaf?.view instanceof StudioView) {
+		await leaf.view.readResults();
+		return;
+	}
+	const d = await loadStudio(plugin);
+	if (!d) {
+		new Notice("스튜디오를 쓰는 Flywheel 요소가 없어요.");
+		return;
+	}
+	announcePoll(await pollResults(plugin, d, true));
+}
+
 export async function activateStudio(plugin: MyLogsPlugin, from?: WorkspaceLeaf, post?: string): Promise<void> {
 	const ws = plugin.app.workspace;
 	let leaf = ws.getLeavesOfType(VIEW_TYPE_STUDIO)[0];
