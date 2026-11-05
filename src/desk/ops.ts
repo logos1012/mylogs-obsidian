@@ -11,9 +11,10 @@
 
 import { hasWorkTag, setSide, type Side, withWorkTag } from "../side.ts";
 import { replaceContent, setFields, setLead, strikeContent, TIME_LEAD_RE } from "../line-edit.ts";
-import { frontmatterEnd, splitLinesKeepEol, stripEol, TASK_LINE_RE } from "../parser.ts";
+import { frontmatterEnd, parseItem, splitLinesKeepEol, stripEol, TASK_LINE_RE } from "../parser.ts";
 import { detectEol, findSection, locateLine, setFrontmatterScalar } from "../writer.ts";
-import { type DeskItem, isoWeekNo, mmdd, mondayOf, monthKey, type MonthData, parseMonthFile } from "./model.ts";
+import { type DeskItem, isoWeekNo, mmdd, mondayOf, monthKey, type MonthData, normKey, parseMonthFile } from "./model.ts";
+import { formatNewLine } from "../wall/edit.ts";
 import { drawerTemplate, putItem } from "../drawer/ops.ts";
 
 export type EditResult = { ok: true; text: string } | { ok: false; reason: string };
@@ -302,7 +303,7 @@ function insertInRange(text: string, lines: string[], r: Range, newLines: string
 	return lines.join("");
 }
 
-/** Append lines at the end of the 이번 주 box or a day section. */
+/** Append lines at the end of the 이달 중 (인박스), the 이번 주 box or a day section. */
 export function appendLines(text: string, year: number, month: number, where: Where, newLines: string[]): EditResult {
 	const lines = splitLinesKeepEol(text);
 	const r = findRange(text, lines, monthOfText(year, month), where);
@@ -478,6 +479,47 @@ export function planUnassign(src: DeskItem, alloc: DeskItem | null, monday: stri
 		edits.push(monthEdit(allocFile, today, (t, y, m) => appendLines(t, y, m, { kind: "alloc", monday }, [copy])));
 	}
 	return finish(`「${src.item.text}」 ${mmdd(date)} 배정 취소`, edits);
+}
+
+/** What the 인박스 input adds: 할 일 or 일정 (행사·약속). 메모 is not offered. */
+export type InboxKind = "task" | "event";
+
+/**
+ * The `## 이달 중` line for typed text, in the same format as the other undated entries
+ * (`formatNewLine` without a date, as the Wall Calendar and 루미 `schedule_add` write it):
+ * `- [ ] 내용 [#회사]` for a 할 일, `- 내용 [#회사] #행사` for an 일정 (`#행사` keeps an undated
+ * event an event). One line; a pasted list marker / checkbox is dropped. "" when empty.
+ */
+export function inboxLine(text: string, kind: InboxKind, side: Side): string {
+	const body = text
+		.replace(/[\r\n]+/g, " ")
+		.trim()
+		.replace(/^[-*+]\s+(\[.\]\s+)?/, "")
+		.replace(/\s+/g, " ")
+		.trim();
+	if (!body) return "";
+	return formatNewLine({ kind, text: setSide(body, side) });
+}
+
+/**
+ * 인박스에 직접 추가: one line at the end of `## 이달 중` of `monthKey` (+ `updated`). Fails with
+ * `empty-text`, `section-missing`, or `duplicate` (an open item of the same kind and text is
+ * already in the 인박스).
+ */
+export function planAddDuring(monthKeyStr: string, text: string, kind: InboxKind, side: Side, today: string): Plan {
+	const line = inboxLine(text, kind, side);
+	const label = kind === "task" ? "할 일" : "일정";
+	if (!line) return finish("", [{ file: monthKeyStr, month: true, apply: () => fail("empty-text") }]);
+	const parsed = parseItem(line.replace(/^\s*[-*+]\s+/, ""));
+	const key = normKey(parsed.text);
+	return finish(`인박스에 ${label} 추가: 「${parsed.text}」`, [
+		monthEdit(monthKeyStr, today, (t, y, m) => {
+			const data = parseMonthFile(t, y, m);
+			if (data.duringHeadingIndex < 0) return fail("section-missing");
+			if (data.during.some((x) => x.key === key && x.item.kind === parsed.kind && x.item.status === "scheduled")) return fail("duplicate");
+			return appendLines(t, y, m, { kind: "during" }, [line]);
+		}),
+	]);
 }
 
 /** 「놓아주기」: `[-]` + `(why:: …)`. */

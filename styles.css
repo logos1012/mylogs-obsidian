@@ -3717,6 +3717,59 @@ body.theme-dark .mylogs-pinboard-container .pb-scrim {
 .mylogs-desk-calendar .dc-during .dc-it {
 	padding-top: 3px;
 }
+/* 인박스에 직접 추가 (할 일 / 일정) */
+.mylogs-desk-calendar .dc-inbox-add {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 8px;
+	padding-top: 6px;
+	border-top: 1px dashed var(--dc-line-strong);
+}
+.mylogs-desk-calendar .dc-inbox-add:focus-within {
+	border-top-style: solid;
+	border-top-color: var(--interactive-accent);
+}
+.mylogs-desk-calendar button.dc-inbox-kind {
+	flex: none;
+	height: 24px;
+	padding: 0 8px;
+	font-size: 12px;
+	border-radius: 12px;
+	box-shadow: none;
+	color: var(--dc-ink-2);
+	background: transparent;
+	border: 1px solid var(--dc-line-strong);
+}
+.mylogs-desk-calendar button.dc-inbox-kind.is-event {
+	color: var(--interactive-accent);
+	border-color: var(--interactive-accent);
+}
+.mylogs-desk-calendar input.dc-inbox-input {
+	flex: 1;
+	min-width: 0;
+	height: 28px;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	font-size: 13px;
+}
+.mylogs-desk-calendar input.dc-inbox-input:focus {
+	outline: none;
+	box-shadow: none;
+}
+body.is-mobile .mylogs-desk-calendar button.dc-inbox-kind {
+	height: 36px;
+	padding: 0 12px;
+	font-size: 14px;
+	border-radius: 18px;
+}
+body.is-mobile .mylogs-desk-calendar input.dc-inbox-input {
+	min-height: 44px;
+	font-size: 16px;
+}
 .mylogs-desk-calendar .dc-testbar {
 	margin: 14px 0 0;
 	padding: 8px 12px;
@@ -12030,3 +12083,12 @@ body.is-mobile .fw3-ws-cover { height: 110px; }
 @media (max-width: 900px) { .st .amp-body, .st .amp-body.is-weave, .st .amp-anslay { grid-template-columns: 1fr; } .st .amp-sum { grid-template-columns: repeat(2, 1fr); } }
 .st .amp textarea { font-family: inherit; letter-spacing: normal; }
 .st .amp-from { font-size: 11px; color: var(--amp-ai); opacity: .75; margin: -1px 0 3px; }
+
+/* Daily Pad 할 일 넘기기 (→ Desk Calendar 인박스 · 다른 날) */
+.mylogs-daily-pad button.ml-defer-btn { opacity: 0; padding: 2px; margin-left: 6px; vertical-align: middle; height: auto; color: var(--text-faint); }
+.mylogs-daily-pad li:hover > button.ml-defer-btn, .mylogs-daily-pad button.ml-defer-btn:focus-visible { opacity: 1; }
+.mylogs-daily-pad button.ml-defer-btn:hover { color: var(--interactive-accent); }
+.mylogs-daily-pad button.ml-defer-btn svg { width: 13px; height: 13px; }
+body.is-mobile .mylogs-daily-pad button.ml-defer-btn { opacity: 0.7; position: relative; padding: 4px; }
+/* 44 px hit area on a phone, without moving the layout. */
+body.is-mobile .mylogs-daily-pad button.ml-defer-btn::after { content: ""; position: absolute; inset: -10px; }
