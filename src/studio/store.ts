@@ -34,6 +34,12 @@ import {
 	markWritten,
 	newBlockId,
 	newPostId,
+	threadsResendBlock,
+	canMoveToNewPost,
+	cancelPatch,
+	movePlan,
+	seededPostText,
+	type ResultRow,
 	parseGlgam,
 	parsePost,
 	parseSources,
@@ -60,7 +66,7 @@ import {
 	underSource,
 	withBlock,
 } from "./model.ts";
-import { getObject, isS3Ready } from "./s3.ts";
+import { getObject, isS3Ready, resultObjectKey } from "./s3.ts";
 import { loadSecrets, obsidianSend, s3Config } from "./settings.ts";
 
 export const todayIso = () => moment().format("YYYY-MM-DD");
@@ -226,7 +232,14 @@ export const dropGlgam = (plugin: MyLogsPlugin, g: GlgamLine, why: string) => ed
 
 // ───────────────────────── 게시물 ─────────────────────────
 
-export async function createPost(plugin: MyLogsPlugin, d: StudioData, ch: ChannelDef, title: string, g: GlgamLine | null): Promise<TFile> {
+/** Extra content for a new post made from another one (「새 글로 옮기기」). */
+export interface PostSeed {
+	from: string[];
+	parts: ThreadPart[];
+	fm: Record<string, FmValue>;
+}
+
+export async function createPost(plugin: MyLogsPlugin, d: StudioData, ch: ChannelDef, title: string, g: GlgamLine | null, seed?: PostSeed): Promise<TFile> {
 	const dir = channelDir(d.root, ch);
 	await ensureFolder(plugin, dir);
 	let path = `${dir}/${d.today} ${safeTitle(title)}.md`;
@@ -234,8 +247,8 @@ export async function createPost(plugin: MyLogsPlugin, d: StudioData, ch: Channe
 	const id = newPostId(d.today, d.posts.map((p) => p.id));
 	const block = g ? g.block || newBlockId("g") : "";
 	const from = g ? [`[[${g.file.slice(g.file.lastIndexOf("/") + 1).replace(/\.md$/, "")}#^${block}]]`] : [];
-	let text = postSkeleton(ch, id, from);
-	if (g) text = setPostBody(text, ch, ch.key === "th" ? { parts: [{ text: g.text, media: [] }] } : { text: g.text });
+	let text = seed ? seededPostText(ch, id, seed) : postSkeleton(ch, id, from);
+	if (!seed && g) text = setPostBody(text, ch, ch.key === "th" ? { parts: [{ text: g.text, media: [] }] } : { text: g.text });
 	const f = await plugin.app.vault.create(path, text);
 	if (g) await editGlgamLine(plugin, g, (raw) => markWritten(withBlock(raw, block), `[[${f.path.replace(/\.md$/, "")}|${ch.name}]]`));
 	return f;
@@ -313,6 +326,8 @@ function intakeError(read: { error: string }): string {
 }
 
 export async function sendSchedule(plugin: MyLogsPlugin, p: Post): Promise<"sent" | "noted"> {
+	const resend = threadsResendBlock(p);
+	if (resend) throw new Error(resend);
 	const hook = channelEndpoint(plugin, p.channel.key);
 	if (!hook) {
 		if (p.channel.key === "th") throw new Error("스레드 접수 주소를 설정 › 콘텐츠 스튜디오에 넣어 주세요.");
@@ -332,6 +347,8 @@ export async function sendSchedule(plugin: MyLogsPlugin, p: Post): Promise<"sent
 
 /** Schedule for the soonest legal minute and mark the post `now: true`. Returns that `at` (KST `YYYY-MM-DD HH:mm`). */
 export async function sendNow(plugin: MyLogsPlugin, p: Post): Promise<string> {
+	const resend = threadsResendBlock(p);
+	if (resend) throw new Error(resend);
 	const hook = channelEndpoint(plugin, p.channel.key);
 	if (!hook) {
 		if (p.channel.key === "th") throw new Error("스레드 접수 주소를 설정 › 콘텐츠 스튜디오에 넣어 주세요.");
@@ -357,7 +374,36 @@ export async function cancelSchedule(plugin: MyLogsPlugin, p: Post): Promise<voi
 		const intake = interpretIntake(r.status, r.text);
 		if (!intake.ok) throw new Error(intake.error || `취소를 보내지 못했어요 (${r.status})`);
 	}
-	await patchPost(plugin, p.path, { stage: "다듬기", sent: null, error: null, cancelled: nowStamp(), now: null });
+	// After the time came (Threads): `sent` + id stay, so a later result (일부 발행 · 결과 불명) still lands here.
+	const patch = cancelPatch(p, nowStamp());
+	await patchPost(plugin, p.path, patch);
+	if (!("sent" in patch)) new Notice("취소를 보냈어요. 예약 시각이 지나 이미 올라간 글이 있을 수 있어서, 발행 결과가 올 때까지 계속 확인해요.", 12000);
+}
+
+/** This post's result file, or null (S3 not set up, no file yet, unreadable, another id). Never throws. */
+async function readResultRow(plugin: MyLogsPlugin, p: Post): Promise<ResultRow | null> {
+	const key = p.id ? resultObjectKey(p.id, p.channel.key) : "";
+	const cfg = s3Config(plugin);
+	if (!key || !isS3Ready(cfg)) return null;
+	try {
+		const res = await getObject(cfg, obsidianSend, key);
+		const read = interpretResultGet(res.status, res.text);
+		return read.kind === "ok" && read.row.id === p.id ? read.row : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * 「새 글로 옮기기」: a new post (createPost: same folder, new id, file name never reused) holding the parts that did
+ * not go up — or all of them when that is unknown. The original file is not written.
+ */
+export async function moveToNewPost(plugin: MyLogsPlugin, d: StudioData, p: Post): Promise<{ path: string; note: string }> {
+	if (!canMoveToNewPost(p)) throw new Error("이 글은 그대로 다시 보낼 수 있어요.");
+	const plan = movePlan(p, await readResultRow(plugin, p));
+	if (!plan) throw new Error("타래의 모든 글이 이미 올라갔어요. 옮길 글이 없어요.");
+	const f = await createPost(plugin, d, p.channel, plan.title, null, plan.seed);
+	return { path: f.path, note: plan.carry.note };
 }
 
 /** Hand-marked 발행 (posted by hand, or before a result file exists). */
@@ -383,7 +429,12 @@ const emptyPoll = (extra: Partial<PollOutcome>): PollOutcome => ({ changed: 0, e
 
 /** Manual and automatic reads. Keys come only from `resultReadPlan` → `resultObjectKey`. */
 export async function pollResults(plugin: MyLogsPlugin, d: StudioData, force = false, opts?: { bypassThrottle?: boolean }): Promise<PollOutcome> {
-	const plan = resultReadPlan(d.posts.map((p) => ({ id: p.id, channel: p.channel.key, stage: p.stage, sent: p.sent, published: p.published })));
+	// The 90s timer (bypass, not forced) skips 결과 불명 posts; normal and manual rounds still read them.
+	const fast = !force && !!opts?.bypassThrottle;
+	const plan = resultReadPlan(
+		d.posts.map((p) => ({ id: p.id, channel: p.channel.key, stage: p.stage, sent: p.sent, published: p.published, warning: p.warning, cancelled: p.cancelled })),
+		{ fast },
+	);
 	const byId = new Map(plan.map((x) => [x.id, x.key]));
 	const waiting = d.posts.filter((p) => byId.has(p.id));
 	const now = Date.now();

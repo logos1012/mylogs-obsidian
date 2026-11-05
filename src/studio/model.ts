@@ -403,6 +403,13 @@ export function postSkeleton(ch: ChannelDef, id: string, from: string[], format 
 	return `---\n${lines.join("\n")}\n---\n\n${body}`;
 }
 
+/** A new post's whole file made from another post (「새 글로 옮기기」): skeleton + extra frontmatter + body. */
+export function seededPostText(ch: ChannelDef, id: string, seed: { from: string[]; parts: ThreadPart[]; fm: Record<string, FmValue> }): string {
+	let text = postSkeleton(ch, id, seed.from);
+	if (Object.keys(seed.fm).length) text = setFm(text, seed.fm, FM_ORDER);
+	return setPostBody(text, ch, ch.key === "th" ? { parts: seed.parts } : { text: seed.parts[0]?.text ?? "" });
+}
+
 /** `C-YYYYMMDD-NN` — the key that matches `studio/results/{id}.json` to a post. */
 export function newPostId(date: string, taken: Iterable<string>): string {
 	const base = `C-${date.replace(/-/g, "")}-`;
@@ -439,6 +446,8 @@ export function postProblems(p: Post, ctx?: { now?: number; mediaPrefix?: string
 	const ch = p.channel;
 	if (ch.key === "th") {
 		for (const text of threadsProblems(threadsDraft(p), ctx)) out.push({ level: "block", text });
+		// 일부 발행 · 결과 불명: same id is refused by the server (fully 발행 posts already have the send button off).
+		if (isPartialNote(p.warning) || isUnknownNote(p.warning) || isCancelPending(p)) out.push({ level: "block", text: threadsResendBlock(p) });
 	} else {
 		if (!p.text.trim()) out.push({ level: "block", text: ch.key === "ig" ? "캡션이 비어 있어요." : "본문이 비어 있어요." });
 		const n = charCount(captionOut(p));
@@ -527,41 +536,63 @@ export function threadsUploadProblem(name: string, size: number): string | null 
 	return null;
 }
 
-export interface ThreadsDraft {
+export type ThreadsMedia = string | { url: string; alt?: string };
+
+export interface ThreadsDraftPart {
 	text: string;
-	media: (string | { url: string; alt?: string })[];
+	media: ThreadsMedia[];
+}
+
+export interface ThreadsDraft {
+	/** Part 1 (the first post). */
+	text: string;
+	media: ThreadsMedia[];
 	partsCount: number;
+	/** Every part in order, part 1 included (internal; the payload sends 2..N). Absent = one post made of `text`/`media`. */
+	parts?: ThreadsDraftPart[];
 	topic: string;
 	scheduled: string;
 	id: string;
 }
 
-/** One filled 타래 part, or the single body. Multi-part is reported, not sent. */
+/** Threads 타래: at most this many posts (part 1 + 19 replies). */
+export const THREADS_MAX_PARTS = 20;
+
+/**
+ * 타래 → draft. One part: as before (the first non-empty section).
+ * Two or more `## n` sections: all kept in order, empty ones included, so the check can name them.
+ * Frontmatter `alt` belongs to part 1's media, by index.
+ */
 export function threadsDraft(p: Post): ThreadsDraft {
-	const parts = p.parts.filter((x) => x.text.trim() || x.media.length);
-	const first = parts[0];
+	const withAlt = (urls: string[]): ThreadsMedia[] =>
+		urls.map((url, i) => {
+			const alt = (p.alt[i] ?? "").trim();
+			return alt ? { url, alt } : url;
+		});
+	const base = { topic: p.topic.trim(), scheduled: p.scheduled, id: p.id.trim() };
+	if (p.parts.length > 1) {
+		const parts = p.parts.map((x, i) => ({ text: x.text.trim(), media: i === 0 ? withAlt(x.media) : [...x.media] }));
+		return { ...base, text: parts[0].text, media: parts[0].media, partsCount: parts.length, parts };
+	}
+	const first = p.parts.find((x) => x.text.trim() || x.media.length);
 	const text = (first?.text ?? p.text).trim();
-	const urls = first ? first.media : p.media;
-	const media = urls.map((url, i) => {
-		const alt = (p.alt[i] ?? "").trim();
-		return alt ? { url, alt } : url;
-	});
-	return { text, media, partsCount: parts.length, topic: p.topic.trim(), scheduled: p.scheduled, id: p.id.trim() };
+	const media = withAlt(first ? first.media : p.media);
+	return { ...base, text, media, partsCount: first ? 1 : 0, parts: [{ text, media }] };
 }
 
-/** Korean block messages. `mediaPrefix` is `https://{bucket}.s3.{region}.amazonaws.com/{prefix}/` from settings — never a hard-coded host. */
-export function threadsProblems(d: ThreadsDraft, ctx: { now?: number; mediaPrefix?: string } = {}): string[] {
+/** A post (or 타래 part) needs text or media — either one is enough, so a media-only part is fine. */
+export const THREADS_EMPTY_PART = "글과 미디어가 모두 비어 있어요.";
+
+/** Text, link, and media checks for one post (one 타래 part). */
+function threadsPartProblems(part: ThreadsDraftPart, prefix: string): string[] {
 	const out: string[] = [];
-	if (d.partsCount > 1) out.push("이어쓰기(글 2개 이상)는 아직 보낼 수 없어요.");
-	if (!d.text && !d.media.length) out.push("본문도 미디어도 없어요.");
-	const n = threadsTextLength(d.text);
+	if (!part.text && !part.media.length) out.push(THREADS_EMPTY_PART);
+	const n = threadsTextLength(part.text);
 	if (n > THREADS_MAX_TEXT) out.push(`본문이 500자를 넘어요: ${n}/${THREADS_MAX_TEXT} (이모티콘은 바이트 수로 셈)`);
-	const links = threadsUniqueLinks(d.text);
+	const links = threadsUniqueLinks(part.text);
 	if (links.length > THREADS_MAX_LINKS) out.push(`링크가 너무 많음: ${links.length}/${THREADS_MAX_LINKS}`);
-	if (d.media.length > THREADS_MAX_MEDIA) out.push(`미디어가 너무 많음: ${d.media.length}/${THREADS_MAX_MEDIA}`);
-	const prefix = (ctx.mediaPrefix ?? "").trim();
-	if (d.media.length && !prefix) out.push("S3 버킷과 리전을 설정해야 스레드 미디어 주소를 확인할 수 있어요.");
-	for (const item of d.media) {
+	if (part.media.length > THREADS_MAX_MEDIA) out.push(`미디어가 너무 많음: ${part.media.length}/${THREADS_MAX_MEDIA}`);
+	for (const item of part.media) {
 		const url = typeof item === "string" ? item : item.url;
 		const alt = typeof item === "string" ? "" : (item.alt ?? "");
 		if (!url) {
@@ -573,6 +604,22 @@ export function threadsProblems(d: ThreadsDraft, ctx: { now?: number; mediaPrefi
 		if (!ext || !THREADS_MEDIA_EXT.has(ext)) out.push(`지원하지 않는 미디어: ${ext || "알 수 없음"} (jpg/jpeg/png/gif/mp4/mov/webp만 가능)`);
 		if (alt && [...alt].length > THREADS_MAX_ALT) out.push("alt는 1000자 이하여야 해요.");
 	}
+	return out;
+}
+
+/** Korean block messages. `mediaPrefix` is `https://{bucket}.s3.{region}.amazonaws.com/{prefix}/` from settings — never a hard-coded host. */
+export function threadsProblems(d: ThreadsDraft, ctx: { now?: number; mediaPrefix?: string } = {}): string[] {
+	const out: string[] = [];
+	const prefix = (ctx.mediaPrefix ?? "").trim();
+	const parts: ThreadsDraftPart[] = d.parts && d.parts.length ? d.parts : [{ text: d.text, media: d.media }];
+	if (parts.length > THREADS_MAX_PARTS) out.push(`타래는 글 ${THREADS_MAX_PARTS}개까지 보낼 수 있어요 (지금 ${parts.length}개).`);
+	if (parts.length > 1) {
+		// Each part: text or media (or both). Same per-post rules as a single post, named by part.
+		parts.forEach((part, i) => {
+			for (const x of threadsPartProblems(part, prefix)) out.push(`${i + 1}번째 글: ${x}`);
+		});
+	} else out.push(...threadsPartProblems(parts[0], prefix));
+	if (parts.some((x) => x.media.length) && !prefix) out.push("S3 버킷과 리전을 설정해야 스레드 미디어 주소를 확인할 수 있어요.");
 	if (d.topic && (d.topic.length < 1 || d.topic.length > 50 || d.topic.includes(".") || d.topic.includes("&"))) out.push("주제는 1~50자이고 . 와 & 는 쓸 수 없어요.");
 	if (d.id && !THREADS_ID_RE.test(d.id)) out.push("글 id는 영문·숫자·_·- 만, 61자 이하여야 해요.");
 	if (!d.id) out.push("글을 보낼 id가 없어요.");
@@ -585,6 +632,12 @@ export function threadsProblems(d: ThreadsDraft, ctx: { now?: number; mediaPrefi
 	return out;
 }
 
+/** One Threads reply in `Payload.parts`: same field names and shapes as the top-level `text` / `media`. */
+export interface PayloadPart {
+	text: string;
+	media: ThreadsMedia[];
+}
+
 export interface Payload {
 	id: string;
 	action: "schedule" | "cancel";
@@ -592,8 +645,10 @@ export interface Payload {
 	format: string;
 	at: string;
 	title: string;
+	/** Threads: part 1 (kept for intakes that read one post). */
 	text: string;
-	parts?: { text: string; media: string[] }[];
+	/** Threads 타래: parts 2..N in order (top-level `text`/`media` is part 1). Omitted for a single post. */
+	parts?: PayloadPart[];
 	/** URL string, or `{url, alt}` for Threads. */
 	media: (string | { url: string; alt?: string })[];
 	alt?: string[];
@@ -612,10 +667,17 @@ export function buildPayload(p: Post, action: "schedule" | "cancel" = "schedule"
 	if (action === "cancel") return base;
 	if (p.channel.key === "th") {
 		const d = threadsDraft(p);
-		// One post only. `parts` is omitted so a 타래 is never sent as 이어쓰기. Title stays in the JSON; intake does not publish it.
-		return { ...base, text: d.text, media: d.media, ...(d.topic ? { topic: d.topic } : {}) };
+		// Top-level `text`/`media` = part 1, exactly as a single post. `parts` = parts 2..N, only when there are any. Title is not published.
+		const parts = d.parts && d.parts.length > 1 ? d.parts.slice(1).map((x): PayloadPart => ({ text: x.text, media: x.media })) : undefined;
+		return { ...base, text: d.text, media: d.media, ...(parts ? { parts } : {}), ...(d.topic ? { topic: d.topic } : {}) };
 	}
 	return { ...base, text: captionOut(p), media: p.media, ...(p.channel.key === "ig" ? { ratio: p.ratio, alt: p.alt } : {}) };
+}
+
+/** Cancel wording for a 타래 (2+ posts); "" otherwise. Cancelling after part 1 is up stops only the rest. */
+export function threadsCancelNote(p: Pick<Post, "channel" | "parts">): string {
+	if (p.channel.key !== "th" || p.parts.length < 2) return "";
+	return "타래가 이미 올라가기 시작했다면 남은 글만 멈춰요. 이미 올라간 글은 지워지지 않아요.";
 }
 
 // ───────────────────────── 발행 결과 (S3 studio/results/{id}.json) ─────────────────────────
@@ -627,13 +689,52 @@ export interface ResultRow {
 	error: string;
 	/** KST `YYYY-MM-DD HH:mm` (older ISO strings still compare). */
 	at: string;
+	/** Threads 타래: number of posts. Absent in older / single-post results. */
+	total?: number;
+	/** Threads 타래: how many posts went up. */
+	publishedCount?: number;
+	/** Threads 타래: per-post outcome, as written by the server. */
+	parts?: ResultPartRow[];
+}
+
+export interface ResultPartRow {
+	/** 1-based post number as the server writes it (`index: 1` = part 1, part 1 included). 0-based files are still read. */
+	index: number;
+	status: string;
+	id: string;
+	url: string;
+	error: string;
 }
 
 const PUBLISHED = /^(발행|published|success|ok|done)$/i;
+const PARTIAL = /^(partial|부분|일부)$/i;
 const FAILED = /^(실패|failed|fail|error)$/i;
 const CANCELLED = /^취소$/;
+/** Server could not tell whether it went up (a person has to look on Threads). Not 실패, not 발행. */
+const UNKNOWN = /^(결과 불명|unknown)$/i;
+/** A 타래 post the server stopped (only inside `parts`). */
+const PART_CANCELLED = /^(취소|cancelled|canceled|skipped)$/i;
 
 const resultStr = (v: unknown) => (v == null ? "" : String(v)).trim();
+const resultInt = (v: unknown): number | undefined => {
+	const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : NaN;
+	return Number.isInteger(n) && n >= 0 ? n : undefined;
+};
+
+/**
+ * `parts` of a result file. The server writes `index` 1-based with part 1 included (`index: 1` = part 1).
+ * Bad entries are skipped; a missing / bad index falls back to the 1-based array position.
+ */
+function resultParts(v: unknown): ResultPartRow[] | undefined {
+	if (!Array.isArray(v)) return undefined;
+	const out: ResultPartRow[] = [];
+	v.forEach((x, i) => {
+		if (!x || typeof x !== "object" || Array.isArray(x)) return;
+		const o = x as Record<string, unknown>;
+		out.push({ index: resultInt(o.index) ?? i + 1, status: resultStr(o.status), id: resultStr(o.id), url: resultStr(o.url), error: resultStr(o.error) });
+	});
+	return out;
+}
 
 /** One result file. Null when the body is not a result object. */
 export function parseResultJson(text: string): ResultRow | null {
@@ -647,7 +748,193 @@ export function parseResultJson(text: string): ResultRow | null {
 	const o = raw as Record<string, unknown>;
 	const id = resultStr(o.id);
 	if (!id) return null;
-	return { id, status: resultStr(o.status), url: resultStr(o.url), error: resultStr(o.error), at: resultStr(o.at) };
+	const row: ResultRow = { id, status: resultStr(o.status), url: resultStr(o.url), error: resultStr(o.error), at: resultStr(o.at) };
+	// 타래 fields are optional: a file with only status + url reads exactly as before.
+	const total = resultInt(o.total);
+	const publishedCount = resultInt(o.published_count);
+	const parts = resultParts(o.parts);
+	if (total !== undefined) row.total = total;
+	if (publishedCount !== undefined) row.publishedCount = publishedCount;
+	if (parts) row.parts = parts;
+	return row;
+}
+
+/**
+ * 타래 summary for a result, or "" when there is nothing to add (single post, or every post up).
+ * `타래 3개 중 2개 게시 · 3번째 글 실패: 이유 · 나머지는 취소됨`.
+ * Part numbers: `index` is 1-based (server contract: `index: 1` = part 1). A file with some `index: 0`
+ * is read as 0-based (older / fallback writers).
+ */
+export function threadsResultNote(r: ResultRow): string {
+	const parts = r.parts ?? [];
+	const total = r.total ?? (parts.length || undefined);
+	const ok = resultUpCount(r);
+	const bits: string[] = [];
+	if (total !== undefined && total > 1 && ok !== undefined && ok < total) bits.push(`타래 ${total}개 중 ${ok}개 게시`);
+	for (const x of parts) if (FAILED.test(x.status)) bits.push(`${partNumber(parts, x)}번째 글 실패: ${x.error || "이유 없음"}`);
+	for (const x of parts) if (UNKNOWN.test(x.status)) bits.push(`${partNumber(parts, x)}번째 글 결과 불명`);
+	if (parts.some((x) => PART_CANCELLED.test(x.status)) || (CANCELLED.test(r.status) && bits.length)) bits.push("나머지는 취소됨");
+	return bits.join(" · ");
+}
+
+/** Human part number (1 = part 1). `index` is 1-based by default; 0-based only when some entry has index 0. */
+function partNumber(parts: ResultPartRow[], x: ResultPartRow): number {
+	return parts.some((y) => y.index === 0) ? x.index + 1 : x.index;
+}
+
+/** Posts that went up: `published_count`, else counted from `parts`; undefined when the file says neither. */
+function resultUpCount(r: ResultRow): number | undefined {
+	const parts = r.parts ?? [];
+	return r.publishedCount ?? (parts.length ? parts.filter((x) => PUBLISHED.test(x.status)).length : undefined);
+}
+
+/** A `warning` written by `resultPatch` for a 타래 that did not fully go up. */
+export const isPartialNote = (s: string) => /^타래 \d+개 중 \d+개 게시/.test(s) || /^\d+번째 글 실패:/.test(s) || s.startsWith(THREADS_PARTIAL_NOTE);
+
+/** Badge detail while a late cancel waits for the server's result. */
+export const CANCEL_PENDING_NOTE = "예약 시각이 지난 뒤 취소했어요. 이미 올라간 글이 있는지 발행 결과를 기다리는 중이에요.";
+
+/** Fallback `warning` when a result says posts went up but not how many of how many (e.g. `취소` + `published_count`). */
+export const THREADS_PARTIAL_NOTE = "타래 일부 게시";
+
+/** How long before `scheduled` a cancel is still treated as possibly too late (clock skew, intake lead). */
+export const CANCEL_LATE_MS = 60_000;
+
+/**
+ * 「예약 취소」 on a sent Threads post whose time has come (or is within `CANCEL_LATE_MS`): the server may already
+ * be posting the 타래. Unparseable `scheduled` counts as late (the safe side).
+ */
+export function cancelMayBeLate(p: Pick<Post, "channel" | "sent" | "scheduled">, now = Date.now()): boolean {
+	if (p.channel.key !== "th" || !p.sent) return false;
+	const at = scheduledInstant(p.scheduled);
+	return at == null || at - now <= CANCEL_LATE_MS;
+}
+
+/**
+ * Frontmatter for 「예약 취소」 (after the cancel POST succeeded).
+ * Early (before the time): as always — 다듬기, `sent` cleared.
+ * Late (Threads, time has come): 다듬기 + `cancelled`, but `sent` and the id are KEPT, so the result reads go on
+ * reading `results/threads/{id}.json` and a later 「n개 중 m개 게시」 / 결과 불명 still lands on this post.
+ */
+export function cancelPatch(p: Pick<Post, "channel" | "sent" | "scheduled">, stamp: string, now = Date.now()): Record<string, FmValue | null> {
+	if (cancelMayBeLate(p, now)) return { stage: "다듬기", error: null, cancelled: stamp, now: null };
+	return { stage: "다듬기", sent: null, error: null, cancelled: stamp, now: null };
+}
+
+/** Cancelled after the time came, and no result has settled it yet (`sent` kept on purpose by `cancelPatch`). */
+export function isCancelPending(p: { sent?: string; cancelled?: string; published?: string; stage?: string }): boolean {
+	return !!p.sent && !!p.cancelled && !p.published && p.stage !== "발행";
+}
+
+/** Badge / message for a `결과 불명` result. Also the start of the stored `warning`. */
+export const THREADS_UNKNOWN_NOTE = "결과 불명 · Threads에서 직접 확인해 주세요";
+/** A `warning` written by `resultPatch` for a `결과 불명` result. */
+export const isUnknownNote = (s: string) => s.startsWith(THREADS_UNKNOWN_NOTE);
+
+/** Part 1 went up: a top-level `url`, or part 1 (`index` 1, or 0 in a 0-based file) published. */
+function firstPartUrl(r: ResultRow, anyStatus = false): string {
+	if (r.url) return r.url;
+	const parts = r.parts ?? [];
+	const zeroBased = parts.some((x) => x.index === 0);
+	const first = parts.find((x) => x.index === (zeroBased ? 0 : 1));
+	return first && (anyStatus || PUBLISHED.test(first.status)) ? first.url : "";
+}
+
+/**
+ * Why this Threads post must not be sent again under the same id, or "".
+ * Once any part is up (일부 발행 · 발행 · 결과 불명), the server refuses the id (「이미 일부 게시됨」), and a fresh id
+ * would post part 1 a second time. So the studio blocks; it never mints a new id on its own.
+ */
+export function threadsResendBlock(p: Pick<Post, "channel" | "stage" | "published" | "warning"> & Partial<Pick<Post, "sent" | "cancelled">>): string {
+	if (p.channel.key !== "th") return "";
+	if (isUnknownNote(p.warning))
+		return "결과 불명인 글은 다시 보낼 수 없어요. 이미 올라갔을 수 있어서 다시 보내면 같은 글이 두 번 올라갈 수 있어요. Threads에서 확인한 뒤 올라갔으면 「발행했어요…」로 주소를 넣고, 안 올라갔으면 「새 글로 옮기기」로 새 글을 만들어 보내 주세요.";
+	if (isPartialNote(p.warning))
+		return "타래 일부가 이미 Threads에 올라가서 같은 글을 다시 보낼 수 없어요(받는 쪽이 거절해요). 남은 글을 올리려면 「새 글로 옮기기」로 새 글을 만들어 그 부분만 옮겨 보내 주세요.";
+	if (p.published || p.stage === "발행") return "이미 발행된 글이라 다시 보낼 수 없어요. 다시 올리려면 새 글을 만들어 주세요.";
+	if (isCancelPending(p))
+		return "예약 시각이 지난 뒤 취소해서, 이미 올라가기 시작했을 수 있어요. 발행 결과가 올 때까지 같은 글은 다시 보낼 수 없어요. 기다리기 어렵다면 「새 글로 옮기기」로 새 글을 만들어 보내 주세요.";
+	return "";
+}
+
+/** 「새 글로 옮기기」 is offered: a Threads post that can no longer be sent under its id (partial · 결과 불명 · late cancel). */
+export function canMoveToNewPost(p: Pick<Post, "channel" | "stage" | "published" | "warning"> & Partial<Pick<Post, "sent" | "cancelled">>): boolean {
+	if (p.channel.key !== "th") return false;
+	return isPartialNote(p.warning) || isUnknownNote(p.warning) || isCancelPending(p);
+}
+
+export interface CarryOver {
+	/** Parts for the new post, in order. */
+	parts: ThreadPart[];
+	/** `remaining`: only parts the result says did not go up. `all`: per-part state unknown, everything copied. */
+	mode: "remaining" | "all";
+	/** Original part numbers (1-based) that were carried. */
+	from: number[];
+	/** Korean explanation for the notice. */
+	note: string;
+	/** Frontmatter `alt` for the new part 1 (only when the original part 1 is part 1 again). */
+	alt: string[];
+}
+
+export interface MovePlan {
+	title: string;
+	/** New post: `from` (the original's sources + a link back to the original), body parts, extra frontmatter. */
+	seed: { from: string[]; parts: ThreadPart[]; fm: Record<string, FmValue> };
+	carry: CarryOver;
+}
+
+/**
+ * 「새 글로 옮기기」 → what the new post holds. The original is not touched; the new post links back to it in `from`.
+ * `r` is this post's result file (null if none / unreadable). A result older than `sent` is ignored (another send's).
+ * Null = nothing left to move (every part is up).
+ */
+export function movePlan(p: Pick<Post, "path" | "title" | "parts" | "alt" | "topic" | "from" | "sent" | "id">, r: ResultRow | null): MovePlan | null {
+	const fresh = r && r.id === p.id && !(r.at && p.sent && r.at.slice(0, 16).replace("T", " ") < p.sent.slice(0, 16)) ? r : null;
+	const carry = threadsCarryOver(p, fresh);
+	if (!carry.parts.length) return null;
+	const back = `[[${p.path.replace(/\.md$/, "")}|${p.title} (원본)]]`;
+	const fm: Record<string, FmValue> = {};
+	if (p.topic) fm.topic = p.topic;
+	if (carry.alt.length) fm.alt = carry.alt;
+	return { title: `${p.title} 이어서`, seed: { from: [...p.from.filter((x) => x !== back), back], parts: carry.parts, fm }, carry };
+}
+
+/**
+ * Which 타래 parts go to the new post. Only when EVERY part's state is known from the result file
+ * (발행 / 실패 · 취소 · skipped) are the posted ones left out. Anything unclear (no result, 결과 불명, a missing entry,
+ * a part count that differs from the body) → copy everything and say so. Never guesses from counts alone.
+ */
+export function threadsCarryOver(p: Pick<Post, "parts" | "alt">, r: ResultRow | null): CarryOver {
+	const all = (why: string): CarryOver => ({
+		parts: p.parts.map((x) => ({ text: x.text, media: [...x.media] })),
+		mode: "all",
+		from: p.parts.map((_, i) => i + 1),
+		note: `${why} 어느 글이 올라갔는지 알 수 없어서 타래 전체(${p.parts.length}개)를 복사했어요. 이미 올라간 글은 지우고 보내 주세요.`,
+		alt: [...p.alt],
+	});
+	if (!r) return all("발행 결과 파일을 읽지 못했어요.");
+	if (UNKNOWN.test(r.status.trim())) return all("결과 불명이에요.");
+	const parts = r.parts ?? [];
+	if (!parts.length) return all("결과에 글별 상태가 없어요.");
+	if (r.total !== undefined && r.total !== p.parts.length) return all(`결과의 글 수(${r.total})와 지금 글 수(${p.parts.length})가 달라요.`);
+	const left: number[] = [];
+	for (let n = 1; n <= p.parts.length; n++) {
+		const hit = parts.filter((x) => partNumber(parts, x) === n);
+		if (hit.length !== 1) return all(`${n}번째 글의 결과가 없어요.`);
+		const st = hit[0].status;
+		if (PUBLISHED.test(st)) continue;
+		if (FAILED.test(st) || PART_CANCELLED.test(st)) left.push(n);
+		else return all(`${n}번째 글의 결과가 「${st || "없음"}」이에요.`);
+	}
+	if (parts.some((x) => partNumber(parts, x) < 1 || partNumber(parts, x) > p.parts.length)) return all("결과에 지금 글에 없는 번호가 있어요.");
+	const out = left.map((n) => ({ text: p.parts[n - 1].text, media: [...p.parts[n - 1].media] }));
+	return {
+		parts: out,
+		mode: "remaining",
+		from: left,
+		note: left.length ? `아직 안 올라간 ${left.join(", ")}번째 글(${left.length}개)만 옮겼어요.` : "",
+		alt: left[0] === 1 ? [...p.alt] : [],
+	};
 }
 
 /**
@@ -727,9 +1014,11 @@ export interface PollHit {
 }
 
 export function appliedLabel(patch: Record<string, FmValue | null>): string {
+	if (patch.stage === "발행" && typeof patch.warning === "string" && isPartialNote(patch.warning)) return `일부 발행 반영 (${patch.warning})`;
 	if (patch.stage === "발행") return "발행 반영";
 	if (patch.stage === "다듬기") return "취소 반영";
 	if (typeof patch.error === "string") return "실패 반영";
+	if (patch.sent === null && !("stage" in patch)) return "취소 확인 (올라간 글 없음)";
 	return "반영";
 }
 
@@ -753,16 +1042,24 @@ export interface ResultReadPost {
 	published: string;
 	/** Ignored. A time already past still qualifies. */
 	scheduled?: string;
+	/** A `결과 불명` warning keeps the post out of fast (90s) rounds. */
+	warning?: string;
+	/** Set with `sent` still there = cancelled late (`cancelPatch`): keep reading until a result settles it. */
+	cancelled?: string;
 }
 
 /**
  * Who a result read fetches, and the S3 key. Manual (button, 글 증폭, command) and the
  * timer share this. A past `scheduled` time does not drop the post. Every channel is included.
+ * `fast` (the 90s timer): `결과 불명` posts are skipped — they are re-read only by the normal
+ * 5-minute-throttled rounds and manual reads (low frequency, in case the server later settles it).
  */
-export function resultReadPlan(posts: ResultReadPost[]): { id: string; channel: string; key: string }[] {
+export function resultReadPlan(posts: ResultReadPost[], opts: { fast?: boolean } = {}): { id: string; channel: string; key: string }[] {
 	const out: { id: string; channel: string; key: string }[] = [];
 	for (const p of posts) {
-		if (p.stage !== "예약" || !p.sent || p.published || !p.id) continue;
+		if (!p.sent || p.published || !p.id) continue;
+		if (p.stage !== "예약" && !isCancelPending(p)) continue;
+		if (opts.fast && p.warning && isUnknownNote(p.warning)) continue;
 		const key = resultObjectKey(p.id, p.channel);
 		if (!key) continue;
 		out.push({ id: p.id, channel: p.channel, key });
@@ -826,14 +1123,14 @@ export function interpretIntake(status: number, body: string): IntakeRead {
 	return { ok: false, failed: false, error: message, warning, schedule, at };
 }
 
-export type PostStateKind = "before" | "scheduled" | "going" | "published" | "failed" | "cancelled";
+export type PostStateKind = "before" | "scheduled" | "going" | "published" | "unknown" | "failed" | "cancelled";
 
 export interface PostState {
 	kind: PostStateKind;
-	/** 예약 전 · 예약됨 · 발행 중 · 발행됨 · 실패 · 취소됨 */
+	/** 예약 전 · 예약됨 · 발행 중 · 발행됨 · 결과 불명 · 실패 · 취소됨 */
 	name: string;
 	detail: string;
-	cls: "wait" | "sent" | "going" | "pub" | "fail" | "cancel";
+	cls: "wait" | "sent" | "going" | "pub" | "unknown" | "fail" | "cancel";
 }
 
 const shortWhen = (scheduled: string) => {
@@ -842,8 +1139,14 @@ const shortWhen = (scheduled: string) => {
 };
 
 /** Board / editor status. 발행 중 is computed (scheduled time has passed, no result yet) and is not stored. */
-export function postState(p: { stage: string; sent: string; published: string; scheduled: string; url: string; error: string; cancelled: string }, now = Date.now()): PostState {
-	if (p.published || p.stage === "발행") return { kind: "published", name: "발행됨", detail: p.url, cls: "pub" };
+export function postState(p: { stage: string; sent: string; published: string; scheduled: string; url: string; error: string; cancelled: string; warning?: string }, now = Date.now()): PostState {
+	if (p.published || p.stage === "발행") {
+		if (p.warning && isPartialNote(p.warning)) return { kind: "published", name: "일부 발행", detail: p.warning, cls: "pub" };
+		return { kind: "published", name: "발행됨", detail: p.url, cls: "pub" };
+	}
+	// Before 취소됨 / 실패: still unknown whether it went up, even after a later cancel.
+	if (p.warning && isUnknownNote(p.warning)) return { kind: "unknown", name: "결과 불명", detail: p.warning, cls: "unknown" };
+	if (p.cancelled && p.sent) return { kind: "cancelled", name: "취소 · 결과 확인 중", detail: CANCEL_PENDING_NOTE, cls: "going" };
 	if (p.cancelled) return { kind: "cancelled", name: "취소됨", detail: "", cls: "cancel" };
 	if (p.error) return { kind: "failed", name: "실패", detail: p.error.split("\n")[0] ?? "", cls: "fail" };
 	const at = p.scheduled ? scheduledInstant(p.scheduled) : null;
@@ -859,11 +1162,18 @@ export interface FastPollPost {
 	id: string;
 	scheduled: string;
 	error: string;
+	warning?: string;
 }
 
-/** Eligible, scheduled time has come, and no failure result has been written yet. */
+/**
+ * Eligible, scheduled time has come, and no failure result has been written yet.
+ * No deadline on purpose: a long 타래 writes its one result file only after the last part (minutes),
+ * so "overdue with no file" stays 발행 중 and keeps the fast check; only a result file marks failure.
+ * A `결과 불명` result stops the fast check (a person settles it on Threads; slow rounds still re-read it).
+ */
 export function needsFastPoll(p: FastPollPost, now = Date.now()): boolean {
 	if (p.stage !== "예약" || !p.sent || p.published || !p.id || p.error) return false;
+	if (p.warning && isUnknownNote(p.warning)) return false;
 	const at = scheduledInstant(p.scheduled);
 	return at != null && at <= now;
 }
@@ -878,16 +1188,44 @@ export function resultPatch(p: Post, r: ResultRow | undefined): Record<string, F
 	if (!r || !p.sent) return null;
 	if (r.at && p.sent && r.at.slice(0, 16).replace("T", " ") < p.sent.slice(0, 16)) return null; // an older send's result
 	const status = r.status.trim();
-	if (PUBLISHED.test(status)) {
-		if (p.published && p.url === r.url) return null;
-		return { published: (r.at || "").slice(0, 10) || p.scheduled.slice(0, 10), url: r.url, stage: "발행", error: null };
+	const note = threadsResultNote(r);
+	// 결과 불명: neither 발행 nor 실패. Stays 예약 + sent (so the slow rounds can still settle it), no error,
+	// the badge text in `warning` (stops the fast check, blocks a resend). A url in the result is kept.
+	if (UNKNOWN.test(status)) {
+		const warning = [THREADS_UNKNOWN_NOTE, r.error.trim(), note].filter(Boolean).join(" · ");
+		const url = firstPartUrl(r, true);
+		if (p.warning === warning && !p.error && (!url || p.url === url)) return null;
+		return { warning, error: null, ...(url ? { url } : {}) };
+	}
+	// 타래: some posts are up → 발행 (part 1's url), with the 「n개 중 m개 게시」 note in `warning`.
+	// `failed` / `취소` with posts up (`published_count > 0`, or published parts) count as partial too.
+	const up = resultUpCount(r);
+	const partlyUp = PARTIAL.test(status) || ((FAILED.test(status) || CANCELLED.test(status)) && (up ?? 0) > 0);
+	if (PUBLISHED.test(status) || partlyUp) {
+		const url = firstPartUrl(r);
+		// Never let a partial (e.g. `취소` + `published_count: 2` without `total`) read as a clean 발행.
+		const partial = partlyUp && !isPartialNote(note) ? [`${THREADS_PARTIAL_NOTE}${up ? `(${up}개)` : ""}`, note || (CANCELLED.test(status) ? "나머지는 취소됨" : r.error.trim())].filter(Boolean).join(" · ") : note;
+		if (partial !== note) {
+			if (p.published && p.url === url && p.warning === partial) return null;
+			return { published: (r.at || "").slice(0, 10) || p.scheduled.slice(0, 10), url, stage: "발행", error: null, warning: partial };
+		}
+		if (!note) {
+			if (p.published && p.url === url) return null;
+			return { published: (r.at || "").slice(0, 10) || p.scheduled.slice(0, 10), url, stage: "발행", error: null };
+		}
+		if (p.published && p.url === url && p.warning === note) return null;
+		return { published: (r.at || "").slice(0, 10) || p.scheduled.slice(0, 10), url, stage: "발행", error: null, warning: note };
 	}
 	if (FAILED.test(status)) {
-		const why = r.error.trim() || "이유 없음";
+		const why = [r.error.trim(), note].filter(Boolean).join(" · ") || "이유 없음";
+		// Late cancel, nothing went up: settled. Drop `sent` so the reads stop; the reason stays.
+		if (isCancelPending(p)) return { sent: null, error: why };
 		return p.error === why ? null : { error: why };
 	}
 	// Same frontmatter as `cancelSchedule`: back to 다듬기, clear sent and error.
 	if (CANCELLED.test(status)) {
+		// Late cancel, nothing went up: settled as a plain 취소. The stage the person chose is kept.
+		if (isCancelPending(p)) return { sent: null, error: null, now: null };
 		const stamp = (r.at || "").slice(0, 16).replace("T", " ");
 		const cancelled = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(stamp) ? stamp : r.at.trim() || stamp;
 		if (p.stage === "다듬기" && !p.sent && !p.error && p.cancelled === cancelled) return null;
