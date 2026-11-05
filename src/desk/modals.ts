@@ -1,4 +1,121 @@
 import { type App, Modal, Setting } from "obsidian";
+import type { Side } from "../side.ts";
+import type { InboxKind } from "./ops.ts";
+
+export interface InboxAddInput {
+	text: string;
+	kind: InboxKind;
+	side: Side;
+}
+
+/**
+ * 「인박스에 추가」: 할 일 / 일정 segment, one full-width line, 회사 toggle (starts at the view's
+ * 개인 / 회사 mode), 추가 / 취소. `submit` writes and shows its own Notice; it returns true when the
+ * line was written (the modal closes) and false otherwise (the modal stays with the text kept).
+ */
+export function openInboxAdd(app: App, opts: { side: Side; kind?: InboxKind; submit: (v: InboxAddInput) => Promise<boolean> }): void {
+	new InboxAddModal(app, opts).open();
+}
+
+class InboxAddModal extends Modal {
+	private kind: InboxKind;
+	private side: Side;
+	private busy = false;
+
+	constructor(
+		app: App,
+		private opts: { side: Side; kind?: InboxKind; submit: (v: InboxAddInput) => Promise<boolean> },
+	) {
+		super(app);
+		this.kind = opts.kind ?? "task";
+		this.side = opts.side;
+	}
+
+	onOpen(): void {
+		const { contentEl } = this;
+		this.modalEl.addClass("mylogs-inbox-add-modal");
+		contentEl.addClass("mylogs-desk-calendar-modal", "dc-ia");
+		this.setTitle("인박스에 추가");
+
+		const seg = contentEl.createDiv({ cls: "dc-ia-seg", attr: { role: "radiogroup", "aria-label": "종류" } });
+		const segBtns = (["task", "event"] as const).map((k) => {
+			const b = seg.createEl("button", { cls: "dc-ia-seg-btn", text: k === "task" ? "할 일" : "일정", attr: { type: "button", role: "radio" } });
+			b.addEventListener("click", () => {
+				this.kind = k;
+				draw();
+				input.focus();
+			});
+			return [k, b] as const;
+		});
+
+		const input = contentEl.createEl("input", {
+			cls: "dc-ia-input mylogs-desk-calendar-modal-input",
+			attr: { type: "text", enterkeyhint: "done", autocomplete: "off" },
+		});
+		const hint = contentEl.createDiv({ cls: "dc-ia-hint" });
+
+		new Setting(contentEl)
+			.setClass("dc-ia-side")
+			.setName("회사 일")
+			.setDesc("켜면 줄 끝에 #회사가 붙어요.")
+			.addToggle((t) => t.setValue(this.side === "회사").onChange((v) => (this.side = v ? "회사" : "개인")));
+
+		let addBtn: HTMLButtonElement | null = null;
+		const footer = new Setting(contentEl)
+			.setClass("dc-ia-actions")
+			.addButton((b) => b.setButtonText("취소").onClick(() => this.close()))
+			.addButton((b) => {
+				b.setButtonText("추가").setCta().onClick(() => void submit());
+				addBtn = b.buttonEl;
+			});
+		footer.settingEl.addClass("dc-ia-footer");
+
+		const draw = () => {
+			for (const [k, b] of segBtns) {
+				const on = this.kind === k;
+				b.toggleClass("is-active", on);
+				b.setAttr("aria-checked", String(on));
+			}
+			const ph = this.kind === "task" ? "할 일 (예: 보고서 초안 쓰기)" : "일정 (예: 동창회) · 날짜는 나중에";
+			input.setAttr("placeholder", ph);
+			input.setAttr("aria-label", ph);
+			hint.setText(this.kind === "task" ? "체크박스 할 일로 「## 이달 중」 끝에 들어가요." : "날짜 미정 일정이라 줄 끝에 #행사가 붙어요. 나중에 날짜 칸으로 끌어 놓아요.");
+		};
+
+		const submit = async (): Promise<void> => {
+			const text = input.value.trim();
+			if (!text) {
+				input.focus();
+				return;
+			}
+			if (this.busy) return;
+			this.busy = true;
+			addBtn?.setAttr("disabled", "true");
+			let ok = false;
+			try {
+				ok = await this.opts.submit({ text, kind: this.kind, side: this.side });
+			} finally {
+				this.busy = false;
+				addBtn?.removeAttribute("disabled");
+			}
+			if (ok) this.close();
+			else window.setTimeout(() => input.focus(), 0);
+		};
+
+		input.addEventListener("keydown", (e) => {
+			// IME (한글) composition: the Enter that ends a syllable is not a submit.
+			if (e.key !== "Enter" || e.isComposing || e.keyCode === 229) return;
+			e.preventDefault();
+			void submit();
+		});
+		draw();
+		window.setTimeout(() => input.focus(), 0);
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+}
 
 /** Pick a date (`<input type=date>`). Resolves null when cancelled. */
 export function pickDate(app: App, title: string, initial: string, desc?: string): Promise<string | null> {
