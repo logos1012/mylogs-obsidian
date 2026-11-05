@@ -35,6 +35,8 @@ export interface DeskMoveItem {
 	kind: DeskDragKind;
 	/** `isOpenTask(it)`: a scheduled task. */
 	open: boolean;
+	/** `isOpenInboxEvent(it)`: a scheduled 인박스 일정 (straight to a day, no week step). */
+	event?: boolean;
 	/** `it.item.assignWeek` (이달 중 → weeks). */
 	assignWeek: number[];
 	/** `it.assign` (이번 주 할 일 → dates). */
@@ -49,7 +51,8 @@ export type DeskTarget =
 	| { op: "assignWeek"; monday: string; no: number; fileKey: string; label: string; sub: string; icon: string }
 	| { op: "unassign"; monday: string; fileKey: string; label: string; sub: string; icon: string }
 	| { op: "assignDay"; iso: string; label: string; sub: string; icon: string }
-	| { op: "moveDay"; iso: string; label: string; sub: string; icon: string };
+	| { op: "moveDay"; iso: string; label: string; sub: string; icon: string }
+	| { op: "eventDay"; iso: string; label: string; sub: string; icon: string };
 
 const WD = ["월", "화", "수", "목", "금", "토", "일"];
 
@@ -68,6 +71,10 @@ function wk(no: number): string {
 
 /** Drop zones of the shown month that accept `it`, in screen order (week box, then its days). */
 export function deskMoveTargets(it: DeskMoveItem, weeks: WeekSlot[], days: DaySlot[]): DeskTarget[] {
+	// renderDayCell: an 인박스 일정 → any day of the month grid (no 이번 주 할 일 step for events).
+	if (it.event && it.kind === "during") {
+		return days.filter((d) => d.exists).map((d) => ({ op: "eventDay" as const, iso: d.iso, label: dayLabel(d.iso), sub: "이 날에 일정 넣기", icon: "calendar-plus" }));
+	}
 	if (!it.open) return [];
 	const out: DeskTarget[] = [];
 	for (const w of weeks) {
@@ -109,6 +116,8 @@ export interface DeskMoveApi<I> {
 	assignDay(item: I, iso: string): Promise<unknown>;
 	/** `moveToDay(item, iso)` (third-postpone check, then `planMoveDay`) */
 	moveToDay(item: I, iso: string): Promise<unknown>;
+	/** `exec(planAssignEventDay(item, iso, today))` */
+	assignEventDay(item: I, iso: string): Promise<unknown>;
 }
 
 export function runDeskTarget<I>(t: DeskTarget, item: I, api: DeskMoveApi<I>): Promise<unknown> {
@@ -121,6 +130,8 @@ export function runDeskTarget<I>(t: DeskTarget, item: I, api: DeskMoveApi<I>): P
 			return api.assignDay(item, t.iso);
 		case "moveDay":
 			return api.moveToDay(item, t.iso);
+		case "eventDay":
+			return api.assignEventDay(item, t.iso);
 	}
 }
 

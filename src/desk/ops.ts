@@ -481,6 +481,49 @@ export function planUnassign(src: DeskItem, alloc: DeskItem | null, monday: stri
 	return finish(`「${src.item.text}」 ${mmdd(date)} 배정 취소`, edits);
 }
 
+/** An 인박스 (이달 중) 일정 that can still be put on a day: a scheduled plain event line. */
+export function isOpenInboxEvent(it: DeskItem): boolean {
+	return it.section === "during" && it.item.kind === "event" && it.item.status === "scheduled" && it.item.checkbox === null;
+}
+
+/**
+ * The day-cell copy of an open event line: the same plain line (time lead, `#행사`, tags and
+ * fields kept, no checkbox), top level. `  - 동창회 #행사 #회사` → `- 동창회 #행사 #회사`. (An open
+ * event has no `→`: a plain line with one is a moved event.)
+ */
+export function copyEvent(line: string): string {
+	const p = splitLine(line);
+	return `- ${collapse(p ? p.body : line)}`;
+}
+
+/**
+ * `- 동창회 #행사` → `- 동창회 → 11/12 #행사`: the 인박스 line keeps its form and gets the day it
+ * went to (the parser reads a plain line with `→` as a moved event, like 「다른 날」's `[>] … → MM/DD`).
+ */
+export function markEventSent(line: string, target: string): string {
+	return mapBody(line, (body) => insertBeforeDecor(body, ` → ${target}`));
+}
+
+/**
+ * DnD: an 인박스 일정 → a day. Events have no 이번 주 할 일 step: the copy goes straight to
+ * `### YYYY-MM-DD` (same line, no checkbox) and the 인박스 line is marked `→ MM/DD` (moved event).
+ * A same-text open event already on that day is not copied twice.
+ */
+export function planAssignEventDay(src: DeskItem, date: string, today: string): Plan {
+	if (!isOpenInboxEvent(src)) return finish("", [{ file: src.file, month: true, apply: () => fail("not-open-event") }]);
+	const ref = refOf(src);
+	const copy = copyEvent(src.line);
+	const dayFile = date.slice(0, 7);
+	return finish(`인박스 일정 「${src.item.text}」 → ${mmdd(date)} 배정`, [
+		monthEdit(src.file, today, (t, y, m) => editLine(t, y, m, ref, (l) => markEventSent(l, mmdd(date)))),
+		monthEdit(dayFile, today, (t, y, m) => {
+			const items = sectionItems(t, y, m, { kind: "day", date });
+			if (items.some((x) => x.key === src.key && x.item.kind === "event" && x.item.status === "scheduled")) return { ok: true, text: t };
+			return appendLines(t, y, m, { kind: "day", date }, [copy]);
+		}),
+	]);
+}
+
 /** What the 인박스 input adds: 할 일 or 일정 (행사·약속). 메모 is not offered. */
 export type InboxKind = "task" | "event";
 

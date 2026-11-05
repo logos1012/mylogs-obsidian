@@ -3657,7 +3657,8 @@ body.theme-dark .mylogs-pinboard-container .pb-scrim {
 /* ── bands: 이달의 초점, 이달 중 ── */
 .mylogs-desk-calendar .dc-band {
 	display: grid;
-	grid-template-columns: 76px 1fr;
+	/* minmax(0, …): long content can't push the column past the pane (no clipping) */
+	grid-template-columns: 76px minmax(0, 1fr);
 	gap: 14px;
 	align-items: start;
 	padding: 14px 0;
@@ -3717,56 +3718,116 @@ body.theme-dark .mylogs-pinboard-container .pb-scrim {
 .mylogs-desk-calendar .dc-during .dc-it {
 	padding-top: 3px;
 }
-/* 인박스에 직접 추가 (할 일 / 일정) */
-.mylogs-desk-calendar .dc-inbox-add {
+/* 인박스 헤더: 「인박스」 + 작은 「+ 추가」 (좁은 칸에서는 버튼이 다음 줄로 내려가고 잘리지 않음) */
+.mylogs-desk-calendar .dc-band > .dc-during-head {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
-	gap: 8px;
-	margin-top: 8px;
-	padding-top: 6px;
-	border-top: 1px dashed var(--dc-line-strong);
+	gap: 4px 6px;
+	min-width: 0;
+	padding-top: 2px;
 }
-.mylogs-desk-calendar .dc-inbox-add:focus-within {
-	border-top-style: solid;
-	border-top-color: var(--interactive-accent);
+.mylogs-desk-calendar .dc-during-title {
+	min-width: 0;
+	overflow-wrap: anywhere;
 }
-.mylogs-desk-calendar button.dc-inbox-kind {
-	flex: none;
-	height: 24px;
-	padding: 0 8px;
-	font-size: 12px;
-	border-radius: 12px;
+.mylogs-desk-calendar button.dc-inbox-addbtn {
+	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	max-width: 100%;
+	height: 22px;
+	padding: 0 7px 0 5px;
+	font-size: 11px;
+	letter-spacing: 0;
+	white-space: nowrap;
+	border-radius: 11px;
 	box-shadow: none;
 	color: var(--dc-ink-2);
 	background: transparent;
 	border: 1px solid var(--dc-line-strong);
+	cursor: pointer;
 }
-.mylogs-desk-calendar button.dc-inbox-kind.is-event {
+.mylogs-desk-calendar button.dc-inbox-addbtn:hover {
 	color: var(--interactive-accent);
 	border-color: var(--interactive-accent);
 }
-.mylogs-desk-calendar input.dc-inbox-input {
-	flex: 1;
-	min-width: 0;
-	height: 28px;
-	padding: 0;
-	border: 0;
-	border-radius: 0;
-	background: transparent;
-	box-shadow: none;
-	font-size: 13px;
+.mylogs-desk-calendar .dc-inbox-addbtn-ic {
+	display: inline-flex;
+	flex-shrink: 0;
 }
-.mylogs-desk-calendar input.dc-inbox-input:focus {
-	outline: none;
-	box-shadow: none;
+.mylogs-desk-calendar .dc-inbox-addbtn-ic svg {
+	width: 12px;
+	height: 12px;
 }
-body.is-mobile .mylogs-desk-calendar button.dc-inbox-kind {
-	height: 36px;
-	padding: 0 12px;
+body.is-mobile .mylogs-desk-calendar .dc-band > .dc-during-head {
+	justify-content: space-between;
+}
+body.is-mobile .mylogs-desk-calendar button.dc-inbox-addbtn {
+	min-height: 44px;
+	min-width: 44px;
+	padding: 0 14px 0 10px;
 	font-size: 14px;
-	border-radius: 18px;
+	border-radius: 22px;
 }
-body.is-mobile .mylogs-desk-calendar input.dc-inbox-input {
+body.is-mobile .mylogs-desk-calendar .dc-inbox-addbtn-ic svg {
+	width: 16px;
+	height: 16px;
+}
+
+/* 「인박스에 추가」 모달 */
+.mylogs-inbox-add-modal .dc-ia-seg {
+	display: flex;
+	gap: 4px;
+	padding: 3px;
+	margin-bottom: 12px;
+	border-radius: 8px;
+	background: var(--background-secondary);
+}
+.mylogs-inbox-add-modal button.dc-ia-seg-btn {
+	flex: 1 1 0;
+	min-width: 0;
+	box-shadow: none;
+	background: transparent;
+	color: var(--text-muted);
+}
+.mylogs-inbox-add-modal button.dc-ia-seg-btn.is-active {
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-weight: 600;
+	box-shadow: var(--shadow-s);
+}
+.mylogs-inbox-add-modal input.dc-ia-input {
+	display: block;
+	width: 100%;
+	max-width: 100%;
+	box-sizing: border-box;
+}
+.mylogs-inbox-add-modal .dc-ia-hint {
+	margin: 6px 0 4px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+.mylogs-inbox-add-modal .setting-item.dc-ia-side {
+	border-top: 0;
+}
+.mylogs-inbox-add-modal .setting-item.dc-ia-side .setting-item-info {
+	min-width: 0;
+}
+.mylogs-inbox-add-modal .setting-item.dc-ia-footer .setting-item-control {
+	flex-wrap: wrap;
+	justify-content: flex-end;
+}
+body.is-mobile .modal.mylogs-inbox-add-modal {
+	width: 100%;
+	max-width: 100%;
+}
+body.is-mobile .mylogs-inbox-add-modal button.dc-ia-seg-btn,
+body.is-mobile .mylogs-inbox-add-modal .dc-ia-footer button {
+	min-height: 44px;
+}
+body.is-mobile .mylogs-inbox-add-modal input.dc-ia-input {
 	min-height: 44px;
 	font-size: 16px;
 }
@@ -4382,7 +4443,7 @@ body.is-mobile .mylogs-desk-calendar input.dc-inbox-input {
 		justify-content: flex-start;
 	}
 	.mylogs-desk-calendar .dc-band {
-		grid-template-columns: 1fr;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 6px;
 	}
 	.mylogs-desk-calendar .dc-band > .dc-lbl {

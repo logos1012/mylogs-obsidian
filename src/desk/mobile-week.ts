@@ -73,6 +73,7 @@ function looseText(x: Loose): string {
 /** Drop / pick a day for an unassigned item: the same writes as the desktop and project screens. */
 async function assign(h: DeskMobileHost, x: Loose, iso: string): Promise<void> {
 	if (x.kind === "alloc") await h.move({ op: "assignDay", iso, label: "", sub: "", icon: "" } as DeskTarget, x.it);
+	else if (x.kind === "during" && h.isOpenEvent(x.it)) await h.assignEventToDay(x.it, iso);
 	else if (x.kind === "during") await h.assignDuringToDay(x.it, iso);
 	else await h.scheduleProjectTask(x.task, iso);
 }
@@ -147,8 +148,9 @@ export function renderWeekScreen(h: DeskMobileHost, root: HTMLElement, w: WeekSt
 	const alloc = h.allocItems(monday).filter((it) => h.isOpenTask(it) && !it.assign.length);
 	group("이번 주 할 일", alloc.map((it) => ({ kind: "alloc" as const, it })), "이번 주에 하기로 한 일 중 날짜를 아직 정하지 않은 일");
 	// 인박스 = not in any week yet (a task in a week shows once, as 이번 주 할 일).
-	const during = h.duringItems().filter((it) => h.isOpenTask(it) && !it.item.assignWeek.length);
-	group("인박스", during.map((it) => ({ kind: "during" as const, it })), "이달 안에 할 일, 아직 주를 정하지 않은 일. 날짜에 놓으면 이번 주 할 일을 거쳐 그날로 배정돼요");
+	// 인박스 일정 too: dropped on a day, it goes straight there (no 이번 주 할 일 step).
+	const during = h.duringItems().filter((it) => (h.isOpenTask(it) && !it.item.assignWeek.length) || h.isOpenEvent(it));
+	group("인박스", during.map((it) => ({ kind: "during" as const, it })), "이달 안에 할 일·일정, 아직 날짜를 정하지 않은 것. 할 일은 이번 주 할 일을 거쳐, 일정은 바로 그날로 배정돼요");
 	const projectsBox = looseBody.createDiv({ cls: "dc-wk-loose-projects" });
 	projectsBox.createDiv({ cls: "dc-m-muted", text: "프로젝트 할 일 불러오는 중…" });
 

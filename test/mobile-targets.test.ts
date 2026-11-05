@@ -11,6 +11,7 @@ function recorder<I>() {
 		unassign: async (...a) => void calls.push(["unassign", ...a]),
 		assignDay: async (...a) => void calls.push(["assignDay", ...a]),
 		moveToDay: async (...a) => void calls.push(["moveToDay", ...a]),
+		assignEventDay: async (...a) => void calls.push(["assignEventDay", ...a]),
 	};
 	return { api, calls };
 }

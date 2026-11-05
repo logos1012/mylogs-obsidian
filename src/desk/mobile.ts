@@ -13,7 +13,7 @@ import { addDays } from "../parser.ts";
 import { tip } from "../ui/tip.ts";
 import { actionSheet, enableTouchMenus, menuEventAt, pickTarget, type SheetAction } from "../ui/mobile.ts";
 import { type DeskItem, type MonthData, weekdayMon0 } from "./model.ts";
-import { type DaySlot, dayInMonth, dayLabel, defaultDay, type DeskDragKind, type DeskTarget, deskMoveTargets, type WeekSlot } from "./mobile-targets.ts";
+import { type DaySlot, dayInMonth, dayLabel, defaultDay, type DeskDragKind, type DeskMoveItem, type DeskTarget, deskMoveTargets, type WeekSlot } from "./mobile-targets.ts";
 import { touchDrag } from "./touch-drag.ts";
 import { type BacklogGroup, monthLevel, type PadTask, renderWeekScreen, type WeekState } from "./mobile-week.ts";
 import type { ProjectTask } from "../projects/tasks.ts";
@@ -40,6 +40,8 @@ export interface DeskMobileHost {
 	weekSlots(): WeekSlot[];
 	daySlots(): DaySlot[];
 	isOpenTask(it: DeskItem): boolean;
+	/** A scheduled 인박스 일정 (`isOpenInboxEvent`): goes straight to a day. */
+	isOpenEvent(it: DeskItem): boolean;
 	/** Run a target with the call its desktop drop zone makes (`runDeskTarget`). */
 	move(t: DeskTarget, it: DeskItem): Promise<unknown>;
 	register(cb: () => void): void;
@@ -53,6 +55,8 @@ export interface DeskMobileHost {
 	duringItems(): DeskItem[];
 	/** 이달 중 → 이번 주 할 일 → that day, in one go (주 보기 drop). */
 	assignDuringToDay(it: DeskItem, iso: string): Promise<void>;
+	/** 인박스 일정 → that day (`planAssignEventDay`). */
+	assignEventToDay(it: DeskItem, iso: string): Promise<void>;
 	/** That day's Daily Pad 「오늘 할 일」. */
 	padTasks(iso: string): Promise<PadTask[]>;
 	togglePadTask(iso: string, t: PadTask): Promise<void>;
@@ -175,9 +179,24 @@ function monthBand(h: DeskMobileHost, root: HTMLElement, cur: MonthData): void {
 		Array.from(ul.children).forEach((li, i) => {
 			const it = cur.during[i];
 			if (h.isOpenTask(it)) dragToWeek(h, li as HTMLElement, it);
+			else if (h.isOpenEvent(it)) dragEventToWeek(h, li as HTMLElement, it);
 		});
 	}
 }
+
+/** Long-press an 인박스 일정, drop it on a week card: pick one of that week's days (events skip 이번 주 할 일). */
+function dragEventToWeek(h: DeskMobileHost, li: HTMLElement, it: DeskItem): void {
+	touchDrag(h.contentEl, li, it.item.text, ".dc-m-wk", (w) => {
+		const monday = w.getAttr("data-monday");
+		if (!monday) return;
+		const targets = deskMoveTargets(EVENT_MOVE, [], h.daySlots()).filter((t) => t.op === "eventDay" && addDays(t.iso, -weekdayMon0(t.iso)) === monday);
+		if (!targets.length) return;
+		void actionSheet(h.app, `「${it.item.text}」 → 어느 날로?`, targets.map((t) => ({ label: t.label, sub: t.sub, icon: t.icon, run: () => h.move(t, it) })));
+	});
+}
+
+/** An 인박스 일정 as `deskMoveTargets` reads it. */
+const EVENT_MOVE: DeskMoveItem = { kind: "during", open: false, event: true, assignWeek: [], assign: [], monday: null, date: null };
 
 /** One week of the month: what happens in it, in date order, then its 이번 주 할 일. */
 function weekCard(h: DeskMobileHost, root: HTMLElement, s: State, w: WeekSlot, today: string, show: boolean): void {
@@ -339,13 +358,15 @@ async function itemSheet(h: DeskMobileHost, li: HTMLElement, it: DeskItem, kind:
 				h.weekSlots(),
 				h.daySlots(),
 			)
-		: [];
+		: kind === "during" && h.isOpenEvent(it)
+			? deskMoveTargets(EVENT_MOVE, [], h.daySlots())
+			: [];
 	const asAction = (t: DeskTarget): SheetAction => ({ label: t.label, sub: t.sub, icon: t.icon, run: () => h.move(t, it) });
 	const actions: SheetAction[] = [];
 	if (targets.length <= INLINE_TARGETS) actions.push(...targets.map(asAction));
 	else {
 		// 이번 주 할 일로 (배정 취소) stays one tap away; the many days go behind 이동….
-		const days: DeskTarget[] = targets.filter((t) => t.op === "moveDay" || t.op === "assignDay");
+		const days: DeskTarget[] = targets.filter((t) => t.op === "moveDay" || t.op === "assignDay" || t.op === "eventDay");
 		actions.push(...targets.filter((t) => !days.includes(t)).map(asAction));
 		actions.push({
 			label: "이동…",
