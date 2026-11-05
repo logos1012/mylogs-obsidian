@@ -11606,7 +11606,12 @@ button.mylogs-memo-fab svg { width: 18px; height: 18px; }
 .mylogs-daily-pad button.ml-wheel-chip.is-done .ml-wheel-dot { background: var(--color-green, #3a8a5c); border-color: var(--color-green, #3a8a5c); }
 .mylogs-daily-pad .ml-wheel-agent { color: #2f7fa8; font-size: 10px; }
 .mylogs-daily-pad button.ml-memo-wheel { opacity: 0; padding: 2px; margin-left: 6px; vertical-align: middle; height: auto; }
-.mylogs-daily-pad li:hover > button.ml-memo-wheel, .mylogs-daily-pad button.ml-memo-wheel.is-linked { opacity: 1; }
+.mylogs-daily-pad li:hover > .ml-row-tail > button.ml-memo-wheel, .mylogs-daily-pad li:hover > p > .ml-row-tail > button.ml-memo-wheel, .mylogs-daily-pad button.ml-memo-wheel.is-linked { opacity: 1; }
+/* Row-end icon buttons (넘기기 · 바퀴 잇기): Obsidian's .clickable-icon is display:flex, which is
+   block-level and pushed the button onto a line of its own. Keep them inline, glued to the last
+   word (the tail starts with a word joiner and does not wrap inside). */
+.mylogs-daily-pad .ml-row-tail { white-space: nowrap; }
+.mylogs-daily-pad .ml-row-tail > button.clickable-icon { display: inline-flex; vertical-align: middle; }
 .mylogs-daily-pad button.ml-memo-wheel.is-linked { color: var(--interactive-accent); }
 .mylogs-daily-pad button.ml-memo-wheel svg { width: 13px; height: 13px; }
 
@@ -12147,7 +12152,7 @@ body.is-mobile .fw3-ws-cover { height: 110px; }
 
 /* Daily Pad 할 일 넘기기 (→ Desk Calendar 인박스 · 다른 날) */
 .mylogs-daily-pad button.ml-defer-btn { opacity: 0; padding: 2px; margin-left: 6px; vertical-align: middle; height: auto; color: var(--text-faint); }
-.mylogs-daily-pad li:hover > button.ml-defer-btn, .mylogs-daily-pad button.ml-defer-btn:focus-visible { opacity: 1; }
+.mylogs-daily-pad li:hover > .ml-row-tail > button.ml-defer-btn, .mylogs-daily-pad li:hover > p > .ml-row-tail > button.ml-defer-btn, .mylogs-daily-pad button.ml-defer-btn:focus-visible { opacity: 1; }
 .mylogs-daily-pad button.ml-defer-btn:hover { color: var(--interactive-accent); }
 .mylogs-daily-pad button.ml-defer-btn svg { width: 13px; height: 13px; }
 body.is-mobile .mylogs-daily-pad button.ml-defer-btn { opacity: 0.7; position: relative; padding: 4px; }
