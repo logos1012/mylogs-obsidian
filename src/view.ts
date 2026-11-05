@@ -2,7 +2,8 @@ import { toggleLinkedProjectTask } from "./projects/task-actions.ts";
 import { mountAppNav } from "./ui/nav.ts";
 import { tip } from "./ui/tip.ts";
 import { ItemPopover } from "./ui/popover.ts";
-import { choosePending, chooseToday, pendingSide, togglePending } from "./pending/actions.ts";
+import { chooseDefer, choosePending, chooseToday, type DeferPick, pendingSide, togglePending } from "./pending/actions.ts";
+import { canDefer } from "./pending/defer.ts";
 import { type PendingChoice, sourceDateOf } from "./pending/ops.ts";
 import { extractCandidates } from "./drawer/candidates.ts";
 import { acceptCandidate, removeCandidateLine } from "./drawer/actions.ts";
@@ -368,6 +369,7 @@ class SectionPanel {
 			const tl = taskLines.length === boxes.length ? taskLines[n] : undefined;
 			const li = box.closest("li");
 			if (tl && li) decorateFlywheelLine(li, li, tl.line, this.view.flywheelWeek);
+			if (tl && li && (this.key === "today" || this.key === "work") && canDefer(tl.line) && this.view.date >= todayIso()) this.addDeferButton(li, tl);
 			box.addEventListener("click", (e) => {
 				e.preventDefault();
 				e.stopPropagation();
@@ -382,6 +384,36 @@ class SectionPanel {
 				void this.view.togglePadLine(this.name, tl.offset, tl.line);
 			});
 		});
+	}
+
+	/**
+	 * 「넘기기」 on an open 개인 / 회사 할 일 line: 이달 인박스 / 내일 / 다른 날… of the Desk Calendar.
+	 * The Pad line stays as `[>] … → 보낸 곳` (`./pending/defer.ts`).
+	 */
+	private addDeferButton(li: HTMLElement, tl: { offset: number; line: string }): void {
+		const b = createEl("button", { cls: "clickable-icon ml-defer-btn", attr: { type: "button", "aria-label": "Desk Calendar로 넘기기" } });
+		setIcon(b, "calendar-arrow-up");
+		if (!b.querySelector("svg")) setIcon(b, "calendar");
+		tip(b, "오늘 하지 않을 일을 Desk Calendar로 넘겨요 (인박스 · 다른 날)");
+		// Before a nested list, so the button stays on the task's own row.
+		li.insertBefore(b, li.querySelector(":scope > ul, :scope > ol"));
+		b.addEventListener("click", (ev) => {
+			ev.preventDefault();
+			ev.stopPropagation();
+			const date = this.view.date;
+			const m = new Menu();
+			m.addItem((i) => i.setTitle("Desk Calendar로 넘기기").setDisabled(true));
+			m.addItem((i) => i.setTitle(`${+date.slice(5, 7)}월 인박스로`).setIcon("inbox").onClick(() => void this.defer(tl, "inbox")));
+			m.addItem((i) => i.setTitle("내일로").setIcon("sunrise").onClick(() => void this.defer(tl, "tomorrow")));
+			m.addItem((i) => i.setTitle("다른 날…").setIcon("calendar-days").onClick(() => void this.defer(tl, "day")));
+			m.showAtMouseEvent(ev);
+		});
+	}
+
+	private async defer(tl: { offset: number; line: string }, pick: DeferPick): Promise<void> {
+		await this.view.flushAll();
+		const ok = await chooseDefer(this.view.plugin, this.view.date, this.name, tl, pick, todayIso());
+		if (!ok) await this.view.refreshPad();
 	}
 
 	private onBodyClick(e: MouseEvent): void {
@@ -929,6 +961,11 @@ export class DailyPadView extends ItemView {
 		} catch (err) {
 			new Notice(`MyLogs: ${err instanceof Error ? err.message : String(err)}`, 10000);
 		}
+	}
+
+	/** Re-read the Daily Pad and redraw what changed (after a write that was refused). */
+	refreshPad(): Promise<void> {
+		return this.onPadChanged();
 	}
 
 	private async onPadChanged(): Promise<void> {

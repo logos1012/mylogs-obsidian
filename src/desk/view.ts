@@ -2,7 +2,7 @@ import { changeProjectTask, loadProjectTasks, toggleLinkedProjectTask } from "..
 import { type ProjectTask, taskLabel } from "../projects/tasks.ts";
 import { readProject, vaultIO } from "../pinboard/create-actions.ts";
 import { isFlywheelLine } from "../flywheel/model.ts";
-import { asSide, projectRef, shows } from "../side.ts";
+import { asSide, inputSide, projectRef, shows } from "../side.ts";
 import { filterMonth, type SideCounts } from "./side-filter.ts";
 import { renderSideCount } from "./side-ui.ts";
 import { loadProjectBacklog } from "../projects/backlog.ts";
@@ -19,7 +19,7 @@ import { scheduleSource, scheduleTarget } from "../projects/schedule-dnd.ts";
 import { ItemView, Keymap, moment, normalizePath, Notice, Platform, setIcon, type TAbstractFile, TFile, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { loadMilestoneCalendar, renderMilestoneMarkers, renderMilestoneIssues, watchesMilestoneProjects, type MilestoneCalendar } from "../projects/milestone-calendar-ui.ts";
-import { addDays, parseBodyLines, splitLinesKeepEol, TASK_LINE_RE } from "../parser.ts";
+import { addDays, parseBodyLines, parseItem, splitLinesKeepEol, TASK_LINE_RE } from "../parser.ts";
 import {
 	allocFileOf,
 	type DayIndex,
@@ -28,6 +28,7 @@ import {
 	type DeskWeek,
 	findPairAlloc,
 	isoWeekNo,
+	normKey,
 	type MonthData,
 	parseMonthFile,
 	parseMonthKey,
@@ -42,7 +43,8 @@ import {
 	weekdayMon0,
 	weekMondays,
 } from "./model.ts";
-import { createDeskMonth, deskMonthPath, logDeskChange } from "./actions.ts";
+import { createDeskMonth, DESK_INDEX_FILE, deskMonthPath, logDeskChange } from "./actions.ts";
+import { addToInboxChecked, INBOX_CONFLICT_NOTICE } from "./inbox-add.ts";
 import { type DeskMobileHost, renderDeskMobile } from "./mobile.ts";
 import { runDeskTarget } from "./mobile-targets.ts";
 import { askThirdMove, pickDate, pickMonth, promptText } from "./modals.ts";
@@ -68,6 +70,8 @@ import {
 	planToggle,
 	planUnassign,
 	runPlan,
+	inboxLine,
+	type InboxKind,
 } from "./ops.ts";
 
 export const VIEW_TYPE_DESK_CALENDAR = "mylogs-desk-calendar";
@@ -136,6 +140,10 @@ export class DeskCalendarView extends ItemView {
 	/** A Wall line being dragged onto a day or 이달 중. */
 	private wallDrag: WallLine | null = null;
 	private busy = false;
+	/** 인박스 input: kind, typed text and focus, kept across re-renders. */
+	private inboxKind: InboxKind = "task";
+	private inboxDraft = "";
+	private inboxFocused = false;
 	private pendingReload = false;
 	private reloadTimer: number | null = null;
 	private loadSeq = 0;
@@ -507,6 +515,7 @@ export class DeskCalendarView extends ItemView {
 		const ul = during.createEl("ul");
 		if (!cur.during.length) ul.createEl("li", { cls: "dc-it dc-none", text: "없음" });
 		for (const it of cur.during) this.renderDuringItem(ul, it, ctx);
+		this.renderInboxAdd(during, cur);
 		this.wallDropZone(during, null);
 		this.renderWallItems(during);
 		const markers = this.milestones.markers.filter(m => m.date.startsWith(this.month + "-"));
@@ -692,6 +701,112 @@ export class DeskCalendarView extends ItemView {
 
 	private testDot(parent: HTMLElement): void {
 		parent.createSpan({ cls: "dc-tdot", attr: { title: "#test 테스트 데이터" } });
+	}
+
+	/**
+	 * 인박스에 직접 추가: a 할 일 / 일정 toggle and one input. Enter writes one line at the end of
+	 * `## 이달 중` (`planAddDuring`, the side is the current mode's). The draft survives re-renders
+	 * (a sync or Hermes edit redraws the view while typing).
+	 */
+	private renderInboxAdd(parent: HTMLElement, cur: MonthData): void {
+		const row = parent.createDiv({ cls: "dc-inbox-add" });
+		const kindBtn = row.createEl("button", { cls: "dc-inbox-kind", attr: { type: "button" } });
+		const input = row.createEl("input", {
+			cls: "dc-inbox-input",
+			attr: { type: "text", enterkeyhint: "done", autocomplete: "off" },
+		});
+		const draw = () => {
+			const task = this.inboxKind === "task";
+			kindBtn.setText(task ? "할 일" : "일정");
+			kindBtn.toggleClass("is-event", !task);
+			kindBtn.setAttr("aria-label", `종류: ${task ? "할 일" : "일정"} (누르면 바뀌어요)`);
+			const ph = task ? "인박스에 할 일 추가" : "인박스에 일정 추가 (날짜 미정)";
+			input.setAttr("placeholder", ph);
+			input.setAttr("aria-label", ph);
+		};
+		draw();
+		tip(kindBtn, "할 일 ↔ 일정(행사·약속). 일정은 줄 끝에 #행사가 붙어요.");
+		kindBtn.addEventListener("click", (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			this.inboxKind = this.inboxKind === "task" ? "event" : "task";
+			draw();
+			input.focus();
+		});
+		input.value = this.inboxDraft;
+		input.addEventListener("input", () => (this.inboxDraft = input.value));
+		input.addEventListener("focus", () => (this.inboxFocused = true));
+		input.addEventListener("blur", () => (this.inboxFocused = false));
+		input.addEventListener("keydown", (e) => {
+			if (e.key === "Enter" && !e.isComposing) {
+				e.preventDefault();
+				const text = input.value.trim();
+				if (!text) return;
+				void this.addToInbox(cur, text);
+			} else if (e.key === "Escape") {
+				input.value = "";
+				this.inboxDraft = "";
+				input.blur();
+			}
+		});
+		// Pointer events on the row must not start an item drag / open the popover.
+		for (const ev of ["mousedown", "pointerdown", "touchstart", "click"] as const) row.addEventListener(ev, (e) => e.stopPropagation());
+		if (this.inboxFocused) window.setTimeout(() => input.focus(), 0);
+	}
+
+	private async addToInbox(cur: MonthData, text: string): Promise<void> {
+		if (cur.duringHeadingIndex < 0) {
+			new Notice("이 달 파일에 인박스(## 이달 중)가 없어요.");
+			return;
+		}
+		const kind = this.inboxKind;
+		const side = inputSide(this.plugin.settings.sideMode);
+		const line = inboxLine(text, kind, side);
+		const shown = parseItem(line.replace(/^\s*[-*+]\s+/, "")).text;
+		if (cur.during.some((x) => x.key === normKey(shown) && x.item.kind === kind && x.item.status === "scheduled")) {
+			new Notice(`인박스에 같은 ${kind === "task" ? "할 일" : "일정"}이 이미 있어요.`);
+			return;
+		}
+		if (this.busy) return;
+		this.busy = true;
+		// Cleared before writing: the reload redraws the view (and this input) when it is done.
+		this.inboxDraft = "";
+		let ok = false;
+		try {
+			// One checked batch (month file + Desk Calendar Index): a file changed since the read cancels it.
+			const r = await addToInboxChecked(
+				vaultIO(this.app),
+				{ month: this.monthPath(cur.key), index: normalizePath(`${this.plugin.settings.deskCalendarFolder}/${DESK_INDEX_FILE}`) },
+				cur.key,
+				text,
+				kind,
+				side,
+				todayIsoLocal(),
+			);
+			ok = r.ok;
+			if (r.ok) new Notice(`「${shown}」을(를) 인박스에 넣었어요.`);
+			else if (r.reason === "conflict") new Notice(INBOX_CONFLICT_NOTICE);
+			else if (r.reason === "duplicate") new Notice(`인박스에 같은 ${kind === "task" ? "할 일" : "일정"}이 이미 있어요.`);
+			else if (r.reason === "section-missing") new Notice("이 달 파일에 인박스(## 이달 중)가 없어요.");
+			else if (r.reason === "file-missing") new Notice(`${cur.key} Desk Calendar 파일이 없어요. 먼저 새 달을 만들어 주세요.`);
+			else if (r.reason !== "empty-text") {
+				console.error("[MyLogs] 인박스 추가 실패", r.message);
+				new Notice(`MyLogs: 인박스에 추가하지 못했어요.${r.message ? `\n${r.message}` : ""}`);
+			}
+		} catch (err) {
+			console.error("[MyLogs] 인박스 추가 실패", err);
+			new Notice("MyLogs: 파일에 쓰지 못했어요. 콘솔을 확인해 주세요.");
+		} finally {
+			this.busy = false;
+			// Not written: give the text back before the redraw so the input keeps it.
+			if (!ok) this.inboxDraft = text;
+			this.pendingReload = false;
+			await this.reload();
+		}
+		if (!ok) {
+			const again = this.contentEl.querySelector<HTMLInputElement>("input.dc-inbox-input");
+			if (again && !again.value) again.value = text;
+		}
 	}
 
 	private renderDuringItem(ul: HTMLElement, it: DeskItem, ctx: Ctx): void {

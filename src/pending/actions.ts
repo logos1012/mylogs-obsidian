@@ -12,7 +12,21 @@ import { addDays, type SourceLine } from "../parser.ts";
 import { commitBatch, type Write } from "../pinboard/batch.ts";
 import { exclusive, vaultIO } from "../pinboard/create-actions.ts";
 import { deskMonthPath } from "../desk/actions.ts";
-import { appendLines, appendUnderWallMonth, movedCount, prependChangeLog, touchUpdated, wallYearSkeleton } from "../desk/ops.ts";
+import { appendLines, appendUnderWallMonth, cleanFieldValue, movedCount, prependChangeLog, touchUpdated, wallYearSkeleton } from "../desk/ops.ts";
+import {
+	canDefer,
+	deferCopy,
+	deferLabel,
+	deferMonth,
+	type DeferTarget,
+	describeDefer,
+	letGoPadLine,
+	locatePadLine,
+	markPadDeferred,
+	type PadLineRef,
+	putDeskCopy,
+	splitPadLine,
+} from "./defer.ts";
 import { askThirdMove, pickDate, pickMonth, promptText } from "../desk/modals.ts";
 import { drawerPath } from "../drawer/actions.ts";
 import { askWhen } from "../drawer/modals.ts";
@@ -264,6 +278,134 @@ export async function applyPending(host: PendingHost, padDate: string, sl: Sourc
 	if (idx !== null) put(index, prependChangeLog(dropIndexRow(idx, key, s.sections.pending), today, describeChoice(label, c, moved)));
 
 	const writes: Write[] = [...files].filter(([, v]) => v.before !== v.after).map(([path, v]) => ({ path, before: v.before, after: v.after }));
+	await commitBatch(io, writes);
+}
+
+// ───────────────────────── 할 일 넘기기 (Daily Pad → Desk Calendar) ─────────────────────────
+
+/** The three entries of the 넘기기 menu. */
+export type DeferPick = "inbox" | "tomorrow" | "day";
+
+/**
+ * Daily Pad 「개인 할 일」 / 「회사 할 일」 → Desk Calendar: ask what is needed (third postpone: 의무 /
+ * 가치 first; 「다른 날…」: the date), then write in one checked batch. Only today's or a later
+ * Pad (an older day's open lines are 결정 대기's job). Returns true when the files were written.
+ */
+export async function chooseDefer(host: PendingHost, padDate: string, section: string, ref: PadLineRef, pick: DeferPick, today: string): Promise<boolean> {
+	const app = host.app;
+	const text = taskKey(ref.line);
+	if (padDate < today) {
+		new Notice("지난 날의 할 일은 다음 날 「결정 대기」에서 정해요.");
+		return false;
+	}
+	const moved = movedCount(ref.line);
+	if (moved >= 2) {
+		const a = await askThirdMove(app, text, moved);
+		if (a === "cancel") return false;
+		if (a === "letgo" || a === "split") return finishThirdMove(host, padDate, section, ref, a, today);
+	}
+	let target: DeferTarget | null = null;
+	if (pick === "inbox") target = { kind: "inbox", month: padDate.slice(0, 7) };
+	else if (pick === "tomorrow") target = { kind: "day", date: addDays(padDate, 1) };
+	else {
+		const date = await pickDate(app, "다른 날로 넘기기", addDays(padDate, 1), `「${text}」을(를) 할 날을 골라요. Desk Calendar 그날 칸에 들어가요.`);
+		if (!date) return false;
+		if (date <= padDate) {
+			new Notice("이 Daily Pad 날짜보다 뒤의 날을 골라 주세요.");
+			return false;
+		}
+		target = { kind: "day", date };
+	}
+	try {
+		await exclusive(host, () => deferPadTask(host, padDate, section, ref, target!, today));
+	} catch (err) {
+		console.error("[MyLogs] 할 일 넘기기 실패", err);
+		new Notice(err instanceof Error ? err.message : String(err));
+		return false;
+	}
+	new Notice(`「${text}」을(를) ${deferLabel(target)}(으)로 넘겼어요.`);
+	return true;
+}
+
+/** Third postpone answered 놓아주기 / 쪼개기: only this Daily Pad line changes (+ the index log). */
+async function finishThirdMove(host: PendingHost, padDate: string, section: string, ref: PadLineRef, a: "letgo" | "split", today: string): Promise<boolean> {
+	const text = taskKey(ref.line);
+	let why = "";
+	let parts: string[] = [];
+	if (a === "letgo") {
+		why = (await promptText(host.app, "놓아주기", { desc: `「${text}」을(를) 하지 않기로 해요. 이유를 한 줄로 남겨요.`, placeholder: "예: 지금 목표와 관계없음", okText: "놓아주기" })) ?? "";
+		if (!why.trim()) return false;
+	} else {
+		const v = await promptText(host.app, "쪼개기", {
+			desc: `「${text}」을(를) 더 작은 다음 행동으로 나눠요. 한 줄에 하나씩 적어요. 이 줄 바로 아래에 들어가요.`,
+			placeholder: "예: 자료 목록 만들기\n첫 단락 쓰기",
+			multiline: true,
+			okText: "쪼개기",
+		});
+		parts = (v ?? "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+		if (!parts.length) return false;
+	}
+	try {
+		await exclusive(host, async () => {
+			const io = vaultIO(host.app);
+			const pad = padPath(host, padDate);
+			const before = await io.read(pad);
+			if (before === null) throw new Error(`Daily Pad 파일이 없어요: ${pad}`);
+			const r = a === "letgo" ? letGoPadLine(before, section, ref, why, today) : splitPadLine(before, section, ref, parts, today);
+			if (!r.ok) throw new Error(PAD_LINE_CHANGED);
+			const writes: Write[] = [{ path: pad, before, after: r.text }];
+			const index = normalizePath(`${host.settings.dailyPadFolder}/${INDEX_FILE}`);
+			const idx = await io.read(index);
+			const what = a === "letgo" ? `${section} 「${text}」 놓아줌 (why:: ${cleanFieldValue(why)})` : `${section} 「${text}」 쪼갬 → ${parts.length}개`;
+			if (idx !== null) writes.push({ path: index, before: idx, after: prependChangeLog(idx, today, what) });
+			await commitBatch(io, writes);
+		});
+	} catch (err) {
+		console.error("[MyLogs] 할 일 넘기기 실패", err);
+		new Notice(err instanceof Error ? err.message : String(err));
+		return false;
+	}
+	new Notice(a === "letgo" ? `「${text}」을(를) 놓아줬어요.` : `「${text}」을(를) ${parts.length}개로 쪼갰어요.`);
+	return true;
+}
+
+const PAD_LINE_CHANGED = "Daily Pad의 그 줄이 그새 바뀌었어요. 화면을 다시 그렸어요.";
+
+/**
+ * Write a 넘기기: the Desk copy at the end of the target (인박스 / day cell), the Pad line
+ * `[>] … → 보낸 곳 (moved:: n+1)`, and the Daily Pad Index change log — one `commitBatch`, so a
+ * file Hermes (or sync) changed in the meantime cancels everything.
+ */
+export async function deferPadTask(host: PendingHost, padDate: string, section: string, ref: PadLineRef, target: DeferTarget, today: string): Promise<void> {
+	const io = vaultIO(host.app);
+	const s = host.settings;
+	const pad = padPath(host, padDate);
+	const padBefore = await io.read(pad);
+	if (padBefore === null) throw new Error(`Daily Pad 파일이 없어요: ${pad}`);
+	const idx = locatePadLine(padBefore, section, ref);
+	if (idx === -1) throw new Error(PAD_LINE_CHANGED);
+	const cur = padBefore.split(/\r?\n/)[idx];
+	if (!canDefer(cur)) throw new Error("열린 할 일만 넘길 수 있어요 (완료·옮김·놓아줌·Flywheel 줄 제외).");
+	const marked = markPadDeferred(padBefore, section, ref, target, today);
+	if (!marked.ok) throw new Error(PAD_LINE_CHANGED);
+
+	const ym = deferMonth(target);
+	const deskPath = deskMonthPath(host, ym);
+	const deskBefore = await io.read(deskPath);
+	if (deskBefore === null) throw new Error(`${ym} Desk Calendar가 아직 없어요. Desk Calendar에서 새 달을 만든 뒤 다시 넘겨 주세요.`);
+	const put = putDeskCopy(deskBefore, target, deferCopy(cur, section === s.sections.work), today);
+	if (!put.ok) {
+		if (put.reason === "duplicate") throw new Error(`${deferLabel(target)}에 같은 할 일이 이미 있어요. 넘기지 않았어요.`);
+		throw new Error(target.kind === "inbox" ? `${ym} Desk Calendar에 인박스(## 이달 중)가 없어요.` : `${ym} Desk Calendar에 ${target.date} 칸이 없어요.`);
+	}
+
+	const writes: Write[] = [
+		{ path: deskPath, before: deskBefore, after: put.text },
+		{ path: pad, before: padBefore, after: marked.text },
+	];
+	const index = normalizePath(`${s.dailyPadFolder}/${INDEX_FILE}`);
+	const idxText = await io.read(index);
+	if (idxText !== null) writes.push({ path: index, before: idxText, after: prependChangeLog(idxText, today, describeDefer(taskKey(cur), section, target, movedCount(cur))) });
 	await commitBatch(io, writes);
 }
 
