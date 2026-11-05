@@ -11695,6 +11695,8 @@ body.is-mobile .fw3-ws-cover { height: 110px; }
 .st .st-st.s-wait { background: var(--background-modifier-hover); color: var(--text-muted); }
 .st .st-st.s-going { background: color-mix(in srgb, var(--st-warn) 18%, var(--background-primary)); color: var(--st-warn); }
 .st .st-st.s-cancel { background: var(--background-modifier-hover); color: var(--text-faint); }
+.st .st-st.s-unknown { background: color-mix(in srgb, var(--st-warn) 18%, var(--background-primary)); color: var(--st-warn); border: 1px dashed color-mix(in srgb, var(--st-warn) 60%, transparent); }
+.st .st-slot.s-unknown { border-style: dashed; border-color: color-mix(in srgb, var(--st-warn) 60%, var(--background-modifier-border)); }
 .st .st-st.is-link { cursor: pointer; text-decoration: underline; }
 .st .st-nowmark { margin-right: 2px; }
 .st .st-statechips { margin-top: 6px; }

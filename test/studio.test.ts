@@ -491,7 +491,7 @@ test("스레드: payload, limits, result path, cancel", () => {
 	assert.ok(post({ text: `${five} https://example.com/5` }).some((x) => /링크/.test(x)));
 	assert.deepEqual(post({ text: "", media: media(20) }), []);
 	assert.ok(post({ text: "", media: media(21) }).some((x) => /미디어가 너무 많음/.test(x)));
-	assert.deepEqual(post({ text: "", media: [] }), ["본문도 미디어도 없어요."]);
+	assert.deepEqual(post({ text: "", media: [] }), ["글과 미디어가 모두 비어 있어요."]);
 	assert.deepEqual(post({ text: "글", media: [`${prefix}a.webp`] }), []);
 	assert.ok(post({ text: "글", media: [`${prefix}a.pdf`] }).some((x) => /지원하지 않는 미디어/.test(x)));
 	assert.ok(post({ text: "글", media: [`${prefix}../secret.jpg`] }).some((x) => /허용되지 않은/.test(x)));
@@ -503,7 +503,7 @@ test("스레드: payload, limits, result path, cancel", () => {
 	assert.ok(post({ topic: "a".repeat(51) }).some((x) => /주제/.test(x)));
 	assert.ok(post({ topic: "a.b" }).some((x) => /주제/.test(x)));
 	assert.ok(post({ topic: "a&b" }).some((x) => /주제/.test(x)));
-	assert.ok(post({ partsCount: 2 }).some((x) => /이어쓰기/.test(x)));
+	assert.deepEqual(post({ partsCount: 2, parts: [{ text: "하나", media: [] }, { text: "둘", media: [] }] }), []);
 	assert.deepEqual(post({ scheduled: "2026-11-01 21:01" }), []);
 	assert.ok(post({ scheduled: "2026-11-01 21:00" }).some((x) => /1분/.test(x)));
 	assert.equal(threadsUploadProblem("a.jpg", 8 * 1024 * 1024), null);
@@ -522,7 +522,7 @@ test("스레드: payload, limits, result path, cancel", () => {
 	assert.equal(schedule.channel, "threads");
 	assert.equal(schedule.title, parsed.title);
 	assert.equal(schedule.text, "한 줄");
-	assert.equal(schedule.parts, undefined);
+	assert.deepEqual(schedule.parts, [{ text: "둘", media: [] }]);
 	assert.deepEqual(schedule.media, [{ url: `${prefix}a.png`, alt: "설명" }]);
 	assert.equal(schedule.topic, "기록");
 	assert.equal(schedule.text.includes(parsed.title), false);

@@ -52,12 +52,16 @@ import {
 	type ThreadPart,
 	threadsTextLength,
 	threadsUploadProblem,
+	threadsCancelNote,
+	THREADS_MAX_PARTS,
+	canMoveToNewPost,
 } from "./model.ts";
 import {
 	addManualGlgam,
 	cancelSchedule,
 	channelEndpoint,
 	createPost,
+	moveToNewPost,
 	deletePost,
 	dropGlgam,
 	ensureIds,
@@ -582,7 +586,7 @@ export class StudioView extends ItemView {
 				this.render();
 			});
 		}
-		const kinds: ["all" | PostStateKind, string][] = [["all", "전체"], ["before", "예약 전"], ["scheduled", "예약됨"], ["going", "발행 중"], ["published", "발행됨"], ["failed", "실패"], ["cancelled", "취소됨"]];
+		const kinds: ["all" | PostStateKind, string][] = [["all", "전체"], ["before", "예약 전"], ["scheduled", "예약됨"], ["going", "발행 중"], ["published", "발행됨"], ["unknown", "결과 불명"], ["failed", "실패"], ["cancelled", "취소됨"]];
 		const stateRow = root.createDiv({ cls: "st-chips st-statechips" });
 		for (const [k, label] of kinds) {
 			const b = stateRow.createEl("button", { cls: k === this.boardKind ? "is-on" : "", text: label, attr: { type: "button" } });
@@ -594,7 +598,8 @@ export class StudioView extends ItemView {
 		const inCh = d.posts.filter((p) => !this.boardCh || p.channel.key === this.boardCh);
 		const nSched = inCh.filter((p) => postState(p).kind === "scheduled").length;
 		const nFail = inCh.filter((p) => postState(p).kind === "failed").length;
-		stateRow.createSpan({ cls: "st-statecount", text: `예약됨 ${nSched} · 실패 ${nFail}` });
+		const nUnknown = inCh.filter((p) => postState(p).kind === "unknown").length;
+		stateRow.createSpan({ cls: "st-statecount", text: `예약됨 ${nSched} · 실패 ${nFail}${nUnknown ? ` · 결과 불명 ${nUnknown}` : ""}` });
 		const board = root.createDiv({ cls: "st-board" });
 		const weekAgo = moment().subtract(7, "days").format("YYYY-MM-DD");
 		const posts = d.posts.filter((p) => (!this.boardCh || p.channel.key === this.boardCh) && (this.boardKind === "all" || postState(p).kind === this.boardKind));
@@ -660,7 +665,14 @@ export class StudioView extends ItemView {
 		if (p.now) el.createSpan({ cls: "st-nowmark", text: "⚡" });
 		el.appendText(s.kind === "scheduled" && s.detail ? `${s.name} ${s.detail}` : s.name);
 		if (s.kind === "failed" && s.detail) el.createSpan({ cls: "st-tiny", text: ` ${s.detail.split("\n")[0]}` });
-		if (s.kind === "published" && p.url) {
+		if (s.kind === "published" && s.detail && s.detail !== p.url) tip(el, s.detail);
+		if (s.kind === "cancelled" && s.detail) tip(el, s.detail);
+		if (s.kind === "unknown") {
+			el.createSpan({ cls: "st-tiny", text: " · Threads에서 직접 확인해 주세요" });
+			tip(el, s.detail);
+		}
+		// 결과 불명 with a url: the link is kept so the check on Threads is one click.
+		if ((s.kind === "published" || s.kind === "unknown") && p.url) {
 			el.addClass("is-link");
 			el.addEventListener("click", (ev) => {
 				ev.preventDefault();
@@ -696,6 +708,7 @@ export class StudioView extends ItemView {
 		m.addItem((i) => i.setTitle("열기").setIcon("pencil").onClick(() => this.openPost(p.path)));
 		m.addItem((i) => i.setTitle("원문 열기").setIcon("file-text").onClick(() => void openPath(this.plugin, p.path)));
 		if (p.stage !== "발행") m.addItem((i) => i.setTitle("발행했어요…").setIcon("check").onClick(() => void this.askPublished(p)));
+		if (canMoveToNewPost(p)) m.addItem((i) => i.setTitle("새 글로 옮기기…").setIcon("copy-plus").onClick(() => void this.moveToNew(p)));
 		if (p.stage !== "발행" && channelEndpoint(this.plugin, p.channel.key) && !blocksNow(postProblems(p, { mediaPrefix: publicPrefix(s3Config(this.plugin)) }))) {
 			m.addItem((i) => {
 				i.setTitle("지금 발행…").setIcon("zap").onClick(() => void this.confirmSendNow(p));
@@ -733,7 +746,7 @@ export class StudioView extends ItemView {
 		if (stage === "예약") return this.openPost(p.path);
 		if (stage === "발행") return void this.askPublished(p);
 		if (p.stage === "예약" && p.sent) {
-			const ok = await askForm(this.app, { title: "예약을 취소할까요?", desc: "이미 보낸 글이에요. 단계를 옮기면 받은 쪽에 취소를 보내요.", fields: [], cta: "취소하고 옮기기" });
+			const ok = await askForm(this.app, { title: "예약을 취소할까요?", desc: `이미 보낸 글이에요. 단계를 옮기면 받은 쪽에 취소를 보내요.${threadsCancelNote(p) ? ` ${threadsCancelNote(p)}` : ""}`, fields: [], cta: "취소하고 옮기기" });
 			if (!ok) return;
 			await this.run(async () => {
 				await cancelSchedule(this.plugin, p);
@@ -1010,7 +1023,7 @@ export class StudioView extends ItemView {
 
 		const stateLine = main.createDiv({ cls: "st-lock" });
 		this.stateBadge(stateLine, p);
-		stateLine.createSpan({ text: p.sent && p.scheduled ? ` ${moment(p.scheduled, "YYYY-MM-DD HH:mm").format("M/D HH:mm")}에 보낼 예약이에요.` : "" });
+		stateLine.createSpan({ text: p.sent && p.scheduled && !p.cancelled ?` ${moment(p.scheduled, "YYYY-MM-DD HH:mm").format("M/D HH:mm")}에 보낼 예약이에요.` : "" });
 		if (p.warning) main.createDiv({ cls: "st-warn-banner", text: p.warning });
 		if (p.error) main.createDiv({ cls: "st-banner is-bad", text: `발행 실패: ${p.error}` });
 
@@ -1166,7 +1179,8 @@ export class StudioView extends ItemView {
 		});
 		const add = main.createDiv({ cls: "st-tadd" });
 		const b = add.createEl("button", { cls: "st-btn is-sm", text: "＋ 이어 쓰기", attr: { type: "button" } });
-		add.createSpan({ cls: "st-small st-faint", text: " 이어쓰기는 아직 보낼 수 없어요. 글은 하나만, 500자(이모티콘은 바이트)까지." });
+		b.disabled = p.parts.length >= THREADS_MAX_PARTS;
+		add.createSpan({ cls: "st-small st-faint", text: ` 첫 글 아래 답글로 차례대로 올라가요. 글마다 ${p.channel.limit}자(이모티콘은 바이트)까지, 최대 ${THREADS_MAX_PARTS}개. 글마다 글이나 미디어 중 하나는 있어야 해요(사진만 있는 글도 돼요). 긴 타래는 다 올라가는 데 몇 분 걸릴 수 있어요.` });
 		b.addEventListener("click", () => {
 			p.parts.push({ text: "", media: [] } as ThreadPart);
 			this.dirtyBody = true;
@@ -1414,6 +1428,27 @@ export class StudioView extends ItemView {
 		this.register(() => window.clearTimeout(id));
 	}
 
+	/** 「새 글로 옮기기」: new post with the parts not yet up, then open it. The original stays as it is. */
+	private async moveToNew(p: Post): Promise<void> {
+		const d = this.d;
+		if (!d) return;
+		const ok = await askForm(this.app, {
+			title: "새 글로 옮기기",
+			desc: "아직 안 올라간 타래 글을 새 글(새 id)로 옮겨요. 발행 결과에서 글별 상태를 알 수 없으면 전체를 복사하니, 이미 올라간 글은 지우고 보내 주세요. 이 글은 바뀌지 않아요.",
+			fields: [],
+			cta: "새 글 만들기",
+		});
+		if (!ok) return;
+		await this.flushBody();
+		let path = "";
+		await this.run(async () => {
+			const r = await moveToNewPost(this.plugin, d, p);
+			path = r.path;
+			new Notice(`새 글을 만들었어요. ${r.note}`.trim(), 12000);
+		});
+		if (path) this.openPost(path);
+	}
+
 	private async confirmSendNow(p: Post): Promise<void> {
 		const ok = await askForm(this.app, {
 			title: "지금 발행",
@@ -1483,8 +1518,15 @@ export class StudioView extends ItemView {
 		if (sent) {
 			const c = g.createEl("button", { cls: "st-btn is-ghost st-wide", text: "예약 취소", attr: { type: "button" } });
 			c.addEventListener("click", () => void this.run(() => cancelSchedule(this.plugin, p)));
+			const cancelNote = threadsCancelNote(p);
+			if (cancelNote) g.createDiv({ cls: "st-tiny st-faint", text: cancelNote });
 		}
-		g.createDiv({ cls: "st-route", text: `보낼 곳: ${hook ? ROUTE[p.channel.key] : "아직 없음 — 설정 › 콘텐츠 스튜디오"}${p.sent ? ` · ${moment(p.sent, "YYYY-MM-DD HH:mm").format("M/D HH:mm")} 예약됨` : ""}` });
+		g.createDiv({ cls: "st-route", text: `보낼 곳: ${hook ? ROUTE[p.channel.key] : "아직 없음 — 설정 › 콘텐츠 스튜디오"}${p.sent ? ` · ${moment(p.sent, "YYYY-MM-DD HH:mm").format("M/D HH:mm")} 예약됨${p.cancelled ? " → 취소함 (결과 대기)" : ""}` : ""}` });
+		if (canMoveToNewPost(real)) {
+			const mv = g.createEl("button", { cls: "st-btn st-wide", text: "새 글로 옮기기", attr: { type: "button" } });
+			mv.addEventListener("click", () => void this.moveToNew(real));
+			g.createDiv({ cls: "st-tiny st-faint", text: "아직 안 올라간 글만 새 글(새 id)에 담아요. 어느 글이 올라갔는지 모르면 전체를 복사해요. 이 글은 그대로 둬요." });
+		}
 		if (p.stage !== "발행") {
 			const pub = g.createEl("button", { cls: "st-btn is-ghost is-sm", text: "발행했어요… (주소 넣기)", attr: { type: "button" } });
 			pub.addEventListener("click", () => void this.askPublished(p));
