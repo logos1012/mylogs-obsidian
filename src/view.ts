@@ -1,6 +1,7 @@
 import { toggleLinkedProjectTask } from "./projects/task-actions.ts";
 import { mountAppNav } from "./ui/nav.ts";
 import { tip } from "./ui/tip.ts";
+import { attachToRow } from "./ui/row-tail.ts";
 import { ItemPopover } from "./ui/popover.ts";
 import { chooseDefer, choosePending, chooseToday, type DeferPick, pendingSide, togglePending } from "./pending/actions.ts";
 import { canDefer } from "./pending/defer.ts";
@@ -395,8 +396,8 @@ class SectionPanel {
 		setIcon(b, "calendar-arrow-up");
 		if (!b.querySelector("svg")) setIcon(b, "calendar");
 		tip(b, "오늘 하지 않을 일을 Desk Calendar로 넘겨요 (인박스 · 다른 날)");
-		// Before a nested list, so the button stays on the task's own row.
-		li.insertBefore(b, li.querySelector(":scope > ul, :scope > ol"));
+		// On the task's own text row (inside a loose item's <p>, before a nested list), glued to the last word.
+		attachToRow(li, b);
 		b.addEventListener("click", (ev) => {
 			ev.preventDefault();
 			ev.stopPropagation();
@@ -926,7 +927,8 @@ export class DailyPadView extends ItemView {
 		lis.forEach((li, n) => {
 			const line = tops[n];
 			const linked = recordLinksOf(line);
-			const b = li.createEl("button", { cls: `clickable-icon ml-memo-wheel${linked.length ? " is-linked" : ""}`, attr: { type: "button", "aria-label": "바퀴 기록으로 잇기" } });
+			const b = createEl("button", { cls: `clickable-icon ml-memo-wheel${linked.length ? " is-linked" : ""}`, attr: { type: "button", "aria-label": "바퀴 기록으로 잇기" } });
+			attachToRow(li, b);
 			setIcon(b, "repeat");
 			tip(b, linked.length ? `바퀴 기록과 이어짐: ${linked.map((a) => a.replace(/ 기록 \d{4}-\d{2}#.*$/, "")).join(", ")}` : "바퀴 기록으로 잇기 (메모는 그대로)");
 			b.addEventListener("click", (ev) => {
