@@ -248,3 +248,121 @@ export function nameList(v: unknown): string[] {
 	const arr = Array.isArray(v) ? v : typeof v === "string" && v.trim() ? [v] : [];
 	return arr.map((x) => String(x).replace(/^\[\[|\]\]$/g, "").split("|")[0].trim()).filter(Boolean);
 }
+
+/**
+ * 날짜별 학습자료 모음: a folder of daily notes (`{모음}/{YYYY}/{YYYY-MM-DD} ….md`) listed in
+ * `Shelf.md` 「## 날짜별 학습자료 모음」. Shown as a 칸 without `wiki/`:
+ *
+ *   칸   the folder (subtitle = the map's description)
+ *   책   one: `Index`, else a root note with `type: index`, else the newest daily note
+ *   글   the daily notes in year folders, as 자료 (`sources`), newest first
+ *
+ * `AGENTS.md`, `Index` and other root notes are not 글. Read only — nothing is written to the vault.
+ */
+export interface DatedCollectionRow {
+	name: string;
+	description: string;
+}
+
+/** Folder token of a map line: `` `x/` ``, `[[…/x]]` / `[[…/x/Index|…]]`, or a bare `x/`. */
+function collectionName(s: string): string {
+	const t = s.trim();
+	let raw = "";
+	const tick = /^`([^`]+)`/.exec(t);
+	const link = /^\[\[([^\]|#]+)[^\]]*\]\]/.exec(t);
+	const bare = /^([^`[\]—|]+?)\/\s*(?:—|$)/.exec(t);
+	if (tick) raw = tick[1];
+	else if (link) raw = link[1].replace(/\.md$/, "").replace(/\/(Index|index)$/, "");
+	else if (bare) raw = bare[1] + "/";
+	else return "";
+	return raw.trim().replace(/\/+$/, "").split("/").pop()?.trim() ?? "";
+}
+
+/** `Shelf.md` 「## 날짜별 학습자료 모음」 → folders in order (list items or table rows; description after `—`). */
+export function parseDatedCollections(text: string | null): DatedCollectionRow[] {
+	if (!text) return [];
+	const out: DatedCollectionRow[] = [];
+	let inSection = false;
+	let header = true;
+	for (const line of text.split("\n")) {
+		if (/^##\s/.test(line)) {
+			inSection = /^##\s+날짜별 학습자료 모음\s*$/.test(line);
+			header = true;
+			continue;
+		}
+		if (!inSection) continue;
+		const l = line.trim();
+		let name = "";
+		let description = "";
+		if (l.startsWith("|")) {
+			const cells = l.replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+			if (header) {
+				header = false;
+				continue;
+			}
+			if (cells.every((c) => /^:?-+:?$/.test(c) || c === "")) continue;
+			name = collectionName(cells[0] ?? "");
+			const dash = (cells[0] ?? "").split("—").slice(1).join("—");
+			description = strip(dash || cells[1] || "");
+		} else {
+			const m = /^(?:[-*+]|\d+\.)\s+(.+)$/.exec(l);
+			if (!m) continue;
+			name = collectionName(m[1]);
+			description = strip(m[1].split("—").slice(1).join("—"));
+		}
+		if (name && !out.some((r) => r.name === name)) out.push({ name, description });
+	}
+	return out;
+}
+
+export interface CollectionFile {
+	path: string;
+	basename: string;
+	fm: Record<string, unknown>;
+}
+
+const DAILY_RE = /^\d{4}-\d{2}-\d{2}/;
+
+/** Daily note: `{YYYY}/{YYYY-MM-DD}….md` directly under the collection folder. */
+export function isDailyNote(rel: string): boolean {
+	const parts = rel.split("/");
+	return parts.length === 2 && /^\d{4}$/.test(parts[0]) && DAILY_RE.test(parts[1]) && /\.md$/.test(parts[1]);
+}
+
+/**
+ * One collection folder → a 칸 with (at most) one 책. `base` is the folder path with a trailing `/`;
+ * `files` are the markdown files under it. The book's summary is the map description here; the view
+ * may swap in the Index note's own summary.
+ */
+export function buildCollection(row: DatedCollectionRow, base: string, files: CollectionFile[]): ShelfWiki {
+	const inside = files.filter((f) => f.path.startsWith(base)).map((f) => ({ f, rel: f.path.slice(base.length) }));
+	const articles = sortArticles(
+		inside
+			.filter(({ f, rel }) => isDailyNote(rel) && f.basename !== "AGENTS" && f.basename.toLowerCase() !== "index")
+			.map(({ f }) => ({ title: typeof f.fm.title === "string" && f.fm.title.trim() ? f.fm.title.trim() : f.basename, path: f.path, kind: "sources" as ArticleKind, updated: isoDate(f.fm.date) || isoDate(f.basename) })),
+	);
+	const root = inside.filter(({ rel }) => !rel.includes("/")).map(({ f }) => f);
+	const indexName = `${row.name} Index`;
+	const index =
+		root.find((f) => f.basename === "Index" || f.basename.toLowerCase() === "index") ??
+		root.find((f) => f.basename === indexName) ??
+		root.find((f) => String(f.fm.type ?? "").toLowerCase() === "index");
+	const bookPath = index?.path ?? articles[0]?.path;
+	const books: ShelfBook[] = [];
+	if (bookPath) {
+		const fm = index?.fm ?? {};
+		const own = index ? isoDate(fm.updated) || isoDate(fm.date) || isoDate(fm.created) : "";
+		const latest = articles.reduce((m, a) => (a.updated > m ? a.updated : m), own);
+		books.push({
+			wiki: row.name,
+			slug: row.name,
+			label: bookLabel(row.name, fm.label),
+			summary: row.description,
+			path: bookPath,
+			tags: tagList(fm.tags),
+			articles,
+			updated: latest,
+		});
+	}
+	return { name: row.name, scope: row.description, keywords: "", books, inbox: 0 };
+}
