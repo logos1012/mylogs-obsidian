@@ -1,7 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+	canvasStyle,
 	centerOn,
+	contentToScreen,
+	createSettler,
+	gridSize,
+	pinchView,
+	screenToContent,
+	SETTLE_MS,
+	type SettleTimers,
+	snapToDevicePixel,
 	columnX,
 	edgePath,
 	fitView,
@@ -208,4 +217,123 @@ test("visibleRect / centerOn / minimapFit", () => {
 	assert.equal(m.s, 0.2);
 	assert.equal(m.ox, 0);
 	assert.equal(m.oy, (120 - 100) / 2);
+});
+
+// ── crisp zoom rendering ──
+
+test("screenToContent / contentToScreen are inverses", () => {
+	const v = { x: 123.4, y: -56.7, k: 0.37 };
+	const c = screenToContent(v, 300, 200);
+	const p = contentToScreen(v, c.x, c.y);
+	assert.ok(Math.abs(p.x - 300) < 1e-9 && Math.abs(p.y - 200) < 1e-9);
+});
+
+test("pinchView keeps the content under the start midpoint under the moving midpoint", () => {
+	const start = { x: 40, y: 10, k: 0.5 };
+	const startMid = { x: 200, y: 150 };
+	const under = screenToContent(start, startMid.x, startMid.y);
+	const v = pinchView(start, startMid, 100, { x: 260, y: 170 }, 180);
+	assert.equal(v.k, 0.9);
+	const p = contentToScreen(v, under.x, under.y);
+	assert.ok(Math.abs(p.x - 260) < 1e-9 && Math.abs(p.y - 170) < 1e-9);
+	assert.equal(pinchView(start, startMid, 100, startMid, 100000).k, MAX_ZOOM);
+	assert.equal(pinchView(start, startMid, 0, startMid, 0).k, MIN_ZOOM);
+});
+
+test("snapToDevicePixel rounds to device pixels and tolerates bad dpr", () => {
+	assert.equal(snapToDevicePixel(10.4), 10);
+	assert.equal(snapToDevicePixel(10.6), 11);
+	assert.equal(snapToDevicePixel(10.3, 2), 10.5);
+	assert.equal(snapToDevicePixel(10.2, 2), 10);
+	assert.equal(snapToDevicePixel(10.4, 0), 10);
+	assert.equal(snapToDevicePixel(10.4, Number.NaN), 10);
+	assert.ok(Object.is(snapToDevicePixel(-0.2), 0));
+});
+
+test("canvasStyle: scaled mode is a transform scale, crisp mode is CSS zoom + snapped translate", () => {
+	const v = { x: 10.3, y: -4.6, k: 1.5 };
+	const scaled = canvasStyle(v, "scaled");
+	assert.equal(scaled.transform, "translate(10.3px, -4.6px) scale(1.5)");
+	assert.equal(scaled.zoom, "");
+	const crisp = canvasStyle(v, "crisp", 1);
+	assert.equal(crisp.transform, "translate(10px, -5px)");
+	assert.ok(!crisp.transform.includes("scale"));
+	assert.equal(crisp.zoom, "1.5");
+	assert.deepEqual([crisp.tx, crisp.ty], [10, -5]);
+	const hi = canvasStyle(v, "crisp", 2);
+	assert.equal(hi.transform, "translate(10.5px, -4.5px)");
+	// Same content point lands within half a device pixel in both modes.
+	for (const [cx, cy] of [[0, 0], [500, 300], [-80, 2400]]) {
+		const a = { x: scaled.tx + cx * v.k, y: scaled.ty + cy * v.k };
+		const b = { x: hi.tx + cx * Number(hi.zoom), y: hi.ty + cy * Number(hi.zoom) };
+		assert.ok(Math.abs(a.x - b.x) <= 0.25 && Math.abs(a.y - b.y) <= 0.25);
+	}
+});
+
+test("gridSize doubles small spacings up to at least 12px", () => {
+	assert.equal(gridSize(1), 22);
+	assert.equal(gridSize(0.5), 22);
+	assert.equal(gridSize(0.25), 22);
+	assert.ok(gridSize(MIN_ZOOM) >= 12);
+	assert.equal(gridSize(2), 44);
+	assert.equal(gridSize(0), 22);
+});
+
+function fakeTimers(): SettleTimers & { now: number; advance(ms: number): void } {
+	let id = 0;
+	const q = new Map<number, { at: number; fn: () => void }>();
+	const t = {
+		now: 0,
+		set(fn: () => void, ms: number) {
+			q.set(++id, { at: t.now + ms, fn });
+			return id;
+		},
+		clear(h: unknown) {
+			q.delete(h as number);
+		},
+		advance(ms: number) {
+			t.now += ms;
+			for (const [k, v] of [...q]) if (v.at <= t.now) {
+				q.delete(k);
+				v.fn();
+			}
+		},
+	};
+	return t;
+}
+
+test("createSettler fires once SETTLE_MS after the last poke", () => {
+	assert.equal(SETTLE_MS, 150);
+	const t = fakeTimers();
+	let n = 0;
+	const s = createSettler(() => n++, SETTLE_MS, t);
+	assert.equal(s.pending, false);
+	s.poke();
+	t.advance(100);
+	s.poke();
+	t.advance(100);
+	assert.equal(n, 0);
+	assert.equal(s.pending, true);
+	t.advance(50);
+	assert.equal(n, 1);
+	assert.equal(s.pending, false);
+	t.advance(1000);
+	assert.equal(n, 1);
+});
+
+test("createSettler flush/cancel", () => {
+	const t = fakeTimers();
+	let n = 0;
+	const s = createSettler(() => n++, 150, t);
+	s.flush();
+	assert.equal(n, 0);
+	s.poke();
+	s.flush();
+	assert.equal(n, 1);
+	t.advance(500);
+	assert.equal(n, 1);
+	s.poke();
+	s.cancel();
+	t.advance(500);
+	assert.equal(n, 1);
 });
