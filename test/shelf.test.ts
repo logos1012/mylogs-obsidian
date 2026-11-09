@@ -44,3 +44,64 @@ test("reader: body without frontmatter and H1, title split, frontmatter lists, r
 	const book = { wiki: "w", slug: "s", label: "S", summary: "", path: "m", tags: [], updated: "", articles: [a("자료1", "sources", "2026-10-02"), a("개념1", "concepts", "2026-10-01"), a("개념2", "concepts", "2026-10-03")] };
 	assert.deepEqual(readingOrder(book).map((x) => x.title), ["개념2", "개념1", "자료1"]);
 });
+
+test("날짜별 학습자료 모음: backticks, wiki links, bare folders; trailing slash; description after —", async () => {
+	const { parseDatedCollections } = await import("../src/shelf/model.ts");
+	const text = `# Shelf 지도\n\n## 위키\n\n| 위키 | 범위 |\n|---|---|\n| 생활 위키 | 일반 |\n\n## 날짜별 학습자료 모음\n\n- \`하루 신문 A1/\` — 김하루의 아침 신문 1면 공부\n- [[07 Shelf/영어 일기/Index|영어 일기]] — 매일 영어 한 쪽\n- 그림 연습/ — 하루 한 장\n- \`하루 신문 A1\` — 중복\n- 그냥 문장 — 폴더 아님\n\n## 받은 자료\n\n- \`밖/\` — 다른 절\n`;
+	assert.deepEqual(parseDatedCollections(text), [
+		{ name: "하루 신문 A1", description: "김하루의 아침 신문 1면 공부" },
+		{ name: "영어 일기", description: "매일 영어 한 쪽" },
+		{ name: "그림 연습", description: "하루 한 장" },
+	]);
+	assert.deepEqual(parseDatedCollections("## 날짜별 학습자료 모음\n\n| 폴더 | 설명 |\n|---|---|\n| `메모장/` | 표 설명 |\n"), [{ name: "메모장", description: "표 설명" }]);
+	assert.deepEqual(parseDatedCollections(MAP), []);
+	assert.deepEqual(parseDatedCollections(null), []);
+});
+
+test("날짜별 모음 → 칸: Index is the book, year-folder daily notes are 자료, newest first", async () => {
+	const { buildCollection, isDailyNote } = await import("../src/shelf/model.ts");
+	const base = "07 Shelf/하루 신문 A1/";
+	const f = (rel: string, fm: Record<string, unknown> = {}) => ({ path: base + rel, basename: rel.split("/").pop()!.replace(/\.md$/, ""), fm });
+	const files = [
+		f("AGENTS.md"),
+		f("하루 신문 A1 Index.md", { tags: ["뉴스"], type: "index" }),
+		f("메모.md"),
+		f("2026/2026-11-07 금리 동결.md", { type: "news-tutoring", date: "2026-11-07" }),
+		f("2026/2026-11-08 환율.md", { title: "환율 1,400원" }),
+		f("2026/정리.md"),
+		f("2026/sub/2026-11-09 깊은 곳.md"),
+		{ path: "07 Shelf/딴 모음/2026/2026-11-09 x.md", basename: "2026-11-09 x", fm: {} },
+	];
+	assert.ok(isDailyNote("2025/2025-12-31 송년.md") && !isDailyNote("2025-12-31.md") && !isDailyNote("2025/sub/2025-12-31.md") && !isDailyNote("26/2025-12-31.md"));
+	const w = buildCollection({ name: "하루 신문 A1", description: "아침 1면" }, base, files);
+	assert.equal(w.name, "하루 신문 A1");
+	assert.equal(w.scope, "아침 1면");
+	assert.equal(w.inbox, 0);
+	assert.equal(w.books.length, 1);
+	const b = w.books[0];
+	assert.equal(b.path, base + "하루 신문 A1 Index.md");
+	assert.equal(b.wiki, "하루 신문 A1");
+	assert.equal(b.summary, "아침 1면");
+	assert.deepEqual(b.tags, ["뉴스"]);
+	assert.equal(b.updated, "2026-11-08");
+	assert.deepEqual(b.articles.map((a) => [a.title, a.kind, a.updated]), [
+		["환율 1,400원", "sources", "2026-11-08"],
+		["2026-11-07 금리 동결", "sources", "2026-11-07"],
+	]);
+});
+
+test("날짜별 모음 → 책 without Index: a `type: index` root note, else the newest daily; empty folder has no book", async () => {
+	const { buildCollection } = await import("../src/shelf/model.ts");
+	const base = "07 Shelf/영어 일기/";
+	const row = { name: "영어 일기", description: "" };
+	const d1 = { path: base + "2026/2026-11-01.md", basename: "2026-11-01", fm: {} };
+	const d2 = { path: base + "2026/2026-11-03.md", basename: "2026-11-03", fm: {} };
+	const home = { path: base + "목차.md", basename: "목차", fm: { type: "index" } };
+	assert.equal(buildCollection(row, base, [d1, d2, home]).books[0].path, home.path);
+	const fallback = buildCollection(row, base, [d1, d2]).books[0];
+	assert.equal(fallback.path, d2.path);
+	assert.equal(fallback.articles.length, 2);
+	assert.deepEqual(buildCollection(row, base, [{ path: base + "AGENTS.md", basename: "AGENTS", fm: {} }]).books, []);
+	const named = { path: base + "영어 일기 Index.md", basename: "영어 일기 Index", fm: {} };
+	assert.equal(buildCollection(row, base, [d1, named]).books[0].path, named.path);
+});

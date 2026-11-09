@@ -1,5 +1,6 @@
 /**
  * Shelf view (`mylogs-shelf`): `07 Shelf/` as a bookcase. 칸 = wiki, 책 = domain MOC, width = 글 수.
+ * 날짜별 학습자료 모음 (`Shelf.md` 「날짜별 학습자료 모음」) follow the wikis: 칸 = folder, 책 = Index, 글 = daily notes.
  * Read only: a book pulls out to its summary, article counts and recent articles; titles open the
  * 읽기 화면 (`reader.ts`) inside this view — 「원본 열기」 is the only way to the editor.
  * Creating 칸 / 책 is not decided yet (계획 「Shelf」).
@@ -9,9 +10,11 @@ import { Component, debounce, ItemView, MarkdownRenderer, moment, normalizePath,
 import type MyLogsPlugin from "../main.ts";
 import { mountAppNav } from "../ui/nav.ts";
 import { tip } from "../ui/tip.ts";
-import { articlePlace, articleTitle, bookLabel, countInbox, isoDate, KIND_LABEL, nameList, parseShelfMap, readerBody, readingOrder, type ShelfArticle, type ShelfBook, type ShelfWiki, summaryOf, tagList } from "./model.ts";
+import { articlePlace, articleTitle, bookLabel, buildCollection, countInbox, isoDate, KIND_LABEL, nameList, parseDatedCollections, parseShelfMap, readerBody, readingOrder, type ShelfArticle, type ShelfBook, type ShelfWiki, summaryOf, tagList } from "./model.ts";
 import { type ReaderControl, type ReaderPrefs, type ReaderTheme, renderReader, type RefGroup } from "./reader.ts";
 import { renderShelf, type ShelfState } from "./render.ts";
+
+const articlesHave = (b: ShelfBook, path: string) => b.articles.some((a) => a.path === path);
 
 export const VIEW_TYPE_SHELF = "mylogs-shelf";
 
@@ -158,6 +161,22 @@ export class ShelfView extends ItemView {
 			}
 			const list = [...books.values()].sort((x, y) => y.articles.length - x.articles.length || x.label.localeCompare(y.label));
 			out.push({ name: r.name, scope: r.scope, keywords: r.keywords, books: list, inbox: countInbox(mapText, r.name) });
+		}
+
+		// 날짜별 학습자료 모음: listed in `Shelf.md`, after the wikis, map order. Unlisted folders stay off.
+		for (const c of parseDatedCollections(mapText)) {
+			const dir = top instanceof TFolder ? top.children.find((x): x is TFolder => x instanceof TFolder && x.name === c.name) : undefined;
+			if (!dir || names.includes(c.name)) continue;
+			const base = `${root}/${c.name}/`;
+			const row = buildCollection(c, base, files.filter((f) => f.path.startsWith(base)).map((f) => ({ path: f.path, basename: f.basename, fm: this.fm(f) })));
+			const book = row.books[0];
+			const bookFile = book ? this.app.vault.getAbstractFileByPath(book.path) : null;
+			if (book && bookFile instanceof TFile && !articlesHave(book, bookFile.path)) {
+				// The Index note's own summary, when it has one; else the map description.
+				const fm = this.fm(bookFile);
+				book.summary = summaryOf(await this.app.vault.cachedRead(bookFile), fm.summary) || book.summary;
+			}
+			out.push(row);
 		}
 		return out;
 	}
