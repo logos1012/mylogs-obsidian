@@ -8982,7 +8982,12 @@ body.theme-dark .mylogs-pinboard .pbm-node {
 	left: 0;
 	top: 0;
 	transform-origin: 0 0;
-	will-change: transform;
+	/* no permanent will-change: a 1x composited layer blurs when scaled. map.ts sets it only mid-gesture. */
+}
+.mylogs-pinboard .pbm-zoom {
+	position: absolute;
+	left: 0;
+	top: 0;
 }
 .mylogs-pinboard .pbm-edges {
 	position: absolute;

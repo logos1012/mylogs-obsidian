@@ -300,12 +300,28 @@ export function fitView(bounds: Rect, vw: number, vh: number, pad = 40): View {
 	return { k, x: (vw - bw * k) / 2 - bounds.x * k, y: (vh - bh * k) / 2 - bounds.y * k };
 }
 
+/** Content point shown at viewport point (px, py). */
+export function screenToContent(view: View, px: number, py: number): { x: number; y: number } {
+	return { x: (px - view.x) / view.k, y: (py - view.y) / view.k };
+}
+
+/** Viewport point where content point (cx, cy) is shown. */
+export function contentToScreen(view: View, cx: number, cy: number): { x: number; y: number } {
+	return { x: cx * view.k + view.x, y: cy * view.k + view.y };
+}
+
 /** Zoom by `factor` keeping the screen point (px, py) over the same content point. */
 export function zoomAt(view: View, factor: number, px: number, py: number): View {
 	const k = clampZoom(view.k * factor);
-	const cx = (px - view.x) / view.k;
-	const cy = (py - view.y) / view.k;
-	return { k, x: px - cx * k, y: py - cy * k };
+	const c = screenToContent(view, px, py);
+	return { k, x: px - c.x * k, y: py - c.y * k };
+}
+
+/** Two-finger pinch: the content point under the start midpoint follows the current midpoint. */
+export function pinchView(start: View, startMid: { x: number; y: number }, startDist: number, mid: { x: number; y: number }, dist: number): View {
+	const k = clampZoom(start.k * (dist / (startDist || 1)));
+	const c = screenToContent(start, startMid.x, startMid.y);
+	return { k, x: mid.x - c.x * k, y: mid.y - c.y * k };
 }
 
 /** The content-space rectangle the viewport shows. */
@@ -324,6 +340,96 @@ export function minimapFit(bounds: Rect, mw: number, mh: number, pad = 8): { s: 
 	const bh = Math.max(1, bounds.h);
 	const s = Math.min((mw - 2 * pad) / bw, (mh - 2 * pad) / bh);
 	return { s, ox: (mw - bw * s) / 2, oy: (mh - bh * s) / 2 };
+}
+
+// ───────────────────────── crisp rendering ─────────────────────────
+//
+// While a zoom gesture runs, the canvas is scaled with a GPU transform (cheap, but the layer is
+// rasterised once and stretched → blurry). Once input has been quiet for SETTLE_MS the canvas is
+// re-rendered at native resolution: the scale moves into CSS `zoom` on an inner wrapper (real
+// layout at k, so text/SVG are rasterised crisply) and the outer transform becomes a pure,
+// device-pixel-snapped translate. Pans don't change k, so they stay in the crisp mode throughout.
+
+/** Quiet time (ms) after the last wheel/pointer/pinch input before re-rendering crisply. */
+export const SETTLE_MS = 150;
+
+/** "scaled" = transform scale (during a zoom gesture), "crisp" = CSS zoom + snapped translate. */
+export type CanvasMode = "scaled" | "crisp";
+
+export interface CanvasStyle {
+	/** Outer `.pbm-canvas` transform. */
+	transform: string;
+	/** Inner `.pbm-zoom` CSS zoom ("" = none). */
+	zoom: string;
+	/** Applied translate, also used for the background grid. */
+	tx: number;
+	ty: number;
+}
+
+/** Round to the nearest device pixel so the settled canvas isn't resampled at a subpixel offset. */
+export function snapToDevicePixel(v: number, dpr = 1): number {
+	const r = Number.isFinite(dpr) && dpr > 0 ? dpr : 1;
+	return Math.round(v * r) / r + 0; // + 0 turns -0 into 0
+}
+
+export function canvasStyle(view: View, mode: CanvasMode, dpr = 1): CanvasStyle {
+	if (mode === "scaled") return { transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})`, zoom: "", tx: view.x, ty: view.y };
+	const tx = snapToDevicePixel(view.x, dpr);
+	const ty = snapToDevicePixel(view.y, dpr);
+	return { transform: `translate(${tx}px, ${ty}px)`, zoom: String(view.k), tx, ty };
+}
+
+/** Background dot-grid spacing at zoom k (doubled until it is at least 12 px). */
+export function gridSize(k: number): number {
+	let g = 22 * k;
+	if (!(g > 0)) return 22;
+	while (g < 12) g *= 2;
+	return g;
+}
+
+export interface SettleTimers {
+	set(fn: () => void, ms: number): unknown;
+	clear(handle: unknown): void;
+}
+
+export interface Settler {
+	/** (Re)start the quiet-period countdown. */
+	poke(): void;
+	/** Settle now if a countdown is pending. */
+	flush(): void;
+	cancel(): void;
+	readonly pending: boolean;
+}
+
+/** Debounce: `onSettle` runs once, `delay` ms after the last `poke()`. */
+export function createSettler(onSettle: () => void, delay = SETTLE_MS, timers?: SettleTimers): Settler {
+	const t: SettleTimers = timers ?? {
+		set: (fn, ms) => setTimeout(fn, ms),
+		clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+	};
+	let handle: unknown = null;
+	const stop = () => {
+		if (handle !== null) t.clear(handle);
+		handle = null;
+	};
+	return {
+		poke() {
+			stop();
+			handle = t.set(() => {
+				handle = null;
+				onSettle();
+			}, delay);
+		},
+		flush() {
+			if (handle === null) return;
+			stop();
+			onSettle();
+		},
+		cancel: stop,
+		get pending() {
+			return handle !== null;
+		},
+	};
 }
 
 // ───────────────────────── labels ─────────────────────────
@@ -385,7 +491,6 @@ function icon(parent: HTMLElement, name: string, cls = "pbm-icon"): HTMLElement 
 
 /** Movement (px) after which a press is a pan, not a click. */
 const DRAG_SLOP = 4;
-const GRID = 22;
 const ZOOM_STEP = 1.2;
 
 export function renderStrategyMap(parent: HTMLElement, input: MapInput, cb: MapCallbacks): { destroy(): void } {
@@ -420,9 +525,12 @@ export function renderStrategyMap(parent: HTMLElement, input: MapInput, cb: MapC
 	const viewport = root.createDiv({ cls: "pbm-viewport" });
 	viewport.setAttr("aria-label", `${input.title ?? "목표"} 전략 맵`);
 	const canvas = viewport.createDiv({ cls: "pbm-canvas" });
+	// Inner wrapper carries CSS `zoom` when settled; kept separate so zoom doesn't also scale the outer translate.
+	const zoomLayer = canvas.createDiv({ cls: "pbm-zoom" });
 	const edgeSvg = svgEl(doc, "svg", { class: "pbm-edges", "aria-hidden": "true" });
-	canvas.appendChild(edgeSvg);
-	const nodeLayer = canvas.createDiv({ cls: "pbm-nodes" });
+	zoomLayer.appendChild(edgeSvg);
+	const nodeLayer = zoomLayer.createDiv({ cls: "pbm-nodes" });
+	const cssZoom = typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("zoom", "2");
 
 	// toolbar
 	const bar = root.createDiv({ cls: "pbm-toolbar" });
@@ -638,12 +746,32 @@ export function renderStrategyMap(parent: HTMLElement, input: MapInput, cb: MapC
 
 	// ── view ──
 
+	// `interacting`: input in the last SETTLE_MS (will-change on). `scaling`: k changed during it.
+	let interacting = false;
+	let scaling = false;
+	const settler = createSettler(() => settle(), SETTLE_MS, {
+		set: (fn, ms) => win.setTimeout(fn, ms),
+		clear: (h) => win.clearTimeout(h as number),
+	});
+
+	function settle(): void {
+		// Fingers still down: wait for the release, which pokes the settler again.
+		if (pointers.size || miniDrag) return;
+		interacting = false;
+		scaling = false;
+		applyView();
+	}
+
 	function applyView(): void {
-		canvas.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`;
-		let g = GRID * view.k;
-		while (g < 12) g *= 2;
+		const mode: CanvasMode = scaling || !cssZoom ? "scaled" : "crisp";
+		const st = canvasStyle(view, mode, win.devicePixelRatio || 1);
+		canvas.style.transform = st.transform;
+		if (st.zoom) zoomLayer.style.setProperty("zoom", st.zoom);
+		else zoomLayer.style.removeProperty("zoom");
+		canvas.style.willChange = interacting ? "transform" : "";
+		const g = gridSize(view.k);
 		viewport.style.backgroundSize = `${g}px ${g}px`;
-		viewport.style.backgroundPosition = `${view.x}px ${view.y}px`;
+		viewport.style.backgroundPosition = `${st.tx}px ${st.ty}px`;
 		zoomLabel.setText(`${Math.round(view.k * 100)}%`);
 		if (vw && vh) {
 			const { s, ox, oy } = minimapFit(layout.bounds, MINI_W, MINI_H);
@@ -655,7 +783,13 @@ export function renderStrategyMap(parent: HTMLElement, input: MapInput, cb: MapC
 		}
 	}
 
-	function setView(v: View): void {
+	/** `live` = part of a wheel/pan/pinch/minimap gesture: render cheaply now, crisply once input settles. */
+	function setView(v: View, live = false): void {
+		if (live) {
+			interacting = true;
+			if (v.k !== view.k) scaling = true;
+			settler.poke();
+		}
 		view = v;
 		applyView();
 	}
@@ -723,10 +857,7 @@ export function renderStrategyMap(parent: HTMLElement, input: MapInput, cb: MapC
 		pointers.set(e.pointerId, local(e));
 		if (pinch && pointers.size >= 2) {
 			const t = twoPoints();
-			const k = clampZoom(pinch.view.k * (t.dist / pinch.dist));
-			const cx = (pinch.mid.x - pinch.view.x) / pinch.view.k;
-			const cy = (pinch.mid.y - pinch.view.y) / pinch.view.k;
-			setView({ k, x: t.mid.x - cx * k, y: t.mid.y - cy * k });
+			setView(pinchView(pinch.view, pinch.mid, pinch.dist, t.mid, t.dist), true);
 			return;
 		}
 		const p = pointers.get(e.pointerId);
@@ -738,7 +869,7 @@ export function renderStrategyMap(parent: HTMLElement, input: MapInput, cb: MapC
 			moved = true;
 			viewport.addClass("is-panning");
 		}
-		setView({ k: start.view.k, x: start.view.x + dx, y: start.view.y + dy });
+		setView({ k: start.view.k, x: start.view.x + dx, y: start.view.y + dy }, true);
 	}
 
 	function onUp(e: PointerEvent): void {
@@ -753,6 +884,7 @@ export function renderStrategyMap(parent: HTMLElement, input: MapInput, cb: MapC
 		pinch = null;
 		pointers.clear();
 		viewport.removeClass("is-panning");
+		if (interacting) settler.poke();
 	}
 
 	// A press that turned into a pan is not a click on the card under it.
@@ -784,11 +916,11 @@ export function renderStrategyMap(parent: HTMLElement, input: MapInput, cb: MapC
 			if (e.ctrlKey || e.metaKey) {
 				const r = viewport.getBoundingClientRect();
 				const d = Math.max(-60, Math.min(60, dy));
-				setView(zoomAt(view, Math.exp(-d * 0.01), e.clientX - r.left, e.clientY - r.top));
+				setView(zoomAt(view, Math.exp(-d * 0.01), e.clientX - r.left, e.clientY - r.top), true);
 			} else if (e.shiftKey && !dx) {
-				setView({ ...view, x: view.x - dy });
+				setView({ ...view, x: view.x - dy }, true);
 			} else {
-				setView({ ...view, x: view.x - dx, y: view.y - dy });
+				setView({ ...view, x: view.x - dx, y: view.y - dy }, true);
 			}
 		},
 		{ passive: false },
@@ -802,7 +934,7 @@ export function renderStrategyMap(parent: HTMLElement, input: MapInput, cb: MapC
 		const { s, ox, oy } = minimapFit(layout.bounds, MINI_W, MINI_H);
 		const cx = (e.clientX - r.left - ox) / s + layout.bounds.x;
 		const cy = (e.clientY - r.top - oy) / s + layout.bounds.y;
-		setView(centerOn(view, cx, cy, vw, vh));
+		setView(centerOn(view, cx, cy, vw, vh), true);
 	};
 	on<PointerEvent>(mini, "pointerdown", (e) => {
 		if (e.pointerType === "mouse" && e.button !== 0) return;
@@ -816,6 +948,7 @@ export function renderStrategyMap(parent: HTMLElement, input: MapInput, cb: MapC
 	});
 	const miniEnd = (e: PointerEvent) => {
 		miniDrag = false;
+		if (interacting) settler.poke();
 		if (mini.hasPointerCapture(e.pointerId)) mini.releasePointerCapture(e.pointerId);
 	};
 	on(mini, "pointerup", miniEnd);
@@ -841,6 +974,7 @@ export function renderStrategyMap(parent: HTMLElement, input: MapInput, cb: MapC
 	return {
 		destroy() {
 			ro.disconnect();
+			settler.cancel();
 			gesture?.abort();
 			gesture = null;
 			ac.abort();
