@@ -354,7 +354,7 @@ export async function sendNow(plugin: MyLogsPlugin, p: Post): Promise<string> {
 		if (p.channel.key === "th") throw new Error("스레드 접수 주소를 설정 › 콘텐츠 스튜디오에 넣어 주세요.");
 		throw new Error("설정 › 콘텐츠 스튜디오에서 보낼 곳을 넣어 주세요.");
 	}
-	const when = immediateAt(p.channel.key);
+	const when = immediateAt(p.channel.key, new Date(), p.format);
 	const r = await postWebhook(plugin, { ...p, scheduled: when }, "schedule");
 	const intake = interpretIntake(r.status, r.text);
 	if (!intake.ok) {

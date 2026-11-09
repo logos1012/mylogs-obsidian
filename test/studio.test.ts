@@ -12,8 +12,11 @@ import {
 	markDropped,
 	markWritten,
 	unmarkWritten,
+	blocksNow,
 	channelMinLeadMs,
 	defaultSchedule,
+	FORMATS,
+	leadProblem,
 	prefillSchedule,
 	SCHEDULE_PRESETS,
 	schedulePresetAt,
@@ -609,4 +612,200 @@ test("지금 발행 control is a tinted button class, not ghost text", () => {
 	assert.match(SEND_NOW_BUTTON_CLASS, /\bst-now\b/);
 	assert.equal(SEND_NOW_BUTTON_CLASS.includes("is-ghost"), false);
 	assert.equal(SEND_NOW_MENU_CLASS, "st-now-menu");
+});
+
+
+test("링크드인 FORMATS에 링크가 있고 FM·페이로드가 article을 실어요", () => {
+	assert.deepEqual(FORMATS.li, ["글만", "링크", "이미지", "문서", "영상"]);
+	const t = `---
+id: C-20261112-02
+channel: 링크드인
+format: 링크
+stage: 초안
+link: https://n.news.naver.com/article/047/0002534981?sid=102
+link_title: AI 전문가도 사라진다
+link_description: 본문 요약
+link_thumbnail: https://example.com/thumb.jpg
+scheduled: "2026-11-12 08:00"
+---
+
+## 본문
+
+기사 소개 글
+`;
+	const p = parsePost("x/2026-11-12 AI.md", t, LI);
+	assert.equal(p.format, "링크");
+	assert.equal(p.link, "https://n.news.naver.com/article/047/0002534981?sid=102");
+	assert.equal(p.linkTitle, "AI 전문가도 사라진다");
+	assert.equal(p.linkDescription, "본문 요약");
+	assert.equal(p.linkThumbnail, "https://example.com/thumb.jpg");
+	const pay = buildPayload(p);
+	assert.equal(pay.format, "링크");
+	assert.deepEqual(pay.media, []);
+	assert.deepEqual(pay.article, {
+		source: "https://n.news.naver.com/article/047/0002534981?sid=102",
+		title: "AI 전문가도 사라진다",
+		description: "본문 요약",
+		thumbnail: "https://example.com/thumb.jpg",
+	});
+	const bare = parsePost(
+		"x/t.md",
+		setFm(setPostBody(postSkeleton(LI, "C-L", []), LI, { text: "본문" }), {
+			format: "링크",
+			link: "https://example.com/a",
+			scheduled: "2026-11-12 08:00",
+		}),
+		LI,
+	);
+	const barePay = buildPayload(bare);
+	assert.deepEqual(barePay.article, { source: "https://example.com/a" });
+	assert.equal("title" in (barePay.article ?? {}), false);
+	assert.equal(JSON.stringify(barePay).includes('"media":[]'), true);
+});
+
+test("링크드인 기존 형식 페이로드에 article 키가 없어요 (회귀)", () => {
+	const mk = (format: string, media: string[] = []) =>
+		parsePost(
+			"x/t.md",
+			setFm(setPostBody(postSkeleton(LI, "C-1", []), LI, { text: "본문입니다." }), {
+				format,
+				scheduled: "2026-11-10 08:00",
+				...(media.length ? { media } : {}),
+			}),
+			LI,
+		);
+	for (const [format, media] of [
+		["글만", [] as string[]],
+		["이미지", ["https://b.s3.ap-northeast-2.amazonaws.com/studio/a.png"]],
+		["문서", ["https://b.s3.ap-northeast-2.amazonaws.com/studio/a.pdf"]],
+		["영상", ["https://b.s3.ap-northeast-2.amazonaws.com/studio/a.mp4"]],
+	] as const) {
+		const pay = buildPayload(mk(format, [...media]));
+		const json = JSON.stringify(pay);
+		assert.equal(json.includes('"article"'), false, format);
+		assert.equal(pay.format, format);
+		assert.equal(pay.text, "본문입니다.");
+		assert.deepEqual(pay.media, [...media]);
+		assert.equal(pay.at, "2026-11-10T08:00:00+09:00");
+		assert.equal(pay.channel, "linkedin");
+	}
+});
+
+test("링크드인 링크 검증과 영상 10분 lead", () => {
+	const base = setPostBody(postSkeleton(LI, "C-1", []), LI, { text: "본문" });
+	const noLink = parsePost("x/t.md", setFm(base, { format: "링크", scheduled: "2026-11-12 08:00" }), LI);
+	assert.ok(postProblems(noLink).some((x) => x.level === "block" && x.text.includes("기사 주소")));
+	const bad = parsePost("x/t.md", setFm(base, { format: "링크", link: "not-a-url", scheduled: "2026-11-12 08:00" }), LI);
+	assert.ok(postProblems(bad).some((x) => x.level === "block" && x.text.includes("올바르지 않")));
+	const ok = parsePost(
+		"x/t.md",
+		setFm(base, { format: "링크", link: "https://example.com/a", scheduled: "2026-12-01 08:00" }),
+		LI,
+	);
+	assert.equal(
+		postProblems(ok, { now: Date.parse("2026-11-01T00:00:00+09:00") }).some((x) => x.text.includes("기사")),
+		false,
+	);
+
+	assert.equal(channelMinLeadMs("li", "영상"), 600_000);
+	assert.equal(channelMinLeadMs("li", "글만"), 60_000);
+	assert.equal(channelMinLeadMs("li"), 60_000);
+	assert.equal(channelMinLeadMs("th", "영상"), 60_000);
+	assert.equal(channelMinLeadMs("ig"), 120_000);
+
+	const now = Date.parse("2026-11-01T12:00:00+09:00");
+	assert.equal(leadProblem("li", "2026-11-01 12:05", now, "영상"), "예약 시각은 지금보다 10분 뒤여야 해요.");
+	assert.equal(leadProblem("li", "2026-11-01 12:10", now, "영상"), null);
+	assert.equal(leadProblem("li", "2026-11-01 12:00", now, "글만"), "예약 시각은 지금보다 1분 뒤여야 해요.");
+	assert.equal(leadProblem("li", "2026-11-01 12:01", now, "글만"), null);
+	assert.equal(leadProblem("ig", "2026-11-01 12:01", now), "예약 시각은 지금보다 2분 뒤여야 해요.");
+
+	const t = new Date("2026-11-01T12:00:10.000Z"); // 21:00:10 KST
+	assert.equal(immediateAt("li", t, "글만"), "2026-11-01 21:02");
+	assert.equal(immediateAt("li", t), "2026-11-01 21:02");
+	assert.equal(immediateAt("li", t, "영상"), "2026-11-01 21:11");
+
+	const at = (h: number, min: number, s = 0, ms = 0) => new Date(2026, 10, 1, h, min, s, ms);
+	assert.equal(schedulePresetAt("am7", "li", at(6, 55, 0), "영상"), "2026-11-02 07:00");
+	assert.equal(schedulePresetAt("am7", "li", at(6, 55, 0), "글만"), "2026-11-01 07:00");
+	assert.equal(schedulePresetAt("am7", "li", at(6, 50, 0), "영상"), "2026-11-01 07:00");
+
+	assert.equal(blocksNow([{ level: "block", text: "예약 시각은 지금보다 10분 뒤여야 해요." }]), false);
+	assert.equal(blocksNow([{ level: "block", text: "기사 주소를 넣어 주세요." }]), true);
+});
+
+
+test("링크드인 결과 warning: 파싱·반영·상태 유지, 빈 article 키 없음", () => {
+	const absent = parseResultJson(`{"id":"C-1","status":"published","url":"https://www.linkedin.com/feed/update/x/","error":null,"at":"2026-11-12 08:05"}`);
+	assert.equal(absent?.warning, undefined);
+	const empty = parseResultJson(`{"id":"C-1","status":"published","url":"https://www.linkedin.com/feed/update/x/","error":null,"at":"2026-11-12 08:05","warning":""}`);
+	assert.equal(empty?.warning, undefined);
+	const warned = parseResultJson(`{"id":"C-1","status":"published","url":"https://www.linkedin.com/feed/update/x/","error":null,"at":"2026-11-12 08:05","warning":"썸네일 업로드에 실패해 미리보기 없이 올렸어요"}`);
+	assert.equal(warned?.warning, "썸네일 업로드에 실패해 미리보기 없이 올렸어요");
+	assert.equal(warned?.status, "published");
+
+	const t = `---\nid: C-1\nstage: 예약\nscheduled: "2026-11-12 08:00"\nsent: "2026-11-11 20:00"\n---\n\n## 본문\n\n글\n`;
+	const p = parsePost("x/t.md", t, LI);
+	const patch = resultPatch(p, warned!);
+	assert.deepEqual(patch, {
+		published: "2026-11-12",
+		url: "https://www.linkedin.com/feed/update/x/",
+		stage: "발행",
+		error: null,
+		warning: "썸네일 업로드에 실패해 미리보기 없이 올렸어요",
+	});
+	assert.equal(appliedLabel(patch!), "발행 반영");
+	assert.equal(resultPatch({ ...p, published: "2026-11-12", url: warned!.url, stage: "발행", warning: warned!.warning! }, warned!), null);
+	assert.deepEqual(resultPatch(p, absent!), {
+		published: "2026-11-12",
+		url: "https://www.linkedin.com/feed/update/x/",
+		stage: "발행",
+		error: null,
+	});
+
+	const noSource = parsePost(
+		"x/t.md",
+		setFm(setPostBody(postSkeleton(LI, "C-L", []), LI, { text: "본문" }), { format: "링크", scheduled: "2026-11-12 08:00" }),
+		LI,
+	);
+	const pay = buildPayload(noSource);
+	assert.equal("article" in pay, false);
+	assert.deepEqual(pay.media, []);
+	const withEmptyOpts = parsePost(
+		"x/t.md",
+		setFm(setPostBody(postSkeleton(LI, "C-L2", []), LI, { text: "본문" }), {
+			format: "링크",
+			link: "https://example.com/a",
+			link_title: "",
+			link_description: "  ",
+			link_thumbnail: "",
+			scheduled: "2026-11-12 08:00",
+		}),
+		LI,
+	);
+	const art = buildPayload(withEmptyOpts).article!;
+	assert.deepEqual(art, { source: "https://example.com/a" });
+	assert.equal(JSON.stringify(art).includes('""'), false);
+	assert.equal("title" in art, false);
+	assert.equal("description" in art, false);
+	assert.equal("thumbnail" in art, false);
+});
+
+
+test("링크드인 「링크」에서 다른 형식으로 바꾸면 남은 link는 무시해요", () => {
+	const img = "https://b.s3.ap-northeast-2.amazonaws.com/studio/a.png";
+	const p = parsePost(
+		"x/t.md",
+		setFm(setPostBody(postSkeleton(LI, "C-1", []), LI, { text: "본문" }), {
+			format: "이미지",
+			media: [img],
+			link: "not-a-url",
+			scheduled: "2026-12-01 08:00",
+		}),
+		LI,
+	);
+	const pay = buildPayload(p);
+	assert.equal(JSON.stringify(pay).includes('"article"'), false);
+	assert.deepEqual(pay.media, [img]);
+	assert.equal(postProblems(p, { now: Date.parse("2026-11-01T00:00:00+09:00") }).some((x) => x.text.includes("기사")), false);
 });

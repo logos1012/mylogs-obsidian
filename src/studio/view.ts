@@ -36,6 +36,8 @@ import {
 	isStage,
 	type Post,
 	postProblems,
+	isPartialNote,
+	isUnknownNote,
 	postState,
 	type PostStateKind,
 	prefillSchedule,
@@ -1024,7 +1026,10 @@ export class StudioView extends ItemView {
 		const stateLine = main.createDiv({ cls: "st-lock" });
 		this.stateBadge(stateLine, p);
 		stateLine.createSpan({ text: p.sent && p.scheduled && !p.cancelled ?` ${moment(p.scheduled, "YYYY-MM-DD HH:mm").format("M/D HH:mm")}에 보낼 예약이에요.` : "" });
-		if (p.warning) main.createDiv({ cls: "st-warn-banner", text: p.warning });
+		if (p.warning) {
+			const soft = p.stage === "발행" && !isPartialNote(p.warning) && !isUnknownNote(p.warning);
+			main.createDiv({ cls: "st-warn-banner", text: soft ? `경고 · ${p.warning}` : p.warning });
+		}
 		if (p.error) main.createDiv({ cls: "st-banner is-bad", text: `발행 실패: ${p.error}` });
 
 		if (p.channel.key === "li") this.editLinkedIn(main, side, p);
@@ -1074,6 +1079,31 @@ export class StudioView extends ItemView {
 		const row = main.createDiv({ cls: "st-row st-edrow" });
 		row.createSpan({ cls: "st-small st-muted", text: "형식" });
 		this.formatSeg(row, p);
+		if (p.format === "링크") {
+			const linkBox = main.createDiv({ cls: "st-sideg" });
+			linkBox.createEl("h2", { text: "기사 링크" });
+			const urlRow = linkBox.createDiv({ cls: "st-row st-edrow" });
+			urlRow.createSpan({ cls: "st-small st-muted", text: "기사 주소" });
+			const url = urlRow.createEl("input", { cls: "st-search st-grow", attr: { type: "url", placeholder: "https://…" } });
+			url.value = p.link;
+			url.addEventListener("change", () => void this.setFields({ link: url.value.trim() || null }, false));
+			const titleRow = linkBox.createDiv({ cls: "st-row st-edrow" });
+			titleRow.createSpan({ cls: "st-small st-muted", text: "제목" });
+			const title = titleRow.createEl("input", { cls: "st-search st-grow", attr: { type: "text", placeholder: "선택" } });
+			title.value = p.linkTitle;
+			title.addEventListener("change", () => void this.setFields({ link_title: title.value.trim() || null }, false));
+			const descRow = linkBox.createDiv({ cls: "st-row st-edrow" });
+			descRow.createSpan({ cls: "st-small st-muted", text: "설명" });
+			const desc = descRow.createEl("input", { cls: "st-search st-grow", attr: { type: "text", placeholder: "선택" } });
+			desc.value = p.linkDescription;
+			desc.addEventListener("change", () => void this.setFields({ link_description: desc.value.trim() || null }, false));
+			const thumbRow = linkBox.createDiv({ cls: "st-row st-edrow" });
+			thumbRow.createSpan({ cls: "st-small st-muted", text: "썸네일" });
+			const thumb = thumbRow.createEl("input", { cls: "st-search st-grow", attr: { type: "url", placeholder: "이미지 URL (선택)" } });
+			thumb.value = p.linkThumbnail;
+			thumb.addEventListener("change", () => void this.setFields({ link_thumbnail: thumb.value.trim() || null }, false));
+			linkBox.createDiv({ cls: "st-tiny st-faint", text: "제목·설명·썸네일을 비워 두면 서버가 기사에서 가져와요." });
+		}
 		const paper = main.createDiv({ cls: "st-lipost" });
 		const ph = paper.createDiv({ cls: "st-liph" });
 		ph.createDiv({ cls: "st-liav" });
@@ -1107,7 +1137,12 @@ export class StudioView extends ItemView {
 			this.bodyChanged();
 		}, "본문을 쓰세요");
 		showFold();
-		this.mediaPanel(side, p, "미디어");
+		if (p.format !== "링크") this.mediaPanel(side, p, "미디어");
+		else {
+			const tip = side.createDiv({ cls: "st-sideg" });
+			tip.createEl("h2", { text: "링크 카드" });
+			tip.createDiv({ cls: "st-small st-muted", text: "기사 주소는 「기사 링크」 칸에 넣어요. 링크 글에는 미디어를 붙이지 않아요." });
+		}
 	}
 
 	private editThreads(main: HTMLElement, side: HTMLElement, p: Post): void {
@@ -1468,7 +1503,10 @@ export class StudioView extends ItemView {
 		const g = side.createDiv({ cls: "st-sideg is-last" });
 		const status = g.createDiv({ cls: "st-state-line" });
 		this.stateBadge(status, real);
-		if (real.warning) g.createDiv({ cls: "st-warn-banner", text: real.warning });
+		if (real.warning) {
+			const soft = real.stage === "발행" && !isPartialNote(real.warning) && !isUnknownNote(real.warning);
+			g.createDiv({ cls: "st-warn-banner", text: soft ? `경고 · ${real.warning}` : real.warning });
+		}
 		g.createEl("h2", { text: "예약" });
 		const assumed = !real.scheduled && real.stage !== "발행";
 		// shown as the current local minute; written when sent, edited, or a preset is chosen
@@ -1489,7 +1527,7 @@ export class StudioView extends ItemView {
 		for (const preset of SCHEDULE_PRESETS) {
 			const b = chips.createEl("button", { text: preset.label, attr: { type: "button" } });
 			b.addEventListener("click", () => {
-				const at = schedulePresetAt(preset.id, p.channel.key, new Date());
+				const at = schedulePresetAt(preset.id, p.channel.key, new Date(), p.format);
 				date.value = at.slice(0, 10);
 				time.value = at.slice(11, 16);
 				void this.setFields({ scheduled: at });

@@ -43,7 +43,7 @@ export type Stage = (typeof STAGES)[number];
 export const isStage = (s: string): s is Stage => (STAGES as readonly string[]).includes(s);
 
 export const FORMATS: Record<ChannelKey, string[]> = {
-	li: ["글만", "이미지", "문서", "영상"],
+	li: ["글만", "링크", "이미지", "문서", "영상"],
 	th: ["타래"],
 	ig: ["피드", "캐러셀", "릴스"],
 };
@@ -289,6 +289,11 @@ export interface Post {
 	/** Intake warning, shown once and kept until the next send. */
 	warning: string;
 	media: string[];
+	/** 기사 주소 (링크드인 「링크」). */
+	link: string;
+	linkTitle: string;
+	linkDescription: string;
+	linkThumbnail: string;
 	from: string[];
 	topic: string;
 	hashtags: string[];
@@ -300,7 +305,7 @@ export interface Post {
 	parts: ThreadPart[];
 }
 
-export const FM_ORDER = ["id", "channel", "format", "stage", "from", "topic", "media", "ratio", "alt", "hashtags", "scheduled", "sent", "published", "url", "error", "cancelled", "now", "warning"];
+export const FM_ORDER = ["id", "channel", "format", "stage", "from", "topic", "media", "link", "link_title", "link_description", "link_thumbnail", "ratio", "alt", "hashtags", "scheduled", "sent", "published", "url", "error", "cancelled", "now", "warning"];
 
 const str = (v: FmValue | undefined) => (Array.isArray(v) ? v.join(", ") : (v ?? "")).trim();
 const list = (v: FmValue | undefined) => (Array.isArray(v) ? v : v ? [v] : []).map((x) => x.trim()).filter(Boolean);
@@ -347,6 +352,10 @@ export function parsePost(path: string, text: string, ch: ChannelDef): Post {
 		now: str(fm.now) === "true",
 		warning: str(fm.warning),
 		media: list(fm.media),
+		link: str(fm.link),
+		linkTitle: str(fm.link_title),
+		linkDescription: str(fm.link_description),
+		linkThumbnail: str(fm.link_thumbnail),
 		from: list(fm.from),
 		topic: str(fm.topic),
 		hashtags: list(fm.hashtags).map((h) => h.replace(/^#/, "")),
@@ -461,8 +470,13 @@ export function postProblems(p: Post, ctx?: { now?: number; mediaPrefix?: string
 		if (p.hashtags.length > HASHTAG_MAX) out.push({ level: "block", text: `해시태그가 ${HASHTAG_MAX}개를 넘어요.` });
 	}
 	if (ch.key === "li" && (p.format === "이미지" || p.format === "영상" || p.format === "문서") && !p.media.length) out.push({ level: "warn", text: `형식이 「${p.format}」인데 미디어가 없어요.` });
+	if (ch.key === "li" && p.format === "링크") {
+		const link = p.link.trim();
+		if (!link) out.push({ level: "block", text: "기사 주소를 넣어 주세요." });
+		else if (!isHttpUrl(link)) out.push({ level: "block", text: "기사 주소가 올바르지 않아요." });
+	}
 	if ((ch.key === "li" || ch.key === "ig") && p.scheduled) {
-		const lead = leadProblem(ch.key, p.scheduled, ctx?.now ?? Date.now());
+		const lead = leadProblem(ch.key, p.scheduled, ctx?.now ?? Date.now(), p.format);
 		if (lead) out.push({ level: "block", text: lead });
 	}
 	if (!p.scheduled) out.push({ level: "block", text: "예약 날짜와 시각을 정해 주세요." });
@@ -476,17 +490,29 @@ export const SEND_NOW_MENU_CLASS = "st-now-menu";
 
 /** 「지금 발행」 ignores a missing time and a time that is too soon — it picks its own `at`. */
 export function blocksNow(problems: Problem[]): boolean {
-	return problems.some((x) => x.level === "block" && !x.text.startsWith("예약 날짜") && !x.text.includes("1분 뒤") && !x.text.includes("2분 뒤"));
+	return problems.some((x) => x.level === "block" && !x.text.startsWith("예약 날짜") && !x.text.includes("1분 뒤") && !x.text.includes("2분 뒤") && !x.text.includes("10분 뒤"));
 }
 
-/** LinkedIn and Threads need 60s; Instagram needs 120s. Null when the time is far enough or unset. */
-export function leadProblem(channel: ChannelKey, scheduled: string, now = Date.now()): string | null {
+/** LinkedIn/Threads 60s; Instagram 120s; LinkedIn 「영상」 10분. Null when far enough or unset. */
+export function leadProblem(channel: ChannelKey, scheduled: string, now = Date.now(), format = ""): string | null {
 	if (!scheduled || channel === "th") return null;
 	const at = scheduledInstant(scheduled);
 	if (at == null) return null;
-	const need = channel === "ig" ? 120_000 : 60_000;
+	const need = channelMinLeadMs(channel, format);
 	if (at >= now + need) return null;
-	return channel === "ig" ? "예약 시각은 지금보다 2분 뒤여야 해요." : "예약 시각은 지금보다 1분 뒤여야 해요.";
+	if (channel === "ig") return "예약 시각은 지금보다 2분 뒤여야 해요.";
+	if (channel === "li" && format === "영상") return "예약 시각은 지금보다 10분 뒤여야 해요.";
+	return "예약 시각은 지금보다 1분 뒤여야 해요.";
+}
+
+/** http(s) URL with a host. */
+export function isHttpUrl(s: string): boolean {
+	try {
+		const u = new URL(s);
+		return (u.protocol === "http:" || u.protocol === "https:") && !!u.hostname;
+	} catch {
+		return false;
+	}
 }
 
 export const isVideo = (u: string) => /\.(mp4|mov|m4v|webm)(\?|$)/i.test(u);
@@ -654,6 +680,8 @@ export interface Payload {
 	alt?: string[];
 	ratio?: string;
 	topic?: string;
+	/** LinkedIn article card. Omitted when absent so older intakes keep the same JSON. */
+	article?: { source: string; title?: string; description?: string; thumbnail?: string };
 }
 
 /** `2026-01-16 08:00` (Asia/Seoul) → `2026-01-16T08:00:00+09:00`. */
@@ -670,6 +698,17 @@ export function buildPayload(p: Post, action: "schedule" | "cancel" = "schedule"
 		// Top-level `text`/`media` = part 1, exactly as a single post. `parts` = parts 2..N, only when there are any. Title is not published.
 		const parts = d.parts && d.parts.length > 1 ? d.parts.slice(1).map((x): PayloadPart => ({ text: x.text, media: x.media })) : undefined;
 		return { ...base, text: d.text, media: d.media, ...(parts ? { parts } : {}), ...(d.topic ? { topic: d.topic } : {}) };
+	}
+	// Only 「링크」 sends an article: a link left over after switching to 이미지/영상 must not drop their media.
+	if (p.channel.key === "li" && p.format === "링크") {
+		const source = p.link.trim();
+		// Never put empty-string keys on article; no source → no article block (send still blocked by postProblems).
+		if (!source) return { ...base, text: captionOut(p), media: [] };
+		const article: NonNullable<Payload["article"]> = { source };
+		if (p.linkTitle.trim()) article.title = p.linkTitle.trim();
+		if (p.linkDescription.trim()) article.description = p.linkDescription.trim();
+		if (p.linkThumbnail.trim()) article.thumbnail = p.linkThumbnail.trim();
+		return { ...base, text: captionOut(p), media: [], article };
 	}
 	return { ...base, text: captionOut(p), media: p.media, ...(p.channel.key === "ig" ? { ratio: p.ratio, alt: p.alt } : {}) };
 }
@@ -689,6 +728,8 @@ export interface ResultRow {
 	error: string;
 	/** KST `YYYY-MM-DD HH:mm` (older ISO strings still compare). */
 	at: string;
+	/** Soft server note (e.g. LinkedIn article posted without thumbnail). Absent/empty = ignore. */
+	warning?: string;
 	/** Threads 타래: number of posts. Absent in older / single-post results. */
 	total?: number;
 	/** Threads 타래: how many posts went up. */
@@ -749,10 +790,12 @@ export function parseResultJson(text: string): ResultRow | null {
 	const id = resultStr(o.id);
 	if (!id) return null;
 	const row: ResultRow = { id, status: resultStr(o.status), url: resultStr(o.url), error: resultStr(o.error), at: resultStr(o.at) };
-	// 타래 fields are optional: a file with only status + url reads exactly as before.
+	// Optional fields: a file with only status + url reads exactly as before.
+	const warning = resultStr(o.warning);
 	const total = resultInt(o.total);
 	const publishedCount = resultInt(o.published_count);
 	const parts = resultParts(o.parts);
+	if (warning) row.warning = warning;
 	if (total !== undefined) row.total = total;
 	if (publishedCount !== undefined) row.publishedCount = publishedCount;
 	if (parts) row.parts = parts;
@@ -1078,9 +1121,9 @@ export function scheduledInstant(scheduled: string): number | null {
 	return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5])) - 9 * 3600_000;
 }
 
-/** Soonest minute-precision `at` the intake will accept. LinkedIn·Threads +70s, Instagram +130s, then round up to the next minute (KST). */
-export function immediateAt(channel: ChannelKey, now: Date = new Date()): string {
-	const lead = channel === "ig" ? 130_000 : 70_000;
+/** Soonest minute-precision `at` the intake will accept. LinkedIn·Threads +70s, Instagram +130s, LinkedIn 「영상」 +610s, then round up to the next minute (KST). */
+export function immediateAt(channel: ChannelKey, now: Date = new Date(), format = ""): string {
+	const lead = channel === "ig" ? 130_000 : channel === "li" && format === "영상" ? 610_000 : 70_000;
 	const kst = new Date(now.getTime() + lead + 9 * 3600_000);
 	let ms = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate(), kst.getUTCHours(), kst.getUTCMinutes());
 	if (kst.getUTCSeconds() > 0 || kst.getUTCMilliseconds() > 0) ms += 60_000;
@@ -1210,8 +1253,15 @@ export function resultPatch(p: Post, r: ResultRow | undefined): Record<string, F
 			return { published: (r.at || "").slice(0, 10) || p.scheduled.slice(0, 10), url, stage: "발행", error: null, warning: partial };
 		}
 		if (!note) {
-			if (p.published && p.url === url) return null;
-			return { published: (r.at || "").slice(0, 10) || p.scheduled.slice(0, 10), url, stage: "발행", error: null };
+			const soft = (r.warning ?? "").trim();
+			if (p.published && p.url === url && (!soft || p.warning === soft)) return null;
+			return {
+				published: (r.at || "").slice(0, 10) || p.scheduled.slice(0, 10),
+				url,
+				stage: "발행",
+				error: null,
+				...(soft ? { warning: soft } : {}),
+			};
 		}
 		if (p.published && p.url === url && p.warning === note) return null;
 		return { published: (r.at || "").slice(0, 10) || p.scheduled.slice(0, 10), url, stage: "발행", error: null, warning: note };
@@ -1375,9 +1425,11 @@ export function prefillSchedule(now: Date = new Date()): string {
 	return formatLocalMinute(ceilLocalMinute(now));
 }
 
-/** Minimum lead the schedule pre-check uses. Instagram 120s; LinkedIn and Threads 60s. */
-export function channelMinLeadMs(channel: ChannelKey): number {
-	return channel === "ig" ? 120_000 : 60_000;
+/** Minimum lead the schedule pre-check uses. Instagram 120s; LinkedIn 「영상」 10분; else LinkedIn/Threads 60s. */
+export function channelMinLeadMs(channel: ChannelKey, format = ""): number {
+	if (channel === "ig") return 120_000;
+	if (channel === "li" && format === "영상") return 600_000;
+	return 60_000;
 }
 
 export type SchedulePreset = "plus5" | "am7" | "noon" | "pm1730";
@@ -1401,11 +1453,11 @@ const PRESET_CLOCK: Record<Exclude<SchedulePreset, "plus5">, [number, number]> =
  * Fixed clocks use the next occurrence: today when that time is still at least
  * the channel lead ahead, otherwise tomorrow.
  */
-export function schedulePresetAt(preset: SchedulePreset, channel: ChannelKey, now: Date = new Date()): string {
+export function schedulePresetAt(preset: SchedulePreset, channel: ChannelKey, now: Date = new Date(), format = ""): string {
 	if (preset === "plus5") return formatLocalMinute(ceilLocalMinute(new Date(now.getTime() + 5 * 60_000)));
 	const [hour, minute] = PRESET_CLOCK[preset];
 	const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0);
-	if (target.getTime() < now.getTime() + channelMinLeadMs(channel)) target.setDate(target.getDate() + 1);
+	if (target.getTime() < now.getTime() + channelMinLeadMs(channel, format)) target.setDate(target.getDate() + 1);
 	return formatLocalMinute(target);
 }
 
