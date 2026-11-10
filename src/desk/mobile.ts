@@ -53,6 +53,8 @@ export interface DeskMobileHost {
 	setShowTasks(v: boolean): void;
 	/** 이달 중 of the shown month. */
 	duringItems(): DeskItem[];
+	/** The 인박스 lines the month list draws (`inboxShown`: assigned lines left out unless 「배정된 일도 보기」). */
+	inboxItems(): DeskItem[];
 	/** 이달 중 → 이번 주 할 일 → that day, in one go (주 보기 drop). */
 	assignDuringToDay(it: DeskItem, iso: string): Promise<void>;
 	/** 인박스 일정 → that day (`planAssignEventDay`). */
@@ -174,10 +176,11 @@ function monthBand(h: DeskMobileHost, root: HTMLElement, cur: MonthData): void {
 	// On a phone ◆ are shown per day / per week: no month list.
 	month.querySelector(".dc-milestone-month")?.remove();
 	const ul = month.querySelector<HTMLElement>(".dc-during ul");
-	wire(h, ul, cur.during, "during");
-	if (ul && ul.children.length === cur.during.length) {
+	const items = h.inboxItems();
+	wire(h, ul, items, "during");
+	if (ul && ul.children.length === items.length) {
 		Array.from(ul.children).forEach((li, i) => {
-			const it = cur.during[i];
+			const it = items[i];
 			if (h.isOpenTask(it)) dragToWeek(h, li as HTMLElement, it);
 			else if (h.isOpenEvent(it)) dragEventToWeek(h, li as HTMLElement, it);
 		});
@@ -345,7 +348,7 @@ function wire(h: DeskMobileHost, ul: HTMLElement | null, items: DeskItem[], kind
 		if (it.item.kind === null) return; // raw line, no menu
 		li.addClass("dc-m-tappable");
 		li.addEventListener("click", (e) => {
-			if ((e.target as HTMLElement).closest("button, a, .dc-sym.is-clickable, .dc-gchip")) return;
+			if ((e.target as HTMLElement).closest("button, a, .dc-sym.is-clickable, .dc-gchip, .dc-cal li.is-expanded .dc-txt")) return;
 			void itemSheet(h, li, it, kind, e);
 		});
 	});

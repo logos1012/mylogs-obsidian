@@ -23,6 +23,11 @@ export function renderProjectSchedule(parent:HTMLElement,host:ProjectsHost,p:Pro
   // Open by default (2026-10-28); 「달력 접기」 folds it until the view is reopened.
   const calOpen=state.calendar!==false||!!chosen;
   button(head,calOpen?"달력 접기":"달력 펼치기",()=>{state.calendar=!calOpen;if(!state.calendar)selectSchedule(host,null);paint();},"pf-cal-toggle");
+  // 「완료 숨김」 (remembered, on by default): done rows leave the list; the hub file is not touched.
+  const hideDone=host.settings.projectScheduleHideDone!==false;state.hideDone=hideDone;
+  const hb=button(head,hideDone?"완료 숨김":"모두 보기",()=>{host.settings.projectScheduleHideDone=!hideDone;void host.saveSettingsQuiet?.();paint();},`pf-done-toggle${hideDone?" is-active":""}`);
+  hb.setAttr("aria-pressed",String(hideDone));
+  tip(hb,hideDone?"완료한 할 일을 숨겼어요. 누르면 모두 보여요. 파일은 그대로예요.":"누르면 완료한 할 일을 숨겨요. 파일은 그대로예요.");
   const bar=root.createDiv({cls:"pf-schedule-selection",attr:{"aria-live":"polite"}});
   if(!chosen)bar.hide();
   bar.createSpan({text:chosen?`${chosen.kind==="milestone"?"◆":"□"} ${chosen.title} — 날짜를 선택하세요`:""});

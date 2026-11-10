@@ -12175,3 +12175,76 @@ body.is-mobile .fw3-ws-cover { height: 110px; }
 body.is-mobile .mylogs-daily-pad button.ml-defer-btn { opacity: 0.7; position: relative; padding: 4px; }
 /* 44 px hit area on a phone, without moving the layout. */
 body.is-mobile .mylogs-daily-pad button.ml-defer-btn::after { content: ""; position: absolute; inset: -10px; }
+
+/* Desk 인박스: 배정된 줄 숨김 수 · 「배정된 일도 보기」 (화면만, 파일은 그대로) */
+.mylogs-desk-calendar .dc-inbox-hidden {
+	font-size: 11px;
+	color: var(--dc-faint);
+	white-space: nowrap;
+}
+.mylogs-desk-calendar button.dc-inbox-assigned-toggle {
+	flex-shrink: 0;
+	height: 22px;
+	padding: 0 8px;
+	font-size: 11px;
+	white-space: nowrap;
+	border-radius: 11px;
+	box-shadow: none;
+	color: var(--dc-muted);
+	background: transparent;
+	border: 1px dashed var(--dc-line-strong);
+	cursor: pointer;
+}
+.mylogs-desk-calendar button.dc-inbox-assigned-toggle.is-active {
+	color: var(--dc-ink-2);
+	border-style: solid;
+}
+body.is-mobile .mylogs-desk-calendar button.dc-inbox-assigned-toggle {
+	min-height: 44px;
+	padding: 0 12px;
+	font-size: 13px;
+	border-radius: 22px;
+}
+
+/* Desk 주 칸 「+ 추가」 (이번 주 할 일): 라벨 줄 오른쪽 끝 */
+.mylogs-desk-calendar .dc-wk-label .dc-week-addbtn,
+.mylogs-desk-calendar .dc-wkv-loose-head .dc-week-addbtn {
+	margin-left: auto;
+}
+.mylogs-desk-calendar .dc-wkv-loose-head {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+/* Desk 월 보기 주 표: 항목 글은 두 줄까지 (눌러서 펼침). 주 보기·다른 표는 그대로. */
+.mylogs-desk-calendar .dc-cal .dc-it:not(.dc-nested) .dc-body,
+.mylogs-desk-calendar .dc-cal .dc-it.dc-nested .dc-txt {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	line-clamp: 2;
+	overflow: hidden;
+}
+.mylogs-desk-calendar .dc-cal .dc-it .dc-txt {
+	cursor: pointer;
+}
+.mylogs-desk-calendar .dc-cal .dc-it.is-expanded:not(.dc-nested) .dc-body {
+	display: block;
+}
+.mylogs-desk-calendar .dc-cal .dc-it.is-expanded .dc-body,
+.mylogs-desk-calendar .dc-cal .dc-it.is-expanded .dc-txt {
+	-webkit-line-clamp: unset;
+	line-clamp: none;
+	overflow: visible;
+}
+.mylogs-desk-calendar .dc-cal .dc-it.is-expanded.dc-nested .dc-txt {
+	display: block;
+}
+
+/* Project 「할 일·일정」: 「완료 숨김」 / 「모두 보기」 next to 「달력 접기」 */
+.pf-schedule-head > h2 { margin-right: auto; }
+.pf-schedule-head .pf-done-toggle.is-active { color: var(--text-accent); }
+.pf-ol-hidden { padding: 2px 6px; font-size: 12px; color: var(--text-faint); }
+body.is-mobile .pf-schedule-head .pf-done-toggle { min-height: 44px; }

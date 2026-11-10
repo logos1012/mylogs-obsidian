@@ -17,7 +17,7 @@ import type { Project } from "./model.ts";
 import { tip } from "../ui/tip.ts";
 import { readProject } from "../pinboard/create-actions.ts";
 import { todayIsoLocal } from "../desk/model.ts";
-import { hubRows, previousTopLevel, type ProjectTask } from "./tasks.ts";
+import { hubRows, previousTopLevel, type ProjectTask, visibleTaskIds } from "./tasks.ts";
 import { changeProjectTask, loadProjectTasks, newTaskId, type TaskChange } from "./task-actions.ts";
 import { MIME, scheduleSource, selectSchedule, selectedSchedule, TOUCH_DROP, type ScheduleItem } from "./schedule-dnd.ts";
 
@@ -38,6 +38,8 @@ export interface OutlineState {
 	error?: string;
 	/** The line that has the caret (kept across re-renders from file changes). */
 	focused?: string;
+	/** 「완료 숨김」: leave done rows out (a 묶음 stays while it has open 하위 할 일). Screen only. */
+	hideDone?: boolean;
 }
 
 interface Row {
@@ -57,6 +59,10 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 		if (task) rows.push({ ...r, task, kids: 0 });
 	}
 	for (const r of rows) if (!r.depth) r.kids = rows.filter((x) => x.task.parentId === r.id).length;
+	const shown = visibleTaskIds(
+		rows.map((r) => ({ id: r.id, parentId: r.depth ? (r.task.parentId ?? null) : null, done: r.task.state === "done", group: r.kids > 0 })),
+		!!state.hideDone,
+	);
 
 	/** Run changes one after another; then reload and put the caret back. */
 	const queue = (change: () => Promise<TaskChange | null>, focus?: string) => {
@@ -285,7 +291,8 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 					if (r.kids) return;
 					const i = rows.indexOf(r);
 					delete texts[r.id];
-					queue(async () => ({ kind: "delete", id: r.id }), rows[i - 1]?.id);
+					// The caret goes to the previous row on screen (a hidden done row has no input).
+					queue(async () => ({ kind: "delete", id: r.id }), rows.slice(0, i).reverse().find((x) => shown.has(x.id))?.id);
 				},
 			}),
 		);
@@ -316,7 +323,8 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 	};
 
 	for (const r of rows) {
-		drawRow(r);
+		// A hidden (done) row is not drawn, but a draft that follows it still goes in its place.
+		if (shown.has(r.id)) drawRow(r);
 		const d = state.draft;
 		if (!d || d.after !== r.id) continue;
 		// The draft sits where the new row will go: right here, or after this 묶음's 하위 rows.
@@ -339,6 +347,8 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 			state.draft = { after: null, child: false, text: "" };
 			renderDraft();
 		} else {
+			const hidden = rows.length - shown.size;
+			if (hidden) box.createDiv({ cls: "pf-ol-hidden", text: `완료 ${hidden}개 숨김` });
 			const add = box.createDiv({ cls: "pf-ol-row pf-ol-add", text: "+ 할 일", attr: { role: "button", tabindex: "0" } });
 			add.addEventListener("click", () => open(rows[rows.length - 1].id, false));
 		}

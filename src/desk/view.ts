@@ -43,7 +43,7 @@ import {
 	weekMondays,
 } from "./model.ts";
 import { createDeskMonth, DESK_INDEX_FILE, deskMonthPath, logDeskChange } from "./actions.ts";
-import { addToInboxChecked, INBOX_CONFLICT_NOTICE } from "./inbox-add.ts";
+import { addToInboxChecked, addToWeekChecked, INBOX_CONFLICT_NOTICE } from "./inbox-add.ts";
 import { type DeskMobileHost, renderDeskMobile } from "./mobile.ts";
 import { runDeskTarget } from "./mobile-targets.ts";
 import { askThirdMove, openInboxAdd, pickDate, pickMonth, promptText } from "./modals.ts";
@@ -71,6 +71,8 @@ import {
 	runPlan,
 	type InboxKind,
 	isOpenInboxEvent,
+	isUnassignedInbox,
+	inboxShown,
 	planAssignEventDay,
 } from "./ops.ts";
 
@@ -396,6 +398,7 @@ export class DeskCalendarView extends ItemView {
 				void this.reload();
 			},
 			duringItems: () => cur().during,
+			inboxItems: () => inboxShown(cur().during, this.plugin.settings.deskShowAssignedInbox).shown,
 			assignDuringToDay: (it, iso) => this.assignDuringToDay(it, iso),
 			assignEventToDay: (it, iso) => this.assignEventToDay(it, iso),
 			padTasks: (iso) => this.padTasks(iso),
@@ -513,9 +516,25 @@ export class DeskCalendarView extends ItemView {
 		const head = during.createDiv({ cls: "dc-lbl dc-during-head" });
 		head.createSpan({ cls: "dc-during-title", text: "인박스" });
 		this.renderInboxAddButton(head, cur);
+		// 배정된 줄 (→ Wnn, → MM/DD) hide by default: their copies are in the week / on the day. Screen only.
+		const showAssigned = this.plugin.settings.deskShowAssignedInbox;
+		const { shown, hidden } = inboxShown(cur.during, showAssigned);
+		if (hidden) tip(head.createSpan({ cls: "dc-inbox-hidden", text: `숨김 ${hidden}` }), `주나 날짜에 배정한 일 ${hidden}개를 숨겼어요. 파일에는 그대로 있어요.`);
+		if (hidden || showAssigned) {
+			const tb = head.createEl("button", { cls: `dc-inbox-assigned-toggle${showAssigned ? " is-active" : ""}`, text: showAssigned ? "배정된 일 숨김" : "배정된 일도 보기", attr: { type: "button", "aria-pressed": String(showAssigned) } });
+			tip(tb, showAssigned ? "누르면 주나 날짜에 배정한 일을 인박스에서 숨겨요. 파일은 그대로예요." : "누르면 주나 날짜에 배정한 일도 인박스에 보여요.");
+			for (const ev of ["mousedown", "pointerdown", "touchstart"] as const) tb.addEventListener(ev, (e) => e.stopPropagation());
+			tb.addEventListener("click", (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				this.plugin.settings.deskShowAssignedInbox = !this.plugin.settings.deskShowAssignedInbox;
+				void this.plugin.saveSettings();
+				this.render();
+			});
+		}
 		const ul = during.createEl("ul");
-		if (!cur.during.length) ul.createEl("li", { cls: "dc-it dc-none", text: "없음" });
-		for (const it of cur.during) this.renderDuringItem(ul, it, ctx);
+		if (!shown.length) ul.createEl("li", { cls: "dc-it dc-none", text: "없음" });
+		for (const it of shown) this.renderDuringItem(ul, it, ctx);
 		this.wallDropZone(during, null);
 		this.renderWallItems(during);
 		const markers = this.milestones.markers.filter(m => m.date.startsWith(this.month + "-"));
@@ -593,12 +612,14 @@ export class DeskCalendarView extends ItemView {
 		});
 		const alloc = week.alloc ?? [];
 		if (!alloc.length) {
+			this.renderWeekAddButton(label, monday, cur);
 			cell.createEl("p", { cls: "dc-empty-note", text: "아직 적은 일이 없어요" });
 			return;
 		}
 		const [, un] = weekAllocStats(week);
 		if (un) label.createSpan({ cls: "dc-badge dc-warn", text: `미배정 ${un}` });
 		else label.createSpan({ cls: "dc-badge dc-ok", text: "✓ 모두 배정" });
+		this.renderWeekAddButton(label, monday, cur);
 		// Month level: the week's tasks are in 주 보기.
 		if (this.levelFilter) return;
 		const ul = cell.createEl("ul", { cls: "dc-items" });
@@ -687,12 +708,25 @@ export class DeskCalendarView extends ItemView {
 	private itemText(li: HTMLElement, body: HTMLElement, it: DeskItem): void {
 		const ref = projectRef(it.item.raw);
 		const cut = ref ? it.item.text.indexOf(" · ") : -1;
+		let txt: HTMLElement;
 		if (cut > 0) {
 			li.addClass("dc-nested");
 			body.createSpan({ cls: "dc-parent", text: it.item.text.slice(0, cut) });
-			body.createSpan({ cls: "dc-txt", text: it.item.text.slice(cut + 3) });
-		} else body.createSpan({ cls: "dc-txt", text: it.item.text });
-		if (ref) li.setAttr("title", `프로젝트: ${this.milestones.titleOf?.(ref) ?? ref}`);
+			txt = body.createSpan({ cls: "dc-txt", text: it.item.text.slice(cut + 3) });
+		} else txt = body.createSpan({ cls: "dc-txt", text: it.item.text });
+		const project = ref ? `프로젝트: ${this.milestones.titleOf?.(ref) ?? ref}` : "";
+		if (ref) li.setAttr("title", project);
+		// 월 보기 칸은 두 줄까지 (CSS); the whole text is on hover, and a click on it opens / folds it.
+		txt.setAttr("title", project ? `${it.item.text}\n${project}` : it.item.text);
+		txt.addEventListener("click", (e) => {
+			if (!txt.closest(".dc-cal")) return; // only the month grid clamps
+			const open = li.hasClass("is-expanded");
+			const box = li.hasClass("dc-nested") ? txt : body; // the clamped box (styles.css)
+			if (!open && box.scrollHeight <= box.clientHeight + 1) return; // fits: the row's own click (menu / sheet)
+			e.preventDefault();
+			e.stopPropagation();
+			li.toggleClass("is-expanded", !open);
+		});
 	}
 
 	private finishMeta(body: HTMLElement, meta: HTMLElement, it: DeskItem, warn: string | null): void {
@@ -726,6 +760,75 @@ export class DeskCalendarView extends ItemView {
 	}
 
 	/**
+	 * A week's 「+ 추가」 (이번 주 할 일): a 할 일 typed here is written as if added to the 인박스 and
+	 * dragged onto this week (`addToWeekChecked`). 일정 are not offered: they go 인박스 → day.
+	 */
+	private renderWeekAddButton(parent: HTMLElement, monday: string, cur: MonthData): void {
+		const wk = `W${String(isoWeekNo(monday)).padStart(2, "0")}`;
+		const b = parent.createEl("button", { cls: "dc-inbox-addbtn dc-week-addbtn", attr: { type: "button", "aria-label": `${wk} 이번 주 할 일에 추가` } });
+		setIcon(b.createSpan({ cls: "dc-inbox-addbtn-ic", attr: { "aria-hidden": "true" } }), "plus");
+		b.createSpan({ cls: "dc-inbox-addbtn-t", text: "추가" });
+		tip(b, `${wk} 이번 주 할 일에 바로 넣어요. 인박스에도 「→ ${wk}」로 함께 적혀요.`);
+		for (const ev of ["mousedown", "pointerdown", "touchstart", "dragstart"] as const) b.addEventListener(ev, (e) => e.stopPropagation());
+		b.addEventListener("click", (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			const key = cur.key;
+			openInboxAdd(this.app, {
+				side: inputSide(this.plugin.settings.sideMode),
+				kind: "task",
+				taskOnly: true,
+				title: `${wk} 이번 주 할 일에 추가`,
+				hint: `「## 이달 중」에 「→ ${wk}」로, 그 주 「### 이번 주」에 같은 할 일로 들어가요.`,
+				submit: (v) => this.addToWeek(key, monday, v.text, v.side),
+			});
+		});
+	}
+
+	/** 주 칸 「+ 추가」 — the checked write (`addToWeekChecked`), notices in the 인박스 tone. */
+	private async addToWeek(monthKey: string, monday: string, text: string, side: Side): Promise<boolean> {
+		if (this.busy) {
+			new Notice("다른 저장이 끝나는 중이에요. 잠시 뒤 다시 눌러 주세요.");
+			return false;
+		}
+		const wk = `W${String(isoWeekNo(monday)).padStart(2, "0")}`;
+		const allocKey = allocFileOf(monday);
+		this.busy = true;
+		let ok = false;
+		try {
+			const r = await addToWeekChecked(
+				vaultIO(this.app),
+				{ month: this.monthPath(monthKey), alloc: this.monthPath(allocKey), index: normalizePath(`${this.plugin.settings.deskCalendarFolder}/${DESK_INDEX_FILE}`) },
+				monthKey,
+				monday,
+				allocKey,
+				text,
+				side,
+				todayIsoLocal(),
+			);
+			ok = r.ok;
+			if (r.ok) new Notice(`${wk} 이번 주 할 일에 넣었어요.`);
+			else if (r.reason === "conflict") new Notice(INBOX_CONFLICT_NOTICE);
+			else if (r.reason === "duplicate") new Notice(`인박스에 같은 할 일이 이미 있어요. 그 줄을 이 주로 끌어 놓아 주세요.${this.plugin.settings.deskShowAssignedInbox ? "" : "\n이미 배정된 줄이면 「배정된 일도 보기」로 보여요."}`);
+			else if (r.reason === "section-missing") new Notice(`인박스(## 이달 중)나 ${wk}의 「### 이번 주」가 없어요.`);
+			else if (r.reason === "file-missing") new Notice(`Desk Calendar 파일이 없어요 (${monthKey === allocKey ? monthKey : `${monthKey} · ${allocKey}`}). 먼저 새 달을 만들어 주세요.`);
+			else if (r.reason === "empty-text") new Notice("내용을 적어 주세요.");
+			else {
+				console.error("[MyLogs] 이번 주 할 일 추가 실패", r.message);
+				new Notice(`MyLogs: 이번 주 할 일에 추가하지 못했어요.${r.message ? `\n${r.message}` : ""}`);
+			}
+		} catch (err) {
+			console.error("[MyLogs] 이번 주 할 일 추가 실패", err);
+			new Notice("MyLogs: 파일에 쓰지 못했어요. 콘솔을 확인해 주세요.");
+		} finally {
+			this.busy = false;
+			this.pendingReload = false;
+			await this.reload();
+		}
+		return ok;
+	}
+
+	/**
 	 * 인박스에 직접 추가: one line at the end of `## 이달 중` of `monthKey` through the checked batch
 	 * (`addToInboxChecked`: month file + Desk Calendar Index, cancelled when either changed since the
 	 * read). Shows the Notice; true when written (the modal closes), false keeps the modal open.
@@ -751,7 +854,7 @@ export class DeskCalendarView extends ItemView {
 			ok = r.ok;
 			if (r.ok) new Notice(`인박스에 ${label}을(를) 넣었어요.`);
 			else if (r.reason === "conflict") new Notice(INBOX_CONFLICT_NOTICE);
-			else if (r.reason === "duplicate") new Notice(`인박스에 같은 ${label}이 이미 있어요.`);
+			else if (r.reason === "duplicate") new Notice(`인박스에 같은 ${label}이 이미 있어요.${this.plugin.settings.deskShowAssignedInbox ? "" : "\n이미 배정된 줄이면 「배정된 일도 보기」로 보여요."}`);
 			else if (r.reason === "section-missing") new Notice("이 달 파일에 인박스(## 이달 중)가 없어요.");
 			else if (r.reason === "file-missing") new Notice(`${monthKey} Desk Calendar 파일이 없어요. 먼저 새 달을 만들어 주세요.`);
 			else if (r.reason === "empty-text") new Notice("내용을 적어 주세요.");
@@ -858,7 +961,7 @@ export class DeskCalendarView extends ItemView {
 		});
 		// Phone: a tap opens the move sheet (`./mobile.ts`); the popover is the long press.
 		if (!Platform.isMobile) li.addEventListener("click", (e) => {
-			if ((e.target as HTMLElement).closest("button, a, [role='checkbox']")) return;
+			if ((e.target as HTMLElement).closest("button, a, [role='checkbox'], .dc-cal li.is-expanded .dc-txt")) return;
 			this.openMenu(e, it, kind, li);
 		});
 		li.addEventListener("contextmenu", (e) => {
@@ -1236,7 +1339,9 @@ export class DeskCalendarView extends ItemView {
 
 		const wrap = root.createDiv({ cls: "dc-wkv" });
 		const loose = wrap.createEl("aside", { cls: "dc-wkv-loose" });
-		tip(loose.createDiv({ cls: "dc-lbl", text: "아직 날짜 없는 일" }), "이번 주 할 일 · 인박스 · 프로젝트에서 날짜가 없는 일. 날짜 칸으로 끌어 놓으면 그날로 배정돼요");
+		const looseHead = loose.createDiv({ cls: "dc-lbl dc-wkv-loose-head" });
+		tip(looseHead.createSpan({ text: "아직 날짜 없는 일" }), "이번 주 할 일 · 인박스 · 프로젝트에서 날짜가 없는 일. 날짜 칸으로 끌어 놓으면 그날로 배정돼요");
+		if (allocWeek(ctx, monday)) this.renderWeekAddButton(looseHead, monday, ctx.cur!);
 		const group = (label: string, hint: string) => {
 			const g = loose.createDiv({ cls: "dc-wkv-group" });
 			tip(g.createDiv({ cls: "dc-wkv-glabel", text: label }), hint);
@@ -1250,7 +1355,7 @@ export class DeskCalendarView extends ItemView {
 		}
 		// 인박스 = not in any week yet. A task already put in a week shows once, as 이번 주 할 일 (or on its day).
 		// 인박스 일정 (날짜 미정) too: dropped on a day, it goes straight there.
-		const during = cur.during.filter((it) => (isOpenTask(it) && !it.item.assignWeek.length) || isOpenInboxEvent(it));
+		const during = cur.during.filter(isUnassignedInbox);
 		if (during.length) {
 			const ul = group(`인박스 ${during.length}`, "이달 안에 할 일·일정, 아직 날짜를 정하지 않은 것. 할 일은 이번 주 할 일을 거쳐, 일정은 바로 그날로 배정돼요");
 			for (const it of during) this.renderDuringItem(ul, it, ctx);

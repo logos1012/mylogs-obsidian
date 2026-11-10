@@ -8,7 +8,7 @@
  */
 import { commitBatch, type BatchIO, type Write } from "../pinboard/batch.ts";
 import type { Side } from "../side.ts";
-import { type InboxKind, planAddDuring, prependChangeLog, runPlan } from "./ops.ts";
+import { type InboxKind, type Plan, planAddDuring, planAddWeekTask, prependChangeLog, runPlan } from "./ops.ts";
 
 export type InboxAddResult =
 	| { ok: true; what: string }
@@ -39,17 +39,54 @@ export async function addToInboxChecked(
 	side: Side,
 	today: string,
 ): Promise<InboxAddResult> {
-	const before = await io.read(paths.month);
-	if (before === null) return { ok: false, reason: "file-missing" };
-	const plan = planAddDuring(monthKeyStr, text, kind, side, today);
-	const dry = runPlan(plan, { [monthKeyStr]: before });
+	return runChecked(io, planAddDuring(monthKeyStr, text, kind, side, today), { [monthKeyStr]: paths.month }, paths.index, today);
+}
+
+export interface WeekAddPaths extends InboxAddPaths {
+	/** Vault path of the file holding the week's `### 이번 주` (`allocFileOf(monday)`); same as `month` for most weeks. */
+	alloc: string;
+}
+
+/**
+ * 주 칸 「+ 추가」 — the write. `planAddWeekTask` (인박스 line with `→ Wnn` + the copy under the
+ * week's `### 이번 주`, the same lines a drag-assign leaves) through the same checked batch as
+ * `addToInboxChecked`: the 인박스 month file, the week's file when it is another month, and the
+ * Desk Calendar Index. Any of them changed since the read → nothing written, `conflict`.
+ */
+export async function addToWeekChecked(
+	io: BatchIO,
+	paths: WeekAddPaths,
+	inboxMonth: string,
+	monday: string,
+	allocFile: string,
+	text: string,
+	side: Side,
+	today: string,
+): Promise<InboxAddResult> {
+	const plan = planAddWeekTask(inboxMonth, monday, allocFile, text, side, today);
+	return runChecked(io, plan, { [inboxMonth]: paths.month, [allocFile]: paths.alloc }, paths.index, today);
+}
+
+/**
+ * Read every month file of `plan` (month key → vault path), dry-run it, then write all changed
+ * files plus the index change log in one `commitBatch`. A missing month file → `file-missing`.
+ */
+async function runChecked(io: BatchIO, plan: Plan, monthPaths: Record<string, string>, indexPath: string, today: string): Promise<InboxAddResult> {
+	const befores: Record<string, string> = {};
+	for (const [key, path] of Object.entries(monthPaths)) {
+		const t = await io.read(path);
+		if (t === null) return { ok: false, reason: "file-missing" };
+		befores[key] = t;
+	}
+	const dry = runPlan(plan, befores);
 	if (!dry.ok) {
 		const r = dry.reason;
-		return { ok: false, reason: r === "empty-text" || r === "section-missing" || r === "duplicate" ? r : "error", message: r };
+		const known = r === "empty-text" || r === "section-missing" || r === "duplicate" || r === "file-missing";
+		return { ok: false, reason: known ? r : "error", message: r };
 	}
-	const writes: Write[] = [{ path: paths.month, before, after: dry.files[monthKeyStr] }];
-	const idx = await io.read(paths.index);
-	if (idx !== null) writes.push({ path: paths.index, before: idx, after: prependChangeLog(idx, today, plan.what) });
+	const writes: Write[] = Object.entries(dry.files).map(([key, after]) => ({ path: monthPaths[key], before: befores[key], after }));
+	const idx = await io.read(indexPath);
+	if (idx !== null) writes.push({ path: indexPath, before: idx, after: prependChangeLog(idx, today, plan.what) });
 	try {
 		await commitBatch(io, writes);
 	} catch (err) {

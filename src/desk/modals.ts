@@ -13,7 +13,17 @@ export interface InboxAddInput {
  * 개인 / 회사 mode), 추가 / 취소. `submit` writes and shows its own Notice; it returns true when the
  * line was written (the modal closes) and false otherwise (the modal stays with the text kept).
  */
-export function openInboxAdd(app: App, opts: { side: Side; kind?: InboxKind; submit: (v: InboxAddInput) => Promise<boolean> }): void {
+export interface InboxAddOptions {
+	side: Side;
+	kind?: InboxKind;
+	/** 주 칸 「+ 추가」: 할 일 only (no 할 일 / 일정 segment), its own title and hint. */
+	taskOnly?: boolean;
+	title?: string;
+	hint?: string;
+	submit: (v: InboxAddInput) => Promise<boolean>;
+}
+
+export function openInboxAdd(app: App, opts: InboxAddOptions): void {
 	new InboxAddModal(app, opts).open();
 }
 
@@ -24,10 +34,10 @@ class InboxAddModal extends Modal {
 
 	constructor(
 		app: App,
-		private opts: { side: Side; kind?: InboxKind; submit: (v: InboxAddInput) => Promise<boolean> },
+		private opts: InboxAddOptions,
 	) {
 		super(app);
-		this.kind = opts.kind ?? "task";
+		this.kind = opts.taskOnly ? "task" : (opts.kind ?? "task");
 		this.side = opts.side;
 	}
 
@@ -35,9 +45,10 @@ class InboxAddModal extends Modal {
 		const { contentEl } = this;
 		this.modalEl.addClass("mylogs-inbox-add-modal");
 		contentEl.addClass("mylogs-desk-calendar-modal", "dc-ia");
-		this.setTitle("인박스에 추가");
+		this.setTitle(this.opts.title ?? "인박스에 추가");
 
 		const seg = contentEl.createDiv({ cls: "dc-ia-seg", attr: { role: "radiogroup", "aria-label": "종류" } });
+		if (this.opts.taskOnly) seg.hide();
 		const segBtns = (["task", "event"] as const).map((k) => {
 			const b = seg.createEl("button", { cls: "dc-ia-seg-btn", text: k === "task" ? "할 일" : "일정", attr: { type: "button", role: "radio" } });
 			b.addEventListener("click", () => {
@@ -79,7 +90,7 @@ class InboxAddModal extends Modal {
 			const ph = this.kind === "task" ? "할 일 (예: 보고서 초안 쓰기)" : "일정 (예: 동창회) · 날짜는 나중에";
 			input.setAttr("placeholder", ph);
 			input.setAttr("aria-label", ph);
-			hint.setText(this.kind === "task" ? "체크박스 할 일로 「## 이달 중」 끝에 들어가요." : "날짜 미정 일정이라 줄 끝에 #행사가 붙어요. 나중에 날짜 칸으로 끌어 놓아요.");
+			hint.setText(this.opts.hint ?? (this.kind === "task" ? "체크박스 할 일로 「## 이달 중」 끝에 들어가요." : "날짜 미정 일정이라 줄 끝에 #행사가 붙어요. 나중에 날짜 칸으로 끌어 놓아요."));
 		};
 
 		const submit = async (): Promise<void> => {

@@ -255,3 +255,19 @@ export function missingTaskRefs(text:string,tasks:ProjectTask[]):string[] {
  for(let i=sec.headingIndex+1;i<lines.length;i++){if(/^#{1,2}\s/.test(lines[i]))break;if(/^\s*[-*+]\s+\[[ x>\-]\]/.test(lines[i]))continue;const id=/\(task::\s*([^)]*)\)/.exec(lines[i])?.[1]?.trim();if(id&&!tasks.some(t=>t.id===id))out.push(lines[i].replace(/^\s*[-*+]\s+/,"").replace(/\([^)]*::[^)]*\)/g,"").trim());}
  return out;
 }
+
+/**
+ * 「할 일·일정」 완료 숨김 (screen only): the row ids to draw. With `hideDone` off, every row.
+ * On: a done row goes; a 묶음 stays while it has any 하위 할 일 not done (and a 묶음 with no 하위
+ * rows stays unless it is done itself). A 놓아줌 (cancelled) row is not done, so it stays.
+ */
+export function visibleTaskIds(rows: { id: string; parentId?: string | null; done: boolean; group?: boolean }[], hideDone: boolean): Set<string> {
+ if(!hideDone)return new Set(rows.map(r=>r.id));
+ const out=new Set<string>();
+ for(const r of rows){
+  if(r.parentId){if(!r.done)out.add(r.id);continue;}
+  const kids=rows.filter(x=>x.parentId===r.id);
+  if(kids.length?kids.some(k=>!k.done):!r.done)out.add(r.id);
+ }
+ return out;
+}

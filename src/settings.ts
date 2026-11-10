@@ -65,6 +65,10 @@ export interface MyLogsSettings {
 	showTestMarkers: boolean;
 	/** Desk Calendar: hide 완료 · 옮김 · 놓아줌 lines (screen only; remembered). */
 	deskHideClosed: boolean;
+	/** Desk Calendar: list 인박스 lines already put in a week (`→ Wnn`) or on a day in the month 인박스 too (screen only; remembered). Off = hidden. */
+	deskShowAssignedInbox: boolean;
+	/** Project Folders: hide done tasks in 「할 일·일정」 (screen only; remembered). On by default. */
+	projectScheduleHideDone: boolean;
 	/** Wall Calendar: which kinds a month shows — milestones ◆, events, tasks (Desk 인박스 · 주 · 날 tasks included). Remembered. */
 	wallShow: { milestone: boolean; event: boolean; task: boolean };
 	/** Wall Calendar: hide months already past (remembered). */
@@ -129,6 +133,8 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	sideMode: "전체",
 	showTestMarkers: true,
 	deskHideClosed: false,
+	deskShowAssignedInbox: false,
+	projectScheduleHideDone: true,
 	deskShowTasks: false,
 	wallShow: { milestone: true, event: true, task: true },
 	wallHidePast: false,

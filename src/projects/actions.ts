@@ -40,6 +40,8 @@ import { DEFAULT_TEMPLATES } from "./templates.ts";
 export interface ProjectsHost {
 	app: App;
 	settings: MyLogsSettings;
+	/** Save remembered view settings (no view refresh). The plugin has it. */
+	saveSettingsQuiet?(): Promise<void>;
 }
 
 export function activeRoot(host: ProjectsHost): string {

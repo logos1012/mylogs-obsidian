@@ -554,15 +554,77 @@ export function planAddDuring(monthKeyStr: string, text: string, kind: InboxKind
 	const label = kind === "task" ? "할 일" : "일정";
 	if (!line) return finish("", [{ file: monthKeyStr, month: true, apply: () => fail("empty-text") }]);
 	const parsed = parseItem(line.replace(/^\s*[-*+]\s+/, ""));
+	return finish(`인박스에 ${label} 추가: 「${parsed.text}」`, [monthEdit(monthKeyStr, today, duringAddStep(line, line))]);
+}
+
+/**
+ * The 인박스 append step shared by `planAddDuring` and `planAddWeekTask`: refuses `section-missing`
+ * and `duplicate` (an open item of the same kind and text as `line` is already in `## 이달 중`),
+ * then appends `written` (`line` itself, or `line` with its `→ Wnn`).
+ */
+function duringAddStep(line: string, written: string): (t: string, y: number, m: number) => EditResult {
+	const parsed = parseItem(line.replace(/^\s*[-*+]\s+/, ""));
 	const key = normKey(parsed.text);
-	return finish(`인박스에 ${label} 추가: 「${parsed.text}」`, [
-		monthEdit(monthKeyStr, today, (t, y, m) => {
+	return (t, y, m) => {
+		const data = parseMonthFile(t, y, m);
+		if (data.duringHeadingIndex < 0) return fail("section-missing");
+		if (data.during.some((x) => x.key === key && x.item.kind === parsed.kind && x.item.status === "scheduled")) return fail("duplicate");
+		return appendLines(t, y, m, { kind: "during" }, [written]);
+	};
+}
+
+/**
+ * 주 칸 「+ 추가」: a new 할 일 written exactly as if it had been typed into the 인박스 and then
+ * dragged onto that week (`planAddDuring` + `planAssignWeek`):
+ *   - `## 이달 중` of `inboxMonth` (the month on screen) gets `- [ ] 내용 → Wnn [#회사]`;
+ *   - the week's `### 이번 주` in `allocFile` (`allocFileOf(monday)`, maybe the month before) gets
+ *     the copy `- [ ] 내용 [#회사]` (`copyTask`, no arrow) — not twice when the same text is there.
+ * Fails `empty-text`, `duplicate`, or `section-missing` (no 인박스, or no 이번 주 for that week).
+ * Same file: one merged write (`mergeEdits`).
+ */
+export function planAddWeekTask(inboxMonth: string, monday: string, allocFile: string, text: string, side: Side, today: string): Plan {
+	const line = inboxLine(text, "task", side);
+	if (!line) return finish("", [{ file: inboxMonth, month: true, apply: () => fail("empty-text") }]);
+	const weekNo = isoWeekNo(monday);
+	const parsed = parseItem(line.replace(/^\s*[-*+]\s+/, ""));
+	const key = normKey(parsed.text);
+	const copy = copyTask(line);
+	return finish(`이번 주 할 일에 추가: 「${parsed.text}」 → W${String(weekNo).padStart(2, "0")}`, [
+		monthEdit(inboxMonth, today, duringAddStep(line, addWeekAssign(line, weekNo))),
+		monthEdit(allocFile, today, (t, y, m) => {
 			const data = parseMonthFile(t, y, m);
-			if (data.duringHeadingIndex < 0) return fail("section-missing");
-			if (data.during.some((x) => x.key === key && x.item.kind === parsed.kind && x.item.status === "scheduled")) return fail("duplicate");
-			return appendLines(t, y, m, { kind: "during" }, [line]);
+			const week = data.weeks.get(monday);
+			if (!week || week.allocHeadingIndex < 0) return fail("section-missing");
+			if ((week.alloc ?? []).some((x) => x.key === key)) return { ok: true, text: t };
+			return appendLines(t, y, m, { kind: "alloc", monday }, [copy]);
 		}),
 	]);
+}
+
+/**
+ * The 인박스 lines that still wait for a place: an open 할 일 not put in any week, or an open
+ * 인박스 일정 (주 보기's 「인박스」 list).
+ */
+export function isUnassignedInbox(it: DeskItem): boolean {
+	return (it.item.kind === "task" && it.item.status === "scheduled" && !it.item.assignWeek.length) || isOpenInboxEvent(it);
+}
+
+/**
+ * An 인박스 line already handed on: a 할 일 with `→ Wnn` (any state), or an 일정 sent to a day
+ * (`- 동창회 → 11/12 #행사`). Its copy lives in the week / on the day, so the month 인박스 hides it
+ * unless 「배정된 일도 보기」 is on. The line stays in the file.
+ */
+export function isAssignedInbox(it: DeskItem): boolean {
+	if (it.section !== "during" || it.item.kind === null) return false;
+	if (it.item.kind === "task") return it.item.assignWeek.length > 0;
+	return it.item.kind === "event" && it.item.checkbox === null && it.item.status === "moved" && /^\d{1,2}\/\d{1,2}/.test(it.item.movedTo.trim());
+}
+
+/** The 인박스 as the month view lists it: everything, or all but the assigned lines (and how many were left out). */
+export function inboxShown(during: DeskItem[], showAssigned: boolean): { shown: DeskItem[]; hidden: number } {
+	if (showAssigned) return { shown: during, hidden: 0 };
+	const shown = during.filter((it) => !isAssignedInbox(it));
+	return { shown, hidden: during.length - shown.length };
 }
 
 /** 「놓아주기」: `[-]` + `(why:: …)`. */
