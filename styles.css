@@ -9645,6 +9645,16 @@ body.is-mobile .mylogs-pinboard .pbm-legend-health {
 .mylogs-projects .pf-workspace .pf-workspace-link { display: block; text-align: left; border: 0; background: transparent; box-shadow: none; color: var(--pf-accent); padding: 7px 0; width: 100%; }
 .mylogs-projects .pf-workspace .pf-workspace-link:hover { text-decoration: underline; }
 .mylogs-projects .pf-workspace-files { border-top: 1px solid var(--pf-line); }
+.mylogs-projects .pf-workspace .pf-tree-row { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 44px; height: auto; padding: 6px 4px 6px 0; border: 0; background: transparent; box-shadow: none; color: var(--pf-ink-2, var(--text-normal)); text-align: left; cursor: pointer; }
+.mylogs-projects .pf-workspace .pf-tree-row:hover { background: var(--background-modifier-hover); }
+.mylogs-projects .pf-tree-chevron, .mylogs-projects .pf-tree-icon { display: inline-flex; flex: none; color: var(--text-muted); }
+.mylogs-projects .pf-tree-chevron svg, .mylogs-projects .pf-tree-icon svg { width: 16px; height: 16px; }
+.mylogs-projects .pf-tree-chevron { transition: transform 120ms ease; }
+.mylogs-projects .pf-tree-folder.is-open > .pf-tree-row .pf-tree-chevron { transform: rotate(90deg); }
+.mylogs-projects .pf-tree-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.mylogs-projects .pf-tree-count { flex: none; font-size: 12px; color: var(--text-muted); background: var(--background-modifier-border); border-radius: 999px; padding: 1px 8px; }
+.mylogs-projects .pf-tree-children { margin-left: 11px; padding-left: 12px; border-left: 1px solid var(--pf-line); }
+.mylogs-projects .pf-tree-children[hidden] { display: none; }
 .mylogs-projects :is(.pf-workspace, .pf-name) button:focus-visible { outline: 2px solid var(--pf-accent); outline-offset: 2px; }
 button.ml-route-chip { height: auto; min-height: 28px; cursor: pointer; box-shadow: none; }
 body.is-mobile button.ml-route-chip { min-height: 44px; }

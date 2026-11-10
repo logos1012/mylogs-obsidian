@@ -35,6 +35,8 @@ export interface MyLogsSettings {
 	myLifePath: string;
 	/** My Life view: collapsed section names per tab (daily / weekly / monthly / yearly). */
 	myLifeCollapsed: Record<string, string[]>;
+	/** Project workspace: open folders per project id, paths relative to the project folder (`99 작업실/10 자료`). */
+	projectFolderExpanded: Record<string, string[]>;
 	/** Toolbox folder: skills `<folder>/<이름>.md`, registry `<folder>/Toolbox Index.md`, template `<folder>/_Templates/스킬.md`. */
 	toolboxPath: string;
 	/** Diary folder: entries `<folder>/<YYYY>/<YYYY-MM>/<YYYY-MM-DD HHMM>.md`, registry `<folder>/Diary Index.md`, `_Templates/엔트리.md`, `99 작업실/`. */
@@ -103,6 +105,7 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	drawerPath: "06 Drawer/Drawer.md",
 	myLifePath: "08 My Life",
 	myLifeCollapsed: {},
+	projectFolderExpanded: {},
 	toolboxPath: "11 Toolbox",
 	diaryPath: "09 Diary",
 	diaryMaterialCollapsed: false,
@@ -158,6 +161,7 @@ export function mergeSettings(saved: unknown): MyLogsSettings {
 			s3Prefix: migrateS3Prefix(s.studio && "s3Prefix" in s.studio ? s.studio.s3Prefix : undefined),
 		},
 		myLifeCollapsed: { ...(s.myLifeCollapsed ?? {}) },
+		projectFolderExpanded: { ...(s.projectFolderExpanded ?? {}) },
 	};
 }
 

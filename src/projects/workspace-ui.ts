@@ -3,7 +3,7 @@ import { tip } from "../ui/tip.ts";
 import type { Project } from "./model.ts";
 import type { Goal } from "../pinboard/model.ts";
 import { type FlywheelElement } from "../flywheel/model.ts";
-import { projectGoalLinks, sharedFlywheel, workspaceFiles, workspaceSections } from "./workspace.ts";
+import { type WorkspaceFolder, projectGoalLinks, sharedFlywheel, workspaceFiles, workspaceSections, workspaceTree } from "./workspace.ts";
 import { getFmList } from "./ops.ts";
 
 export interface WorkspaceHost {
@@ -13,6 +13,10 @@ export interface WorkspaceHost {
 	file(path: string): void; wheel(e: FlywheelElement): void;
 	milestones(parent: HTMLElement): void;
 	schedule?(parent: HTMLElement, calendar?: HTMLElement): void;
+	/** Open folders in 작업 자료, paths relative to the project folder (`99 작업실/10 자료`). */
+	expanded?: Set<string>;
+	/** Remember a folder opened or closed; the UI already toggled itself. */
+	folder?(path: string, open: boolean): void;
 }
 
 /** Placeholder bodies the templates leave behind: nothing to show yet. */
@@ -142,6 +146,36 @@ export function renderWorkspace(root: HTMLElement, p: Project, h: WorkspaceHost)
 		const group = files.createEl("details", { cls: "pf-workspace-files" });
 		group.createEl("summary", { text: items.length ? `${label} ${items.length}` : label });
 		if (!items.length) group.createDiv({ cls: "pf-workspace-muted", text: "비어 있어요" });
-		for (const f of items) button(group, f.label, () => h.file(f.path), "pf-workspace-link");
+		const tree = workspaceTree(items);
+		for (const f of tree.files) button(group, f.label, () => h.file(f.path), "pf-workspace-link");
+		for (const folder of tree.folders) renderFolder(group, folder, relative);
+	}
+	function renderFolder(parent: HTMLElement, folder: WorkspaceFolder, section: string): void {
+		const key = `${section}/${folder.path}`;
+		let open = h.expanded?.has(key) ?? false;
+		const node = parent.createDiv({ cls: `pf-tree-folder${open ? " is-open" : ""}` });
+		const row = node.createEl("button", { cls: "pf-tree-row", attr: { type: "button", "aria-expanded": String(open), "aria-label": `${folder.name} 폴더, 파일 ${folder.fileCount}개` } });
+		setIcon(row.createSpan({ cls: "pf-tree-chevron" }), "chevron-right");
+		setIcon(row.createSpan({ cls: "pf-tree-icon" }), "folder");
+		row.createSpan({ cls: "pf-tree-name", text: folder.name });
+		row.createSpan({ cls: "pf-tree-count", text: String(folder.fileCount) });
+		const body = node.createDiv({ cls: "pf-tree-children" });
+		body.hidden = !open;
+		let filled = false;
+		const fill = () => {
+			if (filled) return;
+			filled = true;
+			for (const f of folder.files) button(body, f.label.slice(folder.path.length + 1), () => h.file(f.path), "pf-workspace-link");
+			for (const child of folder.folders) renderFolder(body, child, section);
+		};
+		if (open) fill();
+		row.addEventListener("click", () => {
+			open = !open;
+			if (open) fill();
+			body.hidden = !open;
+			node.toggleClass("is-open", open);
+			row.setAttribute("aria-expanded", String(open));
+			h.folder?.(key, open);
+		});
 	}
 }

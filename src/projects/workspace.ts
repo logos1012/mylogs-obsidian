@@ -32,3 +32,59 @@ export function workspaceFiles(paths: string[], folder: string, relative: string
 		.sort((a, b) => a.localeCompare(b, "ko"))
 		.map(path => ({ path, label: path.slice(prefix.length) }));
 }
+
+/** A folder under one workspace section (`01 초안` · `02 산출물` · `99 작업실`). */
+export interface WorkspaceFolder {
+	name: string;
+	/** Path relative to the section root, e.g. `인터뷰 질문지` or `10 자료/사진`. */
+	path: string;
+	/** Every file under this folder, nested ones included. */
+	fileCount: number;
+	folders: WorkspaceFolder[];
+	/** Files directly in this folder; `label` stays relative to the section root. */
+	files: WorkspaceFile[];
+}
+export interface WorkspaceTree { files: WorkspaceFile[]; folders: WorkspaceFolder[] }
+
+const folderOrder = (a: WorkspaceFolder, b: WorkspaceFolder) => a.name.localeCompare(b.name, "ko", { numeric: true, sensitivity: "base" });
+
+/**
+ * Nest the flat section files into folders. Root files keep their input order and come first;
+ * folders follow in natural order (`10 자료` before `40 회의`). Folders exist only because a file
+ * sits under them, so empty folders never appear.
+ */
+export function workspaceTree(files: WorkspaceFile[]): WorkspaceTree {
+	const root: WorkspaceTree = { files: [], folders: [] };
+	const index = new Map<string, WorkspaceFolder>();
+	for (const f of files) {
+		const parts = f.label.split("/").filter(Boolean);
+		if (parts.length <= 1) { root.files.push(f); continue; }
+		let siblings = root.folders;
+		let path = "";
+		let node: WorkspaceFolder | undefined;
+		for (const name of parts.slice(0, -1)) {
+			path = path ? `${path}/${name}` : name;
+			node = index.get(path);
+			if (!node) { node = { name, path, fileCount: 0, folders: [], files: [] }; index.set(path, node); siblings.push(node); }
+			node.fileCount++;
+			siblings = node.folders;
+		}
+		node!.files.push(f);
+	}
+	const sort = (list: WorkspaceFolder[]) => { list.sort(folderOrder); list.forEach(n => sort(n.folders)); };
+	sort(root.folders);
+	return root;
+}
+
+/** Remembered open folders for one project; paths are relative to the project folder (`99 작업실/10 자료`). */
+export function expandedFolders(map: Record<string, string[]> | undefined, projectId: string): Set<string> {
+	return new Set(map?.[projectId] ?? []);
+}
+/** A new map with `path` opened or closed for the project. Empty lists are dropped. */
+export function toggleExpandedFolder(map: Record<string, string[]> | undefined, projectId: string, path: string, open: boolean): Record<string, string[]> {
+	const set = expandedFolders(map, projectId);
+	if (open) set.add(path); else set.delete(path);
+	const next = { ...(map ?? {}) };
+	if (set.size) next[projectId] = [...set]; else delete next[projectId];
+	return next;
+}

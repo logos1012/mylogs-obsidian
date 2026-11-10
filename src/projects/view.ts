@@ -11,7 +11,7 @@ import { valueToString, parseFrontmatterText } from "../pinboard/model.ts";
 import { renderMilestones, type MilestoneUIState } from "./milestone-ui.ts";
 import { saveMilestone } from "./milestone-actions.ts";
 import { renderWorkspace } from "./workspace-ui.ts";
-import { projectGoalLinks } from "./workspace.ts";
+import { expandedFolders, projectGoalLinks, toggleExpandedFolder } from "./workspace.ts";
 import { connectProject, readGoals } from "../pinboard/create-actions.ts";
 import type { FlywheelElement } from "../flywheel/model.ts";
 import { loadWheelCached } from "../flywheel/actions.ts";
@@ -422,6 +422,14 @@ export class ProjectFoldersView extends ItemView {
 			file: path => navigate(() => { const f = this.app.vault.getAbstractFileByPath(path); if (f instanceof TFile) void this.app.workspace.getLeaf("tab").openFile(f); else new Notice(`파일을 찾지 못했어요: ${path}`); }),
 			wheel: e => navigate(() => { void openFlywheelElement(this.plugin, e.id); }),
 			milestones: el => { let ms = this.milestoneStates.get(p.path); if (!ms) { ms = { open: true }; this.milestoneStates.set(p.path, ms); } renderMilestones(el, p, ms, (change, expected) => saveMilestone(this.plugin, p, expected, change, todayIso()), () => this.refresh(), m => choose({kind:"milestone",projectPath:p.path,projectId:p.id,line:m.line,title:m.text,source:p.milestoneSource??"",date:m.due}), (el,m) => scheduleSource(el,this.plugin,{kind:"milestone",projectPath:p.path,projectId:p.id,line:m.line,title:m.text,source:p.milestoneSource??"",date:m.due})); },
+			// Hubs without an `id` would all share "" — fall back to the hub path.
+			expanded: expandedFolders(this.plugin.settings.projectFolderExpanded, p.id || p.path),
+			folder: (path, open) => {
+				const st = this.plugin.settings;
+				st.projectFolderExpanded = toggleExpandedFolder(st.projectFolderExpanded, p.id || p.path, path, open);
+				// Quiet save: a settings refresh would redraw every view for a fold.
+				void this.plugin.saveSettingsQuiet();
+			},
 			schedule: (el, cal) => renderProjectSchedule(el, this.plugin, p, d.tasks.get(p.id) ?? [], schedule!, () => this.refresh(), d.texts.get(p.id) ?? "", cal),
 		});
 	}
