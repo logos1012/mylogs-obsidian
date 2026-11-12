@@ -421,18 +421,31 @@ export const WEEK_FLOW_ITEMS_MAX = 3;
  * What a day's 개인/회사 cell shows, per scope: the Weekly 「요일별 흐름」 value first (`—` means
  * an explicit none: empty, no fallback); else up to 3 Daily 「한 일」 lines (+ more count); else empty.
  */
-export function weekFlowCell(dayFlow: DayFlow | null | undefined, items: { personal: string[]; company: string[] } | null | undefined): WeekFlowCell {
+export function weekFlowCell(dayFlow: DayFlow | null | undefined, items: { personal: string[]; company: string[] } | null | undefined, maxItems = WEEK_FLOW_ITEMS_MAX): WeekFlowCell {
 	const one = (flow: string | null | undefined, list: string[] | undefined): WeekFlowScopeCell => {
 		if (typeof flow === "string" && flow.trim()) {
 			return flow.trim() === NONE_MARK ? { kind: "empty" } : { kind: "flow", text: flow.trim() };
 		}
 		if (list && list.length) {
-			return { kind: "items", items: list.slice(0, WEEK_FLOW_ITEMS_MAX), more: Math.max(0, list.length - WEEK_FLOW_ITEMS_MAX) };
+			const cap = Number.isFinite(maxItems) && maxItems >= 0 ? maxItems : list.length;
+			return { kind: "items", items: list.slice(0, cap), more: Math.max(0, list.length - cap) };
 		}
 		return { kind: "empty" };
 	};
 	return { personal: one(dayFlow?.personal, items?.personal), company: one(dayFlow?.company, items?.company) };
 }
+
+export {
+	WEEK_FLOW_NARROW_MAX,
+	adoptWeekCompact,
+	initialWeekCompact,
+	reduceWeekCompact,
+	weekFlowContentWidth,
+	weekFlowModeOf,
+	type WeekCompactAction,
+	type WeekCompactMode,
+	type WeekCompactState,
+} from "./week-compact.ts";
 
 /**
  * Frontmatter `flow_updated_at` → `HH:mm 기준` in KST (Asia/Seoul, UTC+9, no DST).

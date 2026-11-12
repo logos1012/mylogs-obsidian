@@ -19,6 +19,11 @@ import {
 	TEMPLATE_SECTIONS,
 	WEEK_FLOW_SECTION,
 	weekDates,
+	WEEK_FLOW_NARROW_MAX,
+	adoptWeekCompact,
+	initialWeekCompact,
+	reduceWeekCompact,
+	weekFlowModeOf,
 } from "../src/mylife/model.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -362,4 +367,54 @@ test("week-flow: dayText is the whole 하루 (comments stripped), null when miss
 	assert.equal(dayText(daily("## 하루\n\n<!-- 주석 -->\n첫 줄.\n\n둘째 단락.\n\n## 한 일\n")), "첫 줄.\n\n둘째 단락.");
 	assert.equal(dayText(daily("## 하루\n\n<!-- 주석만 -->\n\n## 한 일\n")), null);
 	assert.equal(dayText(daily("## 한 일\n\n- x\n")), null);
+});
+
+test("week-flow: weekFlowCell with a non-finite max keeps every item", () => {
+	const c = weekFlowCell(null, { personal: ["1", "2", "3", "4", "5"], company: [] }, Number.POSITIVE_INFINITY);
+	assert.deepEqual(c.personal, { kind: "items", items: ["1", "2", "3", "4", "5"], more: 0 });
+	assert.deepEqual(c.company, { kind: "empty" });
+});
+
+// ───────────────────────── compact / expand state ─────────────────────────
+
+test("week-compact: wide starts closed; narrow starts with today only", () => {
+	assert.deepEqual(initialWeekCompact("wide", "2026-11-12"), { expandedDay: null, summaryOpen: false });
+	assert.deepEqual(initialWeekCompact("narrow", "2026-11-12"), { expandedDay: "2026-11-12", summaryOpen: false });
+	assert.deepEqual(initialWeekCompact("narrow", null), { expandedDay: null, summaryOpen: false });
+});
+
+test("week-compact: toggle-day opens, toggles off, and switches to another day", () => {
+	const a = { expandedDay: null as string | null, summaryOpen: false };
+	const open = reduceWeekCompact(a, { type: "toggle-day", date: "2026-11-11" });
+	assert.deepEqual(open, { expandedDay: "2026-11-11", summaryOpen: false });
+	assert.deepEqual(reduceWeekCompact(open, { type: "toggle-day", date: "2026-11-11" }), { expandedDay: null, summaryOpen: false });
+	assert.deepEqual(reduceWeekCompact(open, { type: "toggle-day", date: "2026-11-12" }), { expandedDay: "2026-11-12", summaryOpen: false });
+	assert.equal(reduceWeekCompact(open, { type: "close-day" }).expandedDay, null);
+	assert.equal(reduceWeekCompact(a, { type: "close-day" }), a);
+});
+
+test("week-compact: toggle-summary flips and leaves the expanded day alone", () => {
+	const s = { expandedDay: "2026-11-12", summaryOpen: false };
+	const open = reduceWeekCompact(s, { type: "toggle-summary" });
+	assert.deepEqual(open, { expandedDay: "2026-11-12", summaryOpen: true });
+	assert.deepEqual(reduceWeekCompact(open, { type: "toggle-summary" }), s);
+});
+
+test("week-compact: adopt seeds the first paint and keeps a valid session day", () => {
+	const week = ["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13", "2026-11-14", "2026-11-15"];
+	assert.deepEqual(adoptWeekCompact(null, "wide", week, "2026-11-12"), { expandedDay: null, summaryOpen: false });
+	assert.deepEqual(adoptWeekCompact(null, "narrow", week, "2026-11-12"), { expandedDay: "2026-11-12", summaryOpen: false });
+	assert.deepEqual(adoptWeekCompact(null, "narrow", week, "2026-11-08"), { expandedDay: null, summaryOpen: false });
+
+	const prev = { expandedDay: "2026-11-11", summaryOpen: true };
+	assert.equal(adoptWeekCompact(prev, "wide", week, "2026-11-12"), prev);
+	const other = ["2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20", "2026-11-21", "2026-11-22"];
+	assert.deepEqual(adoptWeekCompact(prev, "narrow", other, "2026-11-19"), { expandedDay: null, summaryOpen: true });
+});
+
+test("week-compact: weekFlowModeOf matches the 720px stacked layout", () => {
+	assert.equal(weekFlowModeOf(WEEK_FLOW_NARROW_MAX), "narrow");
+	assert.equal(weekFlowModeOf(0), "narrow");
+	assert.equal(weekFlowModeOf(WEEK_FLOW_NARROW_MAX + 1), "wide");
+	assert.equal(weekFlowModeOf(960), "wide");
 });

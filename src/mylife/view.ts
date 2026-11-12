@@ -56,6 +56,15 @@ import {
 	weekFlowCell,
 	type WeekFlowScopeCell,
 } from "./model.ts";
+import {
+	adoptWeekCompact,
+	reduceWeekCompact,
+	type WeekCompactAction,
+	type WeekCompactMode,
+	type WeekCompactState,
+	weekFlowContentWidth,
+	weekFlowModeOf,
+} from "./week-compact.ts";
 
 export const VIEW_TYPE_MY_LIFE = "mylogs-my-life";
 
@@ -281,6 +290,11 @@ export class MyLifeView extends ItemView {
 	private note: UserNoteEditor | null = null;
 	private loadSeq = 0;
 	private reloadTimer: number | null = null;
+	/** Compact/expand state for 「이번 주 흐름」; lives only as long as this view. */
+	private weekCompact: WeekCompactState | null = null;
+	private weekFlowMode: WeekCompactMode | null = null;
+	private weekFlowRo: ResizeObserver | null = null;
+	private weekFlowData: WeekFlowData | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: MyLogsPlugin) {
 		super(leaf);
@@ -379,6 +393,8 @@ export class MyLifeView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
+		this.weekFlowRo?.disconnect();
+		this.weekFlowRo = null;
 		if (this.reloadTimer !== null) window.clearTimeout(this.reloadTimer);
 		await this.note?.flush();
 		this.note?.destroy();
@@ -509,11 +525,45 @@ export class MyLifeView extends ItemView {
 		}
 	}
 
-	// ── 이번 주 흐름 (오늘 tab, read-only) ──
+	// ── 이번 주 흐름 (오늘 tab, read-only, compact by default) ──
 
 	private renderWeekFlow(data: WeekFlowData): void {
+		this.weekFlowData = data;
+		this.weekFlowMode = weekFlowModeOf(weekFlowContentWidth(this.rootEl));
+		this.ensureWeekFlowObserver();
+		this.paintWeekFlow(data);
+	}
+
+	private ensureWeekFlowObserver(): void {
+		if (this.weekFlowRo || !this.rootEl) return;
+		this.weekFlowRo = new ResizeObserver(() => {
+			const mode = weekFlowModeOf(weekFlowContentWidth(this.rootEl));
+			if (mode === this.weekFlowMode) return;
+			this.weekFlowMode = mode;
+			if (this.weekFlowData && this.showsWeekFlow()) this.paintWeekFlow(this.weekFlowData);
+		});
+		this.weekFlowRo.observe(this.rootEl);
+	}
+
+	private patchWeekCompact(action: WeekCompactAction): void {
+		if (!this.weekCompact || !this.weekFlowData) return;
+		this.weekCompact = reduceWeekCompact(this.weekCompact, action);
+		this.paintWeekFlow(this.weekFlowData);
+	}
+
+	private paintWeekFlow(data: WeekFlowData): void {
 		const today = todayIsoLocal();
+		const mode = weekFlowModeOf(weekFlowContentWidth(this.rootEl));
+		this.weekFlowMode = mode;
+		this.weekCompact = adoptWeekCompact(
+			this.weekCompact,
+			mode,
+			data.days.map((d) => d.date),
+			today,
+		);
+		const compact = this.weekCompact;
 		const collapsed = this.plugin.settings.myLifeWeekFlowCollapsed === true;
+
 		const card = this.bodyEl.createDiv({ cls: `mlf-card mlf-week-flow${collapsed ? " is-collapsed" : ""}` });
 		const head = card.createDiv({ cls: "mlf-card-head" });
 		const toggle = head.createEl("button", {
@@ -533,21 +583,31 @@ export class MyLifeView extends ItemView {
 		});
 
 		const body = card.createDiv({ cls: "mlf-card-body mlf-wf-body" });
+		const mdWait: Promise<void>[] = [];
 
-		// 1) 오늘까지 흐름 — the week's summary, first and largest.
-		const flow = body.createDiv({ cls: "mlf-wf-flow" });
+		// 1) 오늘까지 흐름 — clamped to 4 lines; one 「전체 보기」 opens both rows.
+		const flow = body.createDiv({ cls: `mlf-wf-flow${compact.summaryOpen ? " is-open" : ""}` });
 		const fh = flow.createDiv({ cls: "mlf-wf-flow-head" });
 		fh.createEl("h4", { cls: "mlf-wf-flow-title", text: "오늘까지 흐름" });
 		const summary = data.weeklyText === null ? null : flowSummary(data.weeklyText);
 		const at = summary !== null && data.weeklyText !== null ? flowUpdatedOf(data.weeklyText) : null;
 		if (at) fh.createSpan({ cls: "mlf-wf-at", text: at, attr: { title: "Weekly flow_updated_at (KST)" } });
+		const moreBtn = fh.createEl("button", {
+			cls: "mlf-wf-more-btn",
+			attr: {
+				type: "button",
+				"aria-expanded": compact.summaryOpen ? "true" : "false",
+				hidden: "true",
+			},
+			text: compact.summaryOpen ? "접기" : "전체 보기",
+		});
+		moreBtn.addEventListener("click", () => this.patchWeekCompact({ type: "toggle-summary" }));
 		if (summary === null) {
 			flow.createDiv({ cls: "mlf-card-none mlf-wf-empty", text: "아직 이번 주 흐름 요약이 없어요. 매일 저녁 Tear-off가 써 줘요." });
 		} else if (summary.kind === "legacy") {
 			const md = flow.createDiv({ cls: "mlf-md mlf-wf-flow-md markdown-rendered" });
-			void this.renderMarkdown(md, summary.text, data.weeklyPath);
+			mdWait.push(this.renderMarkdown(md, summary.text, data.weeklyPath));
 		} else {
-			// v2.3: 개인 / 회사 rows, labelled like the day grid below. Full text, nothing clamped.
 			const rows = flow.createDiv({ cls: "mlf-wf-sum" });
 			for (const [scope, label, text] of [
 				["personal", "개인", summary.personal],
@@ -559,33 +619,35 @@ export class MyLifeView extends ItemView {
 					row.createDiv({ cls: "mlf-wf-sum-text is-none" }).createSpan({ cls: "mlf-wf-none", text: "—", attr: { "aria-label": "없음" } });
 				} else {
 					const md = row.createDiv({ cls: "mlf-wf-sum-text mlf-md markdown-rendered" });
-					void this.renderMarkdown(md, text, data.weeklyPath);
+					mdWait.push(this.renderMarkdown(md, text, data.weeklyPath));
 				}
 			}
 		}
+		if (summary !== null) {
+			if (compact.summaryOpen) moreBtn.removeAttribute("hidden");
+			else {
+				void Promise.all(mdWait.slice()).then(() => {
+					const texts = flow.querySelectorAll<HTMLElement>(".mlf-wf-sum-text:not(.is-none), .mlf-wf-flow-md");
+					const overflows = Array.from(texts).some((el) => el.scrollHeight > el.clientHeight + 1);
+					if (overflows) moreBtn.removeAttribute("hidden");
+				});
+			}
+		}
 
-		// 2) 요일별: columns 월~일, rows 개인 / 회사 (a vertical list on narrow panes). Nothing is clamped.
+		// 2) 요일별: compact cells; click a header or cell to expand (one day at a time).
 		const dayFlow = data.weeklyText === null ? new Map<string, DayFlow>() : parseDayFlow(data.weeklyText);
 		const grid = body.createDiv({ cls: "mlf-wf-grid" });
 		grid.createDiv({ cls: "mlf-wf-rowlabel mlf-wf-r-personal", text: "개인" });
 		grid.createDiv({ cls: "mlf-wf-rowlabel mlf-wf-r-company", text: "회사" });
-		const panel = body.createDiv({ cls: "mlf-wf-haru" });
-		panel.hide();
-		let openHaru: { date: string; btn: HTMLElement } | null = null;
-		const closeHaru = () => {
-			openHaru?.btn.setAttr("aria-expanded", "false");
-			openHaru?.btn.removeClass("is-active");
-			openHaru = null;
-			panel.empty();
-			panel.hide();
-		};
 
 		data.days.forEach(({ date, text }, i) => {
 			const future = date > today;
+			const expanded = compact.expandedDay === date;
 			const cls = ["mlf-wf-col", `wd-${i + 1}`, `col-${i + 1}`];
 			if (date === today) cls.push("is-today");
 			if (date === this.date) cls.push("is-selected");
 			if (future) cls.push("is-future");
+			if (expanded) cls.push("is-expanded");
 			const col = grid.createDiv({ cls: cls.join(" ") });
 			const [, mm, dd] = date.split("-");
 			const label = `${mm}/${dd} (${WEEKDAY_SHORT[i]})`;
@@ -595,13 +657,19 @@ export class MyLifeView extends ItemView {
 				cls: "mlf-wf-date",
 				attr: {
 					type: "button",
-					"aria-label": future ? `${label} · 아직 오지 않은 날` : `${label}의 오늘 탭 열기`,
+					"aria-expanded": expanded ? "true" : "false",
+					"aria-label": future
+						? `${label} · 아직 오지 않은 날`
+						: expanded
+							? `${label} 접기`
+							: `${label} 펼치기`,
 					...(date === this.date ? { "aria-current": "date" } : {}),
 				},
 			});
 			btn.createSpan({ cls: "mlf-wf-wd", text: WEEKDAY_SHORT[i] });
 			btn.createSpan({ cls: "mlf-wf-md", text: `${mm}/${dd}` });
 			if (date === today) btn.createSpan({ cls: "mlf-wf-today", text: "오늘" });
+			if (!future) setIcon(btn.createSpan({ cls: "mlf-wf-exp", attr: { "aria-hidden": "true" } }), "chevron-down");
 
 			const personal = col.createDiv({ cls: "mlf-wf-cell mlf-wf-personal" });
 			const company = col.createDiv({ cls: "mlf-wf-cell mlf-wf-company" });
@@ -609,43 +677,102 @@ export class MyLifeView extends ItemView {
 			company.createSpan({ cls: "mlf-wf-scope", text: "회사" });
 
 			if (future) {
-				// Future: dimmed and empty, even if a file exists; the date does not navigate.
+				// Future: dimmed and empty, even if a file exists; the date does not expand or navigate.
 				btn.disabled = true;
 				return;
 			}
-			btn.addEventListener("click", () => void this.openDaily(date));
 
-			// The whole 「하루」: hover / long-press tooltip on the date, and a small toggle that opens it below.
+			const items = text === null ? null : dailyItemsByScope(text);
+			const cell = weekFlowCell(dayFlow.get(date), items);
+			const full = weekFlowCell(dayFlow.get(date), items, Number.POSITIVE_INFINITY);
 			const haru = text === null ? null : dayText(text);
-			if (haru !== null) {
-				tip(btn, haru);
-				const more = hd.createEl("button", {
-					cls: "mlf-wf-haru-btn clickable-icon",
-					attr: { type: "button", "aria-label": `${label} 「하루」 펼치기`, "aria-expanded": "false" },
-				});
-				setIcon(more, "text");
-				more.addEventListener("click", (e) => {
-					e.stopPropagation();
-					if (openHaru?.date === date) return closeHaru();
-					closeHaru();
-					openHaru = { date, btn: more };
-					more.setAttr("aria-expanded", "true");
-					more.addClass("is-active");
-					panel.show();
-					const ph = panel.createDiv({ cls: "mlf-wf-haru-head" });
-					ph.createSpan({ cls: "mlf-wf-haru-title", text: `${label} 하루` });
-					const x = ph.createEl("button", { cls: "mlf-wf-haru-close clickable-icon", attr: { type: "button", "aria-label": "닫기" } });
-					setIcon(x, "x");
-					x.addEventListener("click", closeHaru);
-					const md = panel.createDiv({ cls: "mlf-md markdown-rendered" });
-					void this.renderMarkdown(md, haru, this.pathOf("daily", date));
-				});
-			}
-
-			const cell = weekFlowCell(dayFlow.get(date), text === null ? null : dailyItemsByScope(text));
 			this.renderWeekFlowScope(personal, cell.personal, data.weeklyPath);
 			this.renderWeekFlowScope(company, cell.company, data.weeklyPath);
+
+			tip(btn, expanded ? "접기" : "펼쳐서 전체 보기");
+			const onToggle = (e: MouseEvent) => {
+				const t = e.target as HTMLElement;
+				if (t.closest("a")) return;
+				if (t.closest("button") && !t.closest("button.mlf-wf-date")) return;
+				if (t.closest(".mlf-wf-detail")) return;
+				e.preventDefault();
+				this.patchWeekCompact({ type: "toggle-day", date });
+			};
+			btn.addEventListener("click", onToggle);
+			personal.addEventListener("click", onToggle);
+			company.addEventListener("click", onToggle);
+
+			if (expanded && mode === "narrow") {
+				this.renderWeekFlowDetail(col, { date, label, cell: full, haru, weeklyPath: data.weeklyPath });
+			}
 		});
+
+		if (compact.expandedDay && mode === "wide") {
+			const i = data.days.findIndex((d) => d.date === compact.expandedDay);
+			if (i >= 0) {
+				const { date, text } = data.days[i];
+				const items = text === null ? null : dailyItemsByScope(text);
+				const full = weekFlowCell(dayFlow.get(date), items, Number.POSITIVE_INFINITY);
+				const [, mm, dd] = date.split("-");
+				this.renderWeekFlowDetail(body, {
+					date,
+					label: `${mm}/${dd} (${WEEKDAY_SHORT[i]})`,
+					cell: full,
+					haru: text === null ? null : dayText(text),
+					weeklyPath: data.weeklyPath,
+				});
+			}
+		}
+
+		const old = this.bodyEl.querySelector(":scope > .mlf-week-flow");
+		this.bodyEl.prepend(card);
+		if (old && old !== card) old.remove();
+	}
+
+	private renderWeekFlowDetail(
+		parent: HTMLElement,
+		opts: {
+			date: string;
+			label: string;
+			cell: { personal: WeekFlowScopeCell; company: WeekFlowScopeCell };
+			haru: string | null;
+			weeklyPath: string;
+		},
+	): void {
+		const panel = parent.createDiv({ cls: "mlf-wf-detail", attr: { id: `mlf-wf-detail-${opts.date}` } });
+		const ph = panel.createDiv({ cls: "mlf-wf-detail-head" });
+		ph.createSpan({ cls: "mlf-wf-detail-title", text: `${opts.label} 펼친 날` });
+		const open = ph.createEl("button", {
+			cls: "mlf-wf-open-daily clickable-icon",
+			attr: { type: "button", "aria-label": `${opts.label} 오늘 탭 열기`, title: "오늘 탭 열기" },
+		});
+		setIcon(open, "arrow-up-right");
+		open.addEventListener("click", (e) => {
+			e.stopPropagation();
+			void this.openDaily(opts.date);
+		});
+		const x = ph.createEl("button", { cls: "mlf-wf-detail-close clickable-icon", attr: { type: "button", "aria-label": "닫기" } });
+		setIcon(x, "x");
+		x.addEventListener("click", (e) => {
+			e.stopPropagation();
+			this.patchWeekCompact({ type: "close-day" });
+		});
+
+		for (const [scope, label, c] of [
+			["personal", "개인", opts.cell.personal],
+			["company", "회사", opts.cell.company],
+		] as const) {
+			const row = panel.createDiv({ cls: `mlf-wf-detail-row is-${scope}` });
+			row.createSpan({ cls: "mlf-wf-scope-label", text: label });
+			this.renderWeekFlowScope(row, c, opts.weeklyPath);
+		}
+
+		if (opts.haru !== null) {
+			const fold = panel.createEl("details", { cls: "mlf-wf-haru-fold" });
+			fold.createEl("summary", { text: "하루" });
+			const md = fold.createDiv({ cls: "mlf-md markdown-rendered" });
+			void this.renderMarkdown(md, opts.haru, this.pathOf("daily", opts.date));
+		}
 	}
 
 	private renderWeekFlowScope(el: HTMLElement, c: WeekFlowScopeCell, weeklyPath: string): void {
@@ -662,7 +789,6 @@ export class MyLifeView extends ItemView {
 			box.createSpan({ cls: "mlf-wf-none", text: "—", attr: { "aria-label": "없음" } });
 		}
 	}
-
 	// ── missing ──
 
 	private renderMissing(unit: MyLifeUnit, path: string): void {

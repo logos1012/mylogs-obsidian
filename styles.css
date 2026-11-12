@@ -6579,13 +6579,17 @@ body.is-mobile .mylogs-inbox-add-modal input.dc-ia-input {
 }
 
 /* ── 이번 주 흐름 (오늘 tab, read-only) ──
-   Top: 「오늘까지 흐름」 (the week's summary, primary). Below: a grid — row labels + 7 day columns,
-   rows 개인 / 회사, nothing clamped (cells grow). Narrow panes: one block per day, stacked. */
+   Top: 「오늘까지 흐름」 (clamped to 4 lines, 「전체 보기」 opens both rows).
+   Below: a grid — row labels + 7 day columns, rows 개인 / 회사, cells clamped to 3 lines
+   (today / selected: 5). Click a day to open 「펼친 날」 under the grid (full text, no inner scroll).
+   Narrow panes: one block per day, 2-line clamp, accordion in place (today open by default). */
 .mylogs-my-life .mlf-week-flow {
 	margin-bottom: 18px;
+	overflow: visible;
 }
 .mylogs-my-life .mlf-wf-body {
 	padding: 4px 14px 14px;
+	overflow: visible;
 }
 .mylogs-my-life .mlf-wf-flow {
 	margin-bottom: 14px;
@@ -6598,6 +6602,7 @@ body.is-mobile .mylogs-inbox-add-modal input.dc-ia-input {
 .mylogs-my-life .mlf-wf-flow-head {
 	display: flex;
 	align-items: baseline;
+	flex-wrap: wrap;
 	gap: 8px;
 	margin-bottom: 6px;
 }
@@ -6613,6 +6618,24 @@ body.is-mobile .mylogs-inbox-add-modal input.dc-ia-input {
 	color: var(--mlf-faint);
 	font-size: 11.5px;
 	font-variant-numeric: tabular-nums;
+}
+.mylogs-my-life button.mlf-wf-more-btn {
+	margin-left: auto;
+	height: auto;
+	min-height: 0;
+	padding: 2px 8px;
+	border: 0;
+	border-radius: 4px;
+	background: none;
+	box-shadow: none;
+	color: var(--mlf-accent);
+	font-family: var(--mlf-font);
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.mylogs-my-life button.mlf-wf-more-btn:hover {
+	background: var(--mlf-hover);
 }
 .mylogs-my-life .mlf-wf-flow-md {
 	font-size: 15px;
@@ -6657,6 +6680,15 @@ body.is-mobile .mylogs-inbox-add-modal input.dc-ia-input {
 }
 .mylogs-my-life .mlf-wf-sum-text.markdown-rendered > :last-child {
 	margin-bottom: 0;
+}
+.mylogs-my-life .mlf-wf-flow:not(.is-open) .mlf-wf-sum-text:not(.is-none),
+.mylogs-my-life .mlf-wf-flow:not(.is-open) .mlf-wf-flow-md {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 4;
+	line-clamp: 4;
+	overflow: hidden;
+	max-height: calc(1.7em * 4);
 }
 
 .mylogs-my-life .mlf-wf-grid {
@@ -6710,6 +6742,18 @@ body.is-mobile .mylogs-inbox-add-modal input.dc-ia-input {
 }
 .mylogs-my-life .mlf-wf-cell {
 	padding: 6px 7px 8px;
+	min-height: calc(14px + 1.55em * 3);
+	cursor: pointer;
+}
+.mylogs-my-life .mlf-wf-col.is-today .mlf-wf-cell,
+.mylogs-my-life .mlf-wf-col.is-selected .mlf-wf-cell {
+	min-height: calc(14px + 1.55em * 5);
+}
+.mylogs-my-life .mlf-wf-col.is-future .mlf-wf-cell {
+	cursor: default;
+}
+.mylogs-my-life .mlf-wf-col.is-expanded > .mlf-wf-head {
+	box-shadow: inset 0 -2px 0 var(--mlf-accent);
 }
 .mylogs-my-life .mlf-wf-personal {
 	grid-row: 2;
@@ -6790,19 +6834,25 @@ body.is-mobile .mylogs-inbox-add-modal input.dc-ia-input {
 	font-size: 10.5px;
 	font-weight: 700;
 }
-.mylogs-my-life .mlf-wf-haru-btn {
+.mylogs-my-life .mlf-wf-exp {
 	flex: 0 0 auto;
-	width: 24px;
-	height: 24px;
-	padding: 3px;
+	display: inline-flex;
+	margin-left: auto;
 	color: var(--mlf-faint);
+	opacity: 0.7;
+	transition: transform 0.15s ease;
 }
-.mylogs-my-life .mlf-wf-haru-btn svg {
-	width: 14px;
-	height: 14px;
+.mylogs-my-life .mlf-wf-today + .mlf-wf-exp {
+	margin-left: 0;
 }
-.mylogs-my-life .mlf-wf-haru-btn.is-active {
+.mylogs-my-life .mlf-wf-exp svg {
+	width: 12px;
+	height: 12px;
+}
+.mylogs-my-life .mlf-wf-col.is-expanded .mlf-wf-exp {
 	color: var(--mlf-accent);
+	transform: rotate(180deg);
+	opacity: 1;
 }
 /* In-cell scope label: only in the stacked (narrow) layout; wide panes have the row labels. */
 .mylogs-my-life .mlf-wf-scope {
@@ -6814,6 +6864,27 @@ body.is-mobile .mylogs-inbox-add-modal input.dc-ia-input {
 	line-height: 1.55;
 	word-break: keep-all;
 	overflow-wrap: anywhere;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	line-clamp: 3;
+	overflow: hidden;
+	max-height: calc(1.55em * 3);
+}
+.mylogs-my-life .mlf-wf-col.is-today .mlf-wf-cell > .mlf-wf-content,
+.mylogs-my-life .mlf-wf-col.is-selected .mlf-wf-cell > .mlf-wf-content {
+	-webkit-line-clamp: 5;
+	line-clamp: 5;
+	max-height: calc(1.55em * 5);
+}
+.mylogs-my-life .mlf-wf-detail .mlf-wf-content {
+	display: block;
+	-webkit-line-clamp: unset;
+	line-clamp: unset;
+	max-height: none;
+	overflow: visible;
+	font-size: 13.5px;
+	line-height: 1.6;
 }
 .mylogs-my-life .mlf-wf-content.markdown-rendered > :first-child {
 	margin-top: 0;
@@ -6843,27 +6914,89 @@ body.is-mobile .mylogs-inbox-add-modal input.dc-ia-input {
 .mylogs-my-life .mlf-wf-none {
 	color: var(--mlf-faint);
 }
-/* The full 「하루」 of one day, opened from the small toggle beside a date. */
-.mylogs-my-life .mlf-wf-haru {
+/* 「펼친 날」: full 개인/회사 under the grid (wide) or inside the day (narrow). No inner scroll. */
+.mylogs-my-life .mlf-wf-detail {
 	margin-top: 10px;
 	padding: 10px 14px 12px;
 	border: 1px solid var(--mlf-line);
+	border-left: 3px solid var(--mlf-accent);
 	border-radius: 6px;
 	background: var(--mlf-card);
+	overflow: visible;
 }
-.mylogs-my-life .mlf-wf-haru-head {
+.mylogs-my-life .mlf-wf-detail-head {
 	display: flex;
 	align-items: center;
-	gap: 8px;
-	margin-bottom: 4px;
+	gap: 4px;
+	margin-bottom: 8px;
 }
-.mylogs-my-life .mlf-wf-haru-title {
+.mylogs-my-life .mlf-wf-detail-title {
+	color: var(--mlf-ink);
+	font-size: 13px;
+	font-weight: 700;
+}
+.mylogs-my-life .mlf-wf-open-daily,
+.mylogs-my-life .mlf-wf-detail-close {
+	flex: 0 0 auto;
+	width: 28px;
+	height: 28px;
+	padding: 4px;
+	color: var(--mlf-muted);
+}
+.mylogs-my-life .mlf-wf-detail-close {
+	margin-left: auto;
+}
+.mylogs-my-life .mlf-wf-open-daily:hover,
+.mylogs-my-life .mlf-wf-detail-close:hover {
+	color: var(--mlf-accent);
+}
+.mylogs-my-life .mlf-wf-detail-row {
+	display: flex;
+	gap: 12px;
+	padding: 6px 0;
+}
+.mylogs-my-life .mlf-wf-detail-row.is-company {
+	border-top: 1px dashed var(--mlf-line);
+}
+.mylogs-my-life .mlf-wf-detail-row .mlf-wf-scope-label {
+	flex: 0 0 auto;
+	width: 2.4em;
+	padding-top: 1px;
+	color: var(--mlf-muted);
+	font-size: 11.5px;
+	font-weight: 700;
+}
+.mylogs-my-life .mlf-wf-detail-row .mlf-wf-content {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+.mylogs-my-life .mlf-wf-haru-fold {
+	margin-top: 8px;
+	padding-top: 8px;
+	border-top: 1px solid var(--mlf-line);
+}
+.mylogs-my-life .mlf-wf-haru-fold > summary {
+	cursor: pointer;
 	color: var(--mlf-muted);
 	font-size: 12px;
 	font-weight: 700;
+	list-style: none;
 }
-.mylogs-my-life .mlf-wf-haru-close {
-	margin-left: auto;
+.mylogs-my-life .mlf-wf-haru-fold > summary::-webkit-details-marker {
+	display: none;
+}
+.mylogs-my-life .mlf-wf-haru-fold > summary::before {
+	content: "▸ ";
+	color: var(--mlf-faint);
+}
+.mylogs-my-life .mlf-wf-haru-fold[open] > summary::before {
+	content: "▾ ";
+}
+.mylogs-my-life .mlf-wf-haru-fold .mlf-md {
+	margin-top: 6px;
+	color: var(--mlf-ink-2);
+	font-size: 13.5px;
+	line-height: 1.65;
 }
 
 /* 이번 주 흐름 on narrow panes: no skinny columns — each day is a block (date, then 개인 / 회사). */
@@ -6915,6 +7048,13 @@ body.is-mobile .mylogs-inbox-add-modal input.dc-ia-input {
 		display: flex;
 		gap: 10px;
 		padding: 4px 12px 8px;
+		min-height: calc(12px + 1.55em * 2);
+		cursor: pointer;
+	}
+	.mylogs-my-life .mlf-wf-col.is-today .mlf-wf-cell,
+	.mylogs-my-life .mlf-wf-col.is-selected .mlf-wf-cell,
+	.mylogs-my-life .mlf-wf-col.is-expanded .mlf-wf-cell {
+		min-height: 0;
 	}
 	.mylogs-my-life .mlf-wf-company {
 		border-top: 1px dashed var(--mlf-line) !important;
@@ -6933,6 +7073,30 @@ body.is-mobile .mylogs-inbox-add-modal input.dc-ia-input {
 		flex: 1 1 auto;
 		min-width: 0;
 		font-size: 13.5px;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		max-height: calc(1.55em * 2);
+	}
+	.mylogs-my-life .mlf-wf-col.is-today .mlf-wf-cell > .mlf-wf-content,
+	.mylogs-my-life .mlf-wf-col.is-selected .mlf-wf-cell > .mlf-wf-content {
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		max-height: calc(1.55em * 2);
+	}
+	.mylogs-my-life .mlf-wf-col.is-expanded .mlf-wf-cell > .mlf-wf-content {
+		display: block;
+		-webkit-line-clamp: unset;
+		line-clamp: unset;
+		max-height: none;
+		overflow: visible;
+	}
+	.mylogs-my-life .mlf-wf-col .mlf-wf-detail {
+		margin: 0;
+		border: 0;
+		border-top: 1px solid var(--mlf-line);
+		border-left: 0;
+		border-radius: 0;
+		background: transparent;
 	}
 	.mylogs-my-life .mlf-wf-flow-md,
 	.mylogs-my-life .mlf-wf-sum-text {
@@ -6963,9 +7127,19 @@ body.is-mobile .mylogs-my-life button.mlf-wf-date {
 	min-height: 44px;
 	align-items: center;
 }
-body.is-mobile .mylogs-my-life .mlf-wf-haru-btn {
+body.is-mobile .mylogs-my-life button.mlf-wf-more-btn {
+	min-height: 44px;
+	padding: 8px 12px;
+}
+body.is-mobile .mylogs-my-life .mlf-wf-open-daily,
+body.is-mobile .mylogs-my-life .mlf-wf-detail-close {
 	width: 44px;
 	height: 44px;
+}
+body.is-mobile .mylogs-my-life .mlf-wf-haru-fold > summary {
+	min-height: 44px;
+	display: flex;
+	align-items: center;
 }
 /* ===== /My Life view ===== */
 
