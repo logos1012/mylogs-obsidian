@@ -260,51 +260,40 @@ export interface DayFlow {
 export const NONE_MARK = "—";
 
 /**
- * Parse Weekly `## 요일별 흐름` into ISO date → {personal, company}.
+ * Shared walker for `- 개인:` / `- 회사:` bullets (Weekly `## 요일별 흐름` and `## 이번 주 흐름`).
  *
- *   ### 2026-11-09 (월)
- *   - 개인: 한두 문장
- *     이어지는 줄
- *   - 회사: —
- *
- * HTML comments (also multi-line) are removed first, so the template's example headings never
- * count. The weekday label after the date is optional and ignored. A value runs until the next
- * bullet or heading; continuation lines are joined with `\n` and the result trimmed (inner markdown
- * kept). A blank value counts as no line (null). Headings with an invalid date are skipped (and
- * their lines ignored). A valid heading without 개인/회사 lines still appears, with nulls.
- * Missing or comment-only section → empty map.
+ * HTML comments (also multi-line) are removed first, so template examples never count. A value runs
+ * until the next bullet or heading; continuation lines are trimmed and joined with `\n`, the result
+ * trimmed (inner markdown kept). Fullwidth `：` is accepted. `onHeading` gets each heading's text and
+ * returns the target that following bullets fill (null → ignore them until the next heading).
+ * `onValue` gets every bullet found, even a blank one ("" — the caller decides what that means).
  */
-export function parseDayFlow(weeklyText: string): Map<string, DayFlow> {
-	const out = new Map<string, DayFlow>();
-	const content = getSectionContent(weeklyText, DAY_FLOW_SECTION);
-	if (content === null) return out;
-	let day: DayFlow | null = null;
+function walkScopeBullets(
+	text: string,
+	start: DayFlow | null,
+	onHeading: (title: string) => DayFlow | null,
+	onValue: (target: DayFlow, key: keyof DayFlow, value: string) => void,
+): void {
+	let target = start;
 	let key: keyof DayFlow | null = null;
 	let buf: string[] = [];
 	const flush = () => {
-		if (day && key) {
-			const v = buf.join("\n").trim();
-			day[key] = v ? v : null;
-		}
+		if (target && key) onValue(target, key, buf.join("\n").trim());
 		key = null;
 		buf = [];
 	};
-	for (const line of stripComments(content).split("\n")) {
+	for (const line of stripComments(text).split("\n")) {
 		const h = /^\s{0,3}#{1,6}\s+(.*)$/.exec(line);
 		if (h) {
 			flush();
-			const d = /^(\d{4}-\d{2}-\d{2})(?:\s|$)/.exec(h[1].trim());
-			if (d && fromIsoDate(d[1])) {
-				day = out.get(d[1]) ?? { personal: null, company: null };
-				out.set(d[1], day);
-			} else day = null;
+			target = onHeading(h[1].trim());
 			continue;
 		}
 		const b = /^\s*[-*+]\s+(.*)$/.exec(line);
 		if (b) {
 			flush();
 			const s = /^(개인|회사)\s*[:：]\s?(.*)$/.exec(b[1]);
-			if (s && day) {
+			if (s && target) {
 				key = s[1] === "회사" ? "company" : "personal";
 				buf = [s[2]];
 			}
@@ -313,7 +302,69 @@ export function parseDayFlow(weeklyText: string): Map<string, DayFlow> {
 		if (key) buf.push(line.trim());
 	}
 	flush();
+}
+
+/**
+ * Parse Weekly `## 요일별 흐름` into ISO date → {personal, company}.
+ *
+ *   ### 2026-11-09 (월)
+ *   - 개인: 한두 문장
+ *     이어지는 줄
+ *   - 회사: —
+ *
+ * Bullet rules: {@link walkScopeBullets}. The weekday label after the date is optional and ignored.
+ * A blank value counts as no line (null). Headings with an invalid date are skipped (and their lines
+ * ignored). A valid heading without 개인/회사 lines still appears, with nulls.
+ * Missing or comment-only section → empty map.
+ */
+export function parseDayFlow(weeklyText: string): Map<string, DayFlow> {
+	const out = new Map<string, DayFlow>();
+	const content = getSectionContent(weeklyText, DAY_FLOW_SECTION);
+	if (content === null) return out;
+	walkScopeBullets(
+		content,
+		null,
+		(title) => {
+			const d = /^(\d{4}-\d{2}-\d{2})(?:\s|$)/.exec(title);
+			if (!d || !fromIsoDate(d[1])) return null;
+			const day = out.get(d[1]) ?? { personal: null, company: null };
+			out.set(d[1], day);
+			return day;
+		},
+		(day, key, value) => {
+			day[key] = value ? value : null;
+		},
+	);
 	return out;
+}
+
+/**
+ * The 「오늘까지 흐름」 block, from Weekly `## 이번 주 흐름` (AGENTS.md v2.3 「4-2-1」):
+ * - `rows`: at least one `- 개인:` / `- 회사:` bullet (comments stripped first). A scope is null when
+ *   its bullet is missing, blank or exactly `—` — shown as a quiet 「—」.
+ * - `legacy`: no such bullet but other text (the older paragraph format) — the section as {@link flowOf}.
+ * - null: section missing, or only comments / whitespace (placeholder).
+ */
+export type FlowSummary =
+	| { kind: "rows"; personal: string | null; company: string | null }
+	| { kind: "legacy"; text: string };
+
+export function flowSummary(weeklyText: string): FlowSummary | null {
+	const legacy = flowOf(weeklyText);
+	if (legacy === null) return null;
+	const content = getSectionContent(weeklyText, WEEK_FLOW_SECTION) ?? "";
+	const rows: DayFlow = { personal: null, company: null };
+	let found = false;
+	walkScopeBullets(
+		content,
+		rows,
+		() => rows,
+		(t, key, value) => {
+			found = true;
+			t[key] = value && value !== NONE_MARK ? value : null;
+		},
+	);
+	return found ? { kind: "rows", ...rows } : { kind: "legacy", text: legacy };
 }
 
 /** A `## 한 일` line → short display text: link labels, no tags, no trailing `(…)` fields. */

@@ -35,7 +35,7 @@ import {
 	dailyItemsByScope,
 	type DayFlow,
 	dayText,
-	flowOf,
+	flowSummary,
 	flowUpdatedOf,
 	hasUserNote,
 	MY_LIFE_TABS,
@@ -538,14 +538,30 @@ export class MyLifeView extends ItemView {
 		const flow = body.createDiv({ cls: "mlf-wf-flow" });
 		const fh = flow.createDiv({ cls: "mlf-wf-flow-head" });
 		fh.createEl("h4", { cls: "mlf-wf-flow-title", text: "오늘까지 흐름" });
-		const content = data.weeklyText === null ? null : flowOf(data.weeklyText);
-		const at = content !== null && data.weeklyText !== null ? flowUpdatedOf(data.weeklyText) : null;
+		const summary = data.weeklyText === null ? null : flowSummary(data.weeklyText);
+		const at = summary !== null && data.weeklyText !== null ? flowUpdatedOf(data.weeklyText) : null;
 		if (at) fh.createSpan({ cls: "mlf-wf-at", text: at, attr: { title: "Weekly flow_updated_at (KST)" } });
-		if (content === null) {
+		if (summary === null) {
 			flow.createDiv({ cls: "mlf-card-none mlf-wf-empty", text: "아직 이번 주 흐름 요약이 없어요. 매일 저녁 Tear-off가 써 줘요." });
-		} else {
+		} else if (summary.kind === "legacy") {
 			const md = flow.createDiv({ cls: "mlf-md mlf-wf-flow-md markdown-rendered" });
-			void this.renderMarkdown(md, content, data.weeklyPath);
+			void this.renderMarkdown(md, summary.text, data.weeklyPath);
+		} else {
+			// v2.3: 개인 / 회사 rows, labelled like the day grid below. Full text, nothing clamped.
+			const rows = flow.createDiv({ cls: "mlf-wf-sum" });
+			for (const [scope, label, text] of [
+				["personal", "개인", summary.personal],
+				["company", "회사", summary.company],
+			] as const) {
+				const row = rows.createDiv({ cls: `mlf-wf-sum-row is-${scope}` });
+				row.createSpan({ cls: "mlf-wf-sum-label", text: label });
+				if (text === null) {
+					row.createDiv({ cls: "mlf-wf-sum-text is-none" }).createSpan({ cls: "mlf-wf-none", text: "—", attr: { "aria-label": "없음" } });
+				} else {
+					const md = row.createDiv({ cls: "mlf-wf-sum-text mlf-md markdown-rendered" });
+					void this.renderMarkdown(md, text, data.weeklyPath);
+				}
+			}
 		}
 
 		// 2) 요일별: columns 월~일, rows 개인 / 회사 (a vertical list on narrow panes). Nothing is clamped.

@@ -6621,6 +6621,43 @@ body.is-mobile .mylogs-inbox-add-modal input.dc-ia-input {
 .mylogs-my-life .mlf-wf-flow .mlf-wf-empty {
 	font-size: 13px;
 }
+/* v2.3 summary rows: 개인 / 회사, labelled like the day grid's row labels. Stays two rows on any width. */
+.mylogs-my-life .mlf-wf-sum {
+	display: grid;
+	grid-template-columns: max-content minmax(0, 1fr);
+	column-gap: 12px;
+}
+.mylogs-my-life .mlf-wf-sum-row {
+	display: contents;
+}
+.mylogs-my-life .mlf-wf-sum-label,
+.mylogs-my-life .mlf-wf-sum-text {
+	padding: 6px 0;
+}
+.mylogs-my-life .mlf-wf-sum-row.is-company > * {
+	border-top: 1px dashed var(--mlf-line);
+}
+.mylogs-my-life .mlf-wf-sum-label {
+	padding-top: 9px;
+	color: var(--mlf-muted);
+	font-size: 11.5px;
+	font-weight: 700;
+	white-space: nowrap;
+}
+.mylogs-my-life .mlf-wf-sum-text {
+	min-width: 0;
+	color: var(--mlf-ink);
+	font-size: 15px;
+	line-height: 1.7;
+	word-break: keep-all;
+	overflow-wrap: anywhere;
+}
+.mylogs-my-life .mlf-wf-sum-text.markdown-rendered > :first-child {
+	margin-top: 0;
+}
+.mylogs-my-life .mlf-wf-sum-text.markdown-rendered > :last-child {
+	margin-bottom: 0;
+}
 
 .mylogs-my-life .mlf-wf-grid {
 	display: grid;
@@ -6897,8 +6934,12 @@ body.is-mobile .mylogs-inbox-add-modal input.dc-ia-input {
 		min-width: 0;
 		font-size: 13.5px;
 	}
-	.mylogs-my-life .mlf-wf-flow-md {
+	.mylogs-my-life .mlf-wf-flow-md,
+	.mylogs-my-life .mlf-wf-sum-text {
 		font-size: 14.5px;
+	}
+	.mylogs-my-life .mlf-wf-sum {
+		column-gap: 10px;
 	}
 }
 

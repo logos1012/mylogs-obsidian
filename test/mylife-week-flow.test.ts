@@ -11,6 +11,7 @@ import {
 	parseDayFlow,
 	weekFlowCell,
 	flowOf,
+	flowSummary,
 	flowUpdatedLabel,
 	flowUpdatedOf,
 	isoWeekKey,
@@ -100,6 +101,53 @@ test("week-flow: flowOf is null when the section is comment-only, blank or missi
 	assert.equal(flowOf(fx("weekly/2026-W02.md")), null);
 	// The plugin's copy of the template has the section, comment-only.
 	assert.equal(flowOf(fx("templates/Weekly.md")), null);
+});
+
+// ───────────────────────── flowSummary (v2.3 개인 / 회사 rows) ─────────────────────────
+
+test("week-flow: flowSummary parses 개인 / 회사 bullets with markdown and continuation lines", () => {
+	const t = weekly(
+		"",
+		"<!-- 예시\n- 개인: 두세 문장\n- 회사: 두세 문장\n-->\n- 개인: 월요일엔 **산책**을 했고\n  수요일엔 [[독서모임]]에 갔다.\n- 회사： 보고서를 끝냈다.\n이어서 `발표` 준비.",
+	);
+	assert.deepEqual(flowSummary(t), {
+		kind: "rows",
+		personal: "월요일엔 **산책**을 했고\n수요일엔 [[독서모임]]에 갔다.",
+		company: "보고서를 끝냈다.\n이어서 `발표` 준비.",
+	});
+	// flowOf stays the raw section.
+	assert.ok(flowOf(t)?.startsWith("<!-- 예시"));
+});
+
+test("week-flow: flowSummary with only one bullet leaves the other row empty", () => {
+	assert.deepEqual(flowSummary(weekly("", "- 회사: 워크숍 준비.")), { kind: "rows", personal: null, company: "워크숍 준비." });
+	assert.deepEqual(flowSummary(weekly("", "- 개인: 쉬었다.")), { kind: "rows", personal: "쉬었다.", company: null });
+});
+
+test("week-flow: flowSummary treats an explicit — as a quiet empty row, not placeholder or legacy", () => {
+	assert.deepEqual(flowSummary(weekly("", "- 개인: —\n- 회사: 회의 세 개.")), { kind: "rows", personal: null, company: "회의 세 개." });
+	assert.deepEqual(flowSummary(weekly("", "- 개인: —\n- 회사: —")), { kind: "rows", personal: null, company: null });
+	assert.deepEqual(flowSummary(weekly("", "- 개인:\n- 회사: —")), { kind: "rows", personal: null, company: null });
+});
+
+test("week-flow: flowSummary falls back to the whole section for the old paragraph format", () => {
+	const text = "월요일엔 보고서를 붙잡았고, **수요일**부터 [[워크숍]] 준비로 넘어갔다.\n\n- 목: 발표 초안";
+	assert.deepEqual(flowSummary(weekly("", text)), { kind: "legacy", text });
+	// 개인/회사 mentioned mid-sentence is not a bullet.
+	const prose = "개인: 이런 말은 문장 속에 있다.";
+	assert.deepEqual(flowSummary(weekly("", prose)), { kind: "legacy", text: prose });
+});
+
+test("week-flow: flowSummary is null for missing / blank / comment-only sections, even with example bullets", () => {
+	assert.equal(flowSummary(weekly("", "<!-- 두 줄로.\n- 개인: 두세 문장\n- 회사: 두세 문장\n-->")), null);
+	assert.equal(flowSummary(weekly("", "<!-- a -->\n\n   \n<!--\nb\n-->")), null);
+	assert.equal(flowSummary(weekly("", "")), null);
+	assert.equal(flowSummary(weekly("", null)), null);
+	assert.equal(flowSummary(fx("weekly/2026-W02.md")), null);
+	// The plugin's copy of the template (v2.3) has example bullets inside the comment.
+	const tpl = fx("templates/Weekly.md");
+	assert.match(tpl, /<!--[^>]*- 개인:[^>]*- 회사:[^>]*-->/);
+	assert.equal(flowSummary(tpl), null);
 });
 
 test("week-flow: 이번 주 흐름 is the first weekly template section and parses as inTemplate", () => {
