@@ -14,7 +14,7 @@
  * Pure module (no Obsidian imports) so it can be unit-tested with `node --test`.
  */
 
-import { fromIsoDate, pad2 } from "../parser.ts";
+import { addDays, fromIsoDate, pad2 } from "../parser.ts";
 import { parseFrontmatterText } from "../pinboard/model.ts";
 import { detectEol, findSection, getSectionContent, listSections, setFrontmatterScalar, splitBody } from "../writer.ts";
 
@@ -31,6 +31,10 @@ export const LOG_SECTION = "로그";
 export const DIARY_LINKS_SECTION = "Diary";
 /** Yearly's counterpart of 깨달음·감상 (「4-6」). Not aggregated by `aggregateDiary` (it is a month view). */
 export const YEAR_SENTENCES_SECTION = "해의 문장들";
+/** Weekly's running summary of the week so far; Tear-off rewrites it each evening (AGENTS 「4-2-1」). */
+export const WEEK_FLOW_SECTION = "이번 주 흐름";
+/** Daily's opening paragraph (the 「이번 주 흐름」 card previews its first sentence). */
+export const DAY_SECTION = "하루";
 
 export const UNIT_FOLDER: Record<MyLifeUnit, string> = {
 	daily: "01 Daily",
@@ -48,8 +52,8 @@ export const UNIT_LABEL: Record<MyLifeUnit, string> = {
 
 /** Section names of `_Templates/{Daily,Weekly,Monthly,Yearly}.md`, in template order. */
 export const TEMPLATE_SECTIONS: Record<MyLifeUnit, readonly string[]> = {
-	daily: ["하루", "한 일", "결정", INSIGHT_SECTION, "열린 질문", "보낸 곳", "놓아준 일", LOG_SECTION, "메모", DIARY_LINKS_SECTION, "세션"],
-	weekly: ["한 주", "진전 (Pinboard 대조)", "한 일", "결정", INSIGHT_SECTION, "계획과 실제", "놓아준 일", "반복 주제", USER_NOTE_SECTION, "날짜"],
+	daily: [DAY_SECTION, "한 일", "결정", INSIGHT_SECTION, "열린 질문", "보낸 곳", "놓아준 일", LOG_SECTION, "메모", DIARY_LINKS_SECTION, "세션"],
+	weekly: [WEEK_FLOW_SECTION, "한 주", "진전 (Pinboard 대조)", "한 일", "결정", INSIGHT_SECTION, "계획과 실제", "놓아준 일", "반복 주제", USER_NOTE_SECTION, "날짜"],
 	monthly: [
 		"한 달",
 		"목표 대조 (Pinboard)",
@@ -101,6 +105,16 @@ export function weekMonday(iso: string): string {
 	if (!d) return iso;
 	d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
 	return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+/**
+ * The 7 ISO dates, Monday..Sunday, of the ISO week containing `iso`
+ * (2025-12-29 → 2025-12-29..2026-01-04, i.e. 2026-W01). An invalid date gives `[]`.
+ */
+export function weekDates(iso: string): string[] {
+	if (!fromIsoDate(iso)) return [];
+	const mon = weekMonday(iso);
+	return Array.from({ length: 7 }, (_, i) => addDays(mon, i));
 }
 
 /** `YYYY-MM` → the same key `n` months later (negative = earlier). */
@@ -178,6 +192,79 @@ export function unitTitle(unit: MyLifeUnit, iso: string): string {
 		case "yearly":
 			return iso.slice(0, 4);
 	}
+}
+
+// ───────────────────────── 이번 주 흐름 (daily tab card) ─────────────────────────
+
+/** Markdown → plain text for a one-line preview: links to their labels, emphasis/list marks dropped. */
+function plainText(md: string): string {
+	return stripComments(md)
+		.replace(/!?\[\[([^\]|]*)\|([^\]]*)\]\]/g, "$2")
+		.replace(/!?\[\[([^\]]*)\]\]/g, "$1")
+		.replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+		.replace(/^\s{0,3}(#{1,6}\s+|>\s?|[-*+]\s+(\[.\]\s+)?|\d+[.)]\s+)/gm, "")
+		.replace(/(\*\*|__|~~|`)/g, "")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+/**
+ * The preview of a Daily: the first sentence of `## 하루` as plain text (comments and link syntax
+ * removed, whitespace collapsed), or the first paragraph when no sentence end is found, or null
+ * when the section is missing or empty. A sentence ends at `.` `?` `!` `。` `…` (closing quotes or
+ * brackets may follow) and then whitespace or the end, so `5.5km` and `1/22~23` do not split.
+ */
+export function dayLine(text: string): string | null {
+	const content = getSectionContent(text, DAY_SECTION);
+	if (content === null) return null;
+	const paragraphs = stripComments(content)
+		.split(/\n\s*\n/)
+		.map(plainText)
+		.filter(Boolean);
+	const first = paragraphs[0];
+	if (!first) return null;
+	const m = /^.*?[.?!。…]+["'”’」』)\]]*(?=\s|$)/u.exec(first);
+	return m ? m[0].trim() : first;
+}
+
+/**
+ * `## 이번 주 흐름` of a Weekly, verbatim (trimmed), or null when the section is missing or holds
+ * nothing but HTML comments and whitespace (a mid-week `status: 초안` file keeps the template comment).
+ */
+export function flowOf(weeklyText: string): string | null {
+	const content = getSectionContent(weeklyText, WEEK_FLOW_SECTION);
+	if (content === null || !stripComments(content).trim()) return null;
+	return content.trim();
+}
+
+/**
+ * Frontmatter `flow_updated_at` → `HH:mm 기준` in KST (Asia/Seoul, UTC+9, no DST).
+ * `2026-11-12T22:05:00+09:00` → `22:05 기준`; `…T13:05:00Z` → `22:05 기준`. A value without an
+ * offset is read as KST already. Missing, empty, whitespace or unparseable → null (show no time).
+ */
+export function flowUpdatedLabel(value: unknown): string | null {
+	if (value instanceof Date) value = value.toISOString();
+	if (typeof value !== "string") return null;
+	const v = value.trim();
+	const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?\s*(Z|[+-]\d{2}:?\d{2})?$/i.exec(v);
+	if (!m) return null;
+	const [, y, mo, d, hh, mm, ss, tz] = m;
+	if (+hh > 23 || +mm > 59) return null;
+	if (!tz) return `${hh}:${mm} 기준`;
+	let offsetMin = 0;
+	if (tz.toUpperCase() !== "Z") {
+		const t = /^([+-])(\d{2}):?(\d{2})$/.exec(tz)!;
+		offsetMin = (t[1] === "-" ? -1 : 1) * (+t[2] * 60 + +t[3]);
+	}
+	const utc = Date.UTC(+y, +mo - 1, +d, +hh, +mm, +(ss ?? 0)) - offsetMin * 60000;
+	if (Number.isNaN(utc)) return null;
+	const kst = new Date(utc + 9 * 3600000);
+	return `${pad2(kst.getUTCHours())}:${pad2(kst.getUTCMinutes())} 기준`;
+}
+
+/** `flow_updated_at` of a Weekly file's frontmatter as `HH:mm 기준`, or null. */
+export function flowUpdatedOf(weeklyText: string): string | null {
+	return flowUpdatedLabel(parseFrontmatterText(weeklyText).data.flow_updated_at);
 }
 
 // ───────────────────────── file → model ─────────────────────────

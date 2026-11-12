@@ -35,6 +35,10 @@ export interface MyLogsSettings {
 	myLifePath: string;
 	/** My Life view: collapsed section names per tab (daily / weekly / monthly / yearly). */
 	myLifeCollapsed: Record<string, string[]>;
+	/** My Life 오늘 tab: show the 「이번 주 흐름」 card (7 days' 하루 + Weekly 「이번 주 흐름」) at the top. */
+	myLifeShowWeekFlow: boolean;
+	/** My Life 오늘 tab: the 「이번 주 흐름」 card is folded. */
+	myLifeWeekFlowCollapsed: boolean;
 	/** Project workspace: open folders per project id, paths relative to the project folder (`99 작업실/10 자료`). */
 	projectFolderExpanded: Record<string, string[]>;
 	/** Toolbox folder: skills `<folder>/<이름>.md`, registry `<folder>/Toolbox Index.md`, template `<folder>/_Templates/스킬.md`. */
@@ -109,6 +113,8 @@ export const DEFAULT_SETTINGS: MyLogsSettings = {
 	drawerPath: "06 Drawer/Drawer.md",
 	myLifePath: "08 My Life",
 	myLifeCollapsed: {},
+	myLifeShowWeekFlow: true,
+	myLifeWeekFlowCollapsed: false,
 	projectFolderExpanded: {},
 	toolboxPath: "11 Toolbox",
 	diaryPath: "09 Diary",
@@ -289,6 +295,15 @@ export class MyLogsSettingTab extends PluginSettingTab {
 						s.myLifePath = cleanFolder(v) || DEFAULT_SETTINGS.myLifePath;
 						await this.plugin.saveSettings();
 					}),
+			);
+		new Setting(containerEl)
+			.setName("이번 주 흐름")
+			.setDesc("오늘 탭 맨 위에 이번 주(월~일) 하루 요약과 Weekly 「이번 주 흐름」을 보여 줍니다.")
+			.addToggle((t) =>
+				t.setValue(s.myLifeShowWeekFlow).onChange(async (v) => {
+					s.myLifeShowWeekFlow = v;
+					await this.plugin.saveSettings();
+				}),
 			);
 		new Setting(containerEl)
 			.setName("Toolbox 폴더")

@@ -32,6 +32,9 @@ import { addDays, fromIsoDate } from "../parser.ts";
 import { todayIsoLocal } from "../desk/model.ts";
 import { trackKeyboard } from "../ui/mobile.ts";
 import {
+	dayLine,
+	flowOf,
+	flowUpdatedOf,
 	hasUserNote,
 	MY_LIFE_TABS,
 	type MyLifeFile,
@@ -45,6 +48,8 @@ import {
 	unitTitle,
 	USER_NOTE_SECTION,
 	userNoteOf,
+	WEEK_FLOW_SECTION,
+	weekDates,
 } from "./model.ts";
 
 export const VIEW_TYPE_MY_LIFE = "mylogs-my-life";
@@ -55,6 +60,15 @@ const UNIT_HINT: Record<MyLifeUnit, string> = {
 	monthly: "말일 자정이 지나면 Hermes가 초안을 쓰고, Desk Reset·Drawer 리뷰 뒤에 채운다",
 	yearly: "12월 31일 자정이 지나면 Hermes가 초안을 쓴다",
 };
+
+const WEEKDAY_SHORT = ["월", "화", "수", "목", "금", "토", "일"];
+
+/** What the 「이번 주 흐름」 card needs, read once per reload (never written). */
+interface WeekFlowData {
+	weeklyPath: string;
+	weeklyText: string | null;
+	days: { date: string; text: string | null }[];
+}
 
 function isTab(s: unknown): s is MyLifeTab {
 	return typeof s === "string" && (MY_LIFE_TABS as readonly string[]).includes(s);
@@ -319,9 +333,23 @@ export class MyLifeView extends ItemView {
 		return f ? this.app.vault.read(f) : null;
 	}
 
-	/** Does a vault event at `path` concern what is on screen? */
+	private showsWeekFlow(): boolean {
+		return this.tab === "daily" && this.plugin.settings.myLifeShowWeekFlow !== false;
+	}
+
+	/** Does a vault event at `path` concern what is on screen? On 오늘, also the week's 7 Dailies and its Weekly. */
 	private watches(path: string): boolean {
-		return path === this.pathOf(this.tab);
+		if (path === this.pathOf(this.tab)) return true;
+		if (!this.showsWeekFlow()) return false;
+		if (path === this.pathOf("weekly")) return true;
+		return weekDates(this.date).some((d) => path === this.pathOf("daily", d));
+	}
+
+	private async readWeekFlow(): Promise<WeekFlowData> {
+		const weeklyPath = this.pathOf("weekly");
+		const dates = weekDates(this.date);
+		const [weeklyText, ...texts] = await Promise.all([this.readAt(weeklyPath), ...dates.map((d) => this.readAt(this.pathOf("daily", d)))]);
+		return { weeklyPath, weeklyText, days: dates.map((date, i) => ({ date, text: texts[i] })) };
 	}
 
 	// ── lifecycle ──
@@ -400,9 +428,10 @@ export class MyLifeView extends ItemView {
 		this.renderHeader();
 		this.renderTabs();
 		const path = this.pathOf(this.tab);
-		const text = await this.readAt(path);
+		const [text, flow] = await Promise.all([this.readAt(path), this.showsWeekFlow() ? this.readWeekFlow() : Promise.resolve(null)]);
 		if (seq !== this.loadSeq) return;
 		this.resetBody();
+		if (flow) this.renderWeekFlow(flow);
 		if (text === null) this.renderMissing(this.tab, path);
 		else this.renderUnit(this.tab, path, text);
 	}
@@ -472,6 +501,97 @@ export class MyLifeView extends ItemView {
 			b.createSpan({ cls: "mlf-tab-label", text: UNIT_LABEL[tab] });
 			b.createSpan({ cls: "mlf-tab-sub", text: unitTitle(tab, this.date) });
 			b.addEventListener("click", () => void this.showTab(tab));
+		}
+	}
+
+	// ── 이번 주 흐름 (오늘 tab, read-only) ──
+
+	private renderWeekFlow(data: WeekFlowData): void {
+		const today = todayIsoLocal();
+		const collapsed = this.plugin.settings.myLifeWeekFlowCollapsed === true;
+		const card = this.bodyEl.createDiv({ cls: `mlf-card mlf-week-flow${collapsed ? " is-collapsed" : ""}` });
+		const head = card.createDiv({ cls: "mlf-card-head" });
+		const toggle = head.createEl("button", {
+			cls: "mlf-card-toggle",
+			attr: { type: "button", "aria-label": `${WEEK_FLOW_SECTION} 접기/펼치기`, "aria-expanded": collapsed ? "false" : "true" },
+		});
+		setIcon(toggle.createSpan({ cls: "mlf-chevron" }), "chevron-down");
+		toggle.createEl("h3", { cls: "mlf-card-title", text: WEEK_FLOW_SECTION });
+		head.createDiv({ cls: "mlf-card-tools" }).createSpan({ cls: "mlf-card-hint", text: unitTitle("weekly", this.date) });
+		toggle.addEventListener("click", () => {
+			const now = !card.hasClass("is-collapsed");
+			card.toggleClass("is-collapsed", now);
+			toggle.setAttr("aria-expanded", now ? "false" : "true");
+			this.plugin.settings.myLifeWeekFlowCollapsed = now;
+			// Quiet save: a fold must not redraw every view.
+			void this.plugin.saveSettingsQuiet();
+		});
+
+		const body = card.createDiv({ cls: "mlf-card-body mlf-wf-body" });
+		const grid = body.createDiv({ cls: "mlf-wf-days" });
+		let focus: HTMLElement | null = null;
+		data.days.forEach(({ date, text }, i) => {
+			const future = date > today;
+			const cls = ["mlf-wf-day", `wd-${i + 1}`];
+			if (date === today) cls.push("is-today");
+			if (date === this.date) cls.push("is-selected");
+			if (future) cls.push("is-future");
+			const cell = grid.createDiv({ cls: cls.join(" ") });
+			if (date === this.date) focus = cell;
+			const [, mm, dd] = date.split("-");
+			const label = `${mm}/${dd} (${WEEKDAY_SHORT[i]})`;
+			const btn = cell.createEl("button", {
+				cls: "mlf-wf-date",
+				attr: {
+					type: "button",
+					"aria-label": future ? `${label} · 아직 오지 않은 날` : `${label}의 오늘 탭 열기`,
+					...(date === this.date ? { "aria-current": "date" } : {}),
+				},
+			});
+			btn.createSpan({ cls: "mlf-wf-wd", text: WEEKDAY_SHORT[i] });
+			btn.createSpan({ cls: "mlf-wf-md", text: `${mm}/${dd}` });
+			if (date === today) btn.createSpan({ cls: "mlf-wf-today", text: "오늘" });
+			if (future) {
+				btn.disabled = true;
+				return; // future: dimmed and empty, even if a file exists
+			}
+			btn.addEventListener("click", () => void this.openDaily(date));
+			if (text === null) {
+				cell.addClass("is-none");
+				cell.createDiv({ cls: "mlf-wf-none", text: "기록 없음" });
+				return;
+			}
+			const line = dayLine(text);
+			if (line === null) {
+				cell.addClass("is-none");
+				cell.createDiv({ cls: "mlf-wf-none", text: "「하루」 없음" });
+				return;
+			}
+			const prev = cell.createDiv({ cls: "mlf-wf-line", text: line, attr: { title: line } });
+			prev.addEventListener("click", () => {
+				// Expand only what is clamped (or collapse what was expanded); navigation is the date row.
+				if (!cell.hasClass("is-expanded") && prev.scrollHeight <= prev.clientHeight + 1) return;
+				cell.toggleClass("is-expanded", !cell.hasClass("is-expanded"));
+			});
+		});
+		if (focus) {
+			const cell: HTMLElement = focus;
+			window.requestAnimationFrame(() => {
+				if (grid.scrollWidth > grid.clientWidth) grid.scrollLeft = Math.max(0, cell.offsetLeft - grid.offsetLeft - 8);
+			});
+		}
+
+		const flow = body.createDiv({ cls: "mlf-wf-flow" });
+		const fh = flow.createDiv({ cls: "mlf-wf-flow-head" });
+		fh.createEl("h4", { cls: "mlf-wf-flow-title", text: "오늘까지 흐름" });
+		const content = data.weeklyText === null ? null : flowOf(data.weeklyText);
+		const at = content !== null && data.weeklyText !== null ? flowUpdatedOf(data.weeklyText) : null;
+		if (at) fh.createSpan({ cls: "mlf-wf-at", text: at, attr: { title: "Weekly flow_updated_at (KST)" } });
+		if (content === null) {
+			flow.createDiv({ cls: "mlf-card-none mlf-wf-empty", text: "아직 이번 주 흐름 요약이 없어요. 매일 저녁 Tear-off가 써 줘요." });
+		} else {
+			const md = flow.createDiv({ cls: "mlf-md markdown-rendered" });
+			void this.renderMarkdown(md, content, data.weeklyPath);
 		}
 	}
 

@@ -6578,6 +6578,137 @@ body.is-mobile .mylogs-inbox-add-modal input.dc-ia-input {
 	font-size: 12.5px;
 }
 
+/* ── 이번 주 흐름 (오늘 tab, read-only) ── */
+.mylogs-my-life .mlf-week-flow {
+	margin-bottom: 18px;
+}
+.mylogs-my-life .mlf-wf-body {
+	padding: 2px 14px 14px;
+}
+.mylogs-my-life .mlf-wf-days {
+	display: grid;
+	grid-template-columns: repeat(7, minmax(0, 1fr));
+	gap: 6px;
+}
+.mylogs-my-life .mlf-wf-day {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+	padding: 4px 6px 8px;
+	border: 1px solid var(--mlf-line);
+	border-radius: 6px;
+	background: var(--mlf-bg);
+}
+.mylogs-my-life .mlf-wf-day.is-today {
+	border-color: var(--mlf-accent);
+	background: var(--mlf-accent-soft);
+}
+.mylogs-my-life .mlf-wf-day.is-selected {
+	box-shadow: inset 0 0 0 1px var(--mlf-accent);
+	border-color: var(--mlf-accent);
+}
+.mylogs-my-life .mlf-wf-day.is-selected:not(.is-today) {
+	border-style: dashed;
+}
+.mylogs-my-life .mlf-wf-day.is-future {
+	opacity: 0.45;
+	background: transparent;
+	border-style: dashed;
+}
+.mylogs-my-life button.mlf-wf-date {
+	display: flex;
+	align-items: baseline;
+	gap: 5px;
+	width: 100%;
+	height: auto;
+	min-height: 32px;
+	padding: 4px 2px;
+	border: 0;
+	border-radius: 4px;
+	background: none;
+	box-shadow: none;
+	color: var(--mlf-ink);
+	font-family: var(--mlf-font);
+	text-align: left;
+	cursor: pointer;
+}
+.mylogs-my-life button.mlf-wf-date:hover:not(:disabled) {
+	background: var(--mlf-hover);
+}
+.mylogs-my-life button.mlf-wf-date:disabled {
+	cursor: default;
+}
+.mylogs-my-life .mlf-wf-wd {
+	font-size: 12.5px;
+	font-weight: 700;
+}
+.mylogs-my-life .wd-6 .mlf-wf-wd {
+	color: var(--mlf-sat);
+}
+.mylogs-my-life .wd-7 .mlf-wf-wd {
+	color: var(--mlf-sun);
+}
+.mylogs-my-life .mlf-wf-md {
+	color: var(--mlf-muted);
+	font-size: 11.5px;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-my-life .mlf-wf-today {
+	margin-left: auto;
+	color: var(--mlf-accent);
+	font-size: 10.5px;
+	font-weight: 700;
+}
+/* Preview: two lines then … (like Desk .dc-cal); tap to expand, title for hover. */
+.mylogs-my-life .mlf-wf-line {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	line-clamp: 2;
+	overflow: hidden;
+	color: var(--mlf-ink-2);
+	font-size: 12px;
+	line-height: 1.5;
+	word-break: keep-all;
+	overflow-wrap: anywhere;
+	cursor: pointer;
+}
+.mylogs-my-life .mlf-wf-day.is-expanded .mlf-wf-line {
+	display: block;
+	-webkit-line-clamp: unset;
+	line-clamp: none;
+	overflow: visible;
+}
+.mylogs-my-life .mlf-wf-none {
+	color: var(--mlf-faint);
+	font-size: 11.5px;
+}
+.mylogs-my-life .mlf-wf-flow {
+	margin-top: 12px;
+	padding-top: 10px;
+	border-top: 1px solid var(--mlf-line);
+}
+.mylogs-my-life .mlf-wf-flow-head {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	margin-bottom: 4px;
+}
+.mylogs-my-life h4.mlf-wf-flow-title {
+	margin: 0;
+	color: var(--mlf-muted);
+	font-family: var(--mlf-font);
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0.01em;
+}
+.mylogs-my-life .mlf-wf-at {
+	color: var(--mlf-faint);
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+}
+
 /* ── narrow panes ── */
 @container (max-width: 640px) {
 	.mylogs-my-life {
@@ -6589,6 +6720,31 @@ body.is-mobile .mylogs-inbox-add-modal input.dc-ia-input {
 	.mylogs-my-life .mlf-card-body {
 		padding-left: 16px;
 	}
+	/* 이번 주 흐름: one row that scrolls sideways (the selected day is scrolled into view). */
+	.mylogs-my-life .mlf-wf-body {
+		padding-left: 12px;
+		padding-right: 12px;
+	}
+	.mylogs-my-life .mlf-wf-days {
+		grid-template-columns: none;
+		grid-auto-flow: column;
+		grid-auto-columns: minmax(118px, 42%);
+		overflow-x: auto;
+		overscroll-behavior-x: contain;
+		scroll-snap-type: x proximity;
+		-webkit-overflow-scrolling: touch;
+		padding-bottom: 4px;
+	}
+	.mylogs-my-life .mlf-wf-day {
+		scroll-snap-align: start;
+	}
+	.mylogs-my-life .mlf-wf-line {
+		font-size: 13px;
+	}
+}
+body.is-mobile .mylogs-my-life button.mlf-wf-date {
+	min-height: 44px;
+	align-items: center;
 }
 /* ===== /My Life view ===== */
 
