@@ -4,7 +4,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
+	DAY_FLOW_SECTION,
+	dailyItemsByScope,
 	dayLine,
+	dayText,
+	parseDayFlow,
+	weekFlowCell,
 	flowOf,
 	flowUpdatedLabel,
 	flowUpdatedOf,
@@ -99,7 +104,8 @@ test("week-flow: flowOf is null when the section is comment-only, blank or missi
 
 test("week-flow: 이번 주 흐름 is the first weekly template section and parses as inTemplate", () => {
 	assert.equal(TEMPLATE_SECTIONS.weekly[0], WEEK_FLOW_SECTION);
-	assert.equal(TEMPLATE_SECTIONS.weekly[1], "한 주");
+	assert.equal(TEMPLATE_SECTIONS.weekly[1], DAY_FLOW_SECTION);
+	assert.equal(TEMPLATE_SECTIONS.weekly[2], "한 주");
 	const f = parseMyLifeFile(weekly("", "흐름이 있다."), "weekly");
 	assert.deepEqual(
 		f.sections.map((s) => [s.name, s.empty, s.inTemplate]),
@@ -136,4 +142,176 @@ test("week-flow: empty, missing or invalid flow_updated_at shows no time", () =>
 	assert.equal(flowUpdatedLabel("어제 저녁"), null);
 	assert.equal(flowUpdatedLabel("2026-11-12"), null);
 	assert.equal(flowUpdatedLabel("2026-11-12T25:00:00+09:00"), null);
+});
+
+// ───────────────────────── 요일별 흐름 ─────────────────────────
+
+const dayFlowWeekly = (section: string | null) =>
+	`---\ntype: my-life-weekly\nflow_updated_at: 2026-11-12T22:05:00+09:00\n---\n# 2026-W46 (11/09~11/15)\n\n## 이번 주 흐름\n\n흐름.\n\n${
+		section === null ? "" : `## 요일별 흐름\n\n${section}\n\n`
+	}## 한 주\n\n<!-- 4~6문장. -->\n`;
+
+const obj = (m: Map<string, unknown>) => Object.fromEntries(m);
+
+test("week-flow: parseDayFlow reads days, weekday labels, both scopes and continuation lines", () => {
+	const t = dayFlowWeekly(
+		[
+			"### 2026-11-09 (월)",
+			"- 개인: 아침에 **5km** 뛰었다.",
+			"- 회사: [[보고서]] 초안을 넘겼다.",
+			"  박팀장 피드백은 내일.",
+			"",
+			"### 2026-11-10",
+			"- 회사：워크숍 준비.",
+			"",
+			"### 2026-11-11 (수)",
+			"- 개인: —",
+			"- 회사: 리뷰 두 건.",
+		].join("\n"),
+	);
+	assert.deepEqual(obj(parseDayFlow(t)), {
+		"2026-11-09": { personal: "아침에 **5km** 뛰었다.", company: "[[보고서]] 초안을 넘겼다.\n박팀장 피드백은 내일." },
+		"2026-11-10": { personal: null, company: "워크숍 준비." },
+		"2026-11-11": { personal: "—", company: "리뷰 두 건." },
+	});
+});
+
+test("week-flow: parseDayFlow strips multi-line comments before headings (template examples parse as nothing)", () => {
+	// The plugin's template copy: the section holds only a comment with example ### / - 개인: lines.
+	assert.deepEqual(obj(parseDayFlow(fx("templates/Weekly.md"))), {});
+	const commentOnly = dayFlowWeekly("<!-- 예시\n### 2026-11-09 (월)\n- 개인: 한두 문장\n- 회사: 한두 문장\n-->");
+	assert.equal(parseDayFlow(commentOnly).size, 0);
+	assert.equal(parseDayFlow(dayFlowWeekly("<!-- a -->\n\n<!--\n### 2026-11-10\n-->")).size, 0);
+});
+
+test("week-flow: parseDayFlow of a missing section is empty; sample weekly has none", () => {
+	assert.equal(parseDayFlow(dayFlowWeekly(null)).size, 0);
+	assert.equal(parseDayFlow(fx("weekly/2026-W02.md")).size, 0);
+	assert.equal(parseDayFlow("").size, 0);
+});
+
+test("week-flow: parseDayFlow ignores comments inside a day, skips invalid headings, keeps empty days with nulls", () => {
+	const t = dayFlowWeekly(
+		[
+			"### 2026-11-09 (월)",
+			"<!-- Tear-off 메모: 다시 쓸 것 -->",
+			"- 개인: 산책. <!-- 인라인 주석 -->",
+			"<!--",
+			"- 회사: 주석 안의 가짜 줄",
+			"-->",
+			"",
+			"### 2026-02-30 (월)",
+			"- 개인: 없는 날",
+			"",
+			"### 메모",
+			"- 회사: 제목이 날짜가 아님",
+			"",
+			"### 2026-11-10 (화)",
+			"",
+			"### 2026-11-11 (수)",
+			"- 회사:   ",
+			"- 기타: 무시",
+		].join("\n"),
+	);
+	assert.deepEqual(obj(parseDayFlow(t)), {
+		"2026-11-09": { personal: "산책.", company: null },
+		"2026-11-10": { personal: null, company: null },
+		"2026-11-11": { personal: null, company: null },
+	});
+});
+
+test("week-flow: dailyItemsByScope splits the fixture's 한 일 by #회사 and strips links, tags and fields", () => {
+	const r = dailyItemsByScope(fx("daily/2026-01-05.md"));
+	assert.deepEqual(r.company, [
+		"분기 보고서 현행 절차 정리: 수작업 단계 11개 목록화",
+		"박팀장 보고용 자동화 범위 제안 메모 작성 (발송·실행 미확인)",
+		"데이터 소스 4개(ERP 매출·인사 현황·비용 집계·고객 CS) 추출 가능 여부 확인",
+		"엑셀 매크로 vs 파이썬 스크립트 비교 (유지보수·이대리 학습 비용 기준)",
+	]);
+	assert.deepEqual(r.personal, ["저녁 5km 달리기, 31분", "뉴스레터 3호 후보 주제 3개 정리"]);
+});
+
+test("week-flow: dailyItemsByScope link labels, untagged = 개인, nested lines and comments ignored", () => {
+	const t = daily(
+		[
+			"## 한 일",
+			"",
+			"<!-- - 템플릿 예시 #회사 -->",
+			"- [[08 My Life/Pinboard|핀보드]] 정리하고 [문서](https://x.y) 읽음 #회사 (세션: 정리)",
+			"- [[워크숍]] 숙소 예약   두 곳 비교 #sample",
+			"  - 하위 메모 #회사",
+			"- [x] 장보기 (project:: P-1) (Daily Pad)",
+			"",
+			"## 결정",
+			"",
+			"- 무엇 #회사",
+		].join("\n"),
+	);
+	assert.deepEqual(dailyItemsByScope(t), {
+		personal: ["워크숍 숙소 예약 두 곳 비교", "장보기"],
+		company: ["핀보드 정리하고 문서 읽음"],
+	});
+	assert.deepEqual(dailyItemsByScope(daily("## 한 일\n\n<!-- 없음 -->\n\n## 결정\n\n- x\n")), { personal: [], company: [] });
+	assert.deepEqual(dailyItemsByScope(daily("## 하루\n\n하루.\n")), { personal: [], company: [] });
+	assert.deepEqual(dailyItemsByScope(""), { personal: [], company: [] });
+});
+
+test("week-flow: weekFlowCell — weekly flow wins over Daily items", () => {
+	const items = { personal: ["a"], company: ["b"] };
+	assert.deepEqual(weekFlowCell({ personal: "개인 흐름", company: "회사 흐름" }, items), {
+		personal: { kind: "flow", text: "개인 흐름" },
+		company: { kind: "flow", text: "회사 흐름" },
+	});
+});
+
+test("week-flow: weekFlowCell falls back to items per scope (mixed), and empty when neither", () => {
+	assert.deepEqual(weekFlowCell({ personal: "개인 흐름", company: null }, { personal: ["a"], company: ["b", "c"] }), {
+		personal: { kind: "flow", text: "개인 흐름" },
+		company: { kind: "items", items: ["b", "c"], more: 0 },
+	});
+	assert.deepEqual(weekFlowCell(undefined, { personal: [], company: ["x"] }), {
+		personal: { kind: "empty" },
+		company: { kind: "items", items: ["x"], more: 0 },
+	});
+	assert.deepEqual(weekFlowCell(null, null), { personal: { kind: "empty" }, company: { kind: "empty" } });
+	assert.deepEqual(weekFlowCell({ personal: null, company: null }, { personal: [], company: [] }), {
+		personal: { kind: "empty" },
+		company: { kind: "empty" },
+	});
+});
+
+test("week-flow: weekFlowCell — an explicit — is empty and does not fall back to Daily items", () => {
+	assert.deepEqual(weekFlowCell({ personal: "—", company: " — " }, { personal: ["a", "b"], company: ["c"] }), {
+		personal: { kind: "empty" },
+		company: { kind: "empty" },
+	});
+	// Parsed end to end: 개인 — stays empty, 회사 line missing → Daily items.
+	const flow = parseDayFlow(dayFlowWeekly("### 2026-11-12 (목)\n- 개인: —\n"));
+	assert.deepEqual(weekFlowCell(flow.get("2026-11-12"), dailyItemsByScope(fx("daily/2026-01-05.md"))), {
+		personal: { kind: "empty" },
+		company: {
+			kind: "items",
+			items: [
+				"분기 보고서 현행 절차 정리: 수작업 단계 11개 목록화",
+				"박팀장 보고용 자동화 범위 제안 메모 작성 (발송·실행 미확인)",
+				"데이터 소스 4개(ERP 매출·인사 현황·비용 집계·고객 CS) 추출 가능 여부 확인",
+			],
+			more: 1,
+		},
+	});
+});
+
+test("week-flow: weekFlowCell caps items at 3 with a more count", () => {
+	const c = weekFlowCell(null, { personal: ["1", "2", "3", "4", "5"], company: ["1", "2", "3"] });
+	assert.deepEqual(c.personal, { kind: "items", items: ["1", "2", "3"], more: 2 });
+	assert.deepEqual(c.company, { kind: "items", items: ["1", "2", "3"], more: 0 });
+});
+
+test("week-flow: dayText is the whole 하루 (comments stripped), null when missing or empty", () => {
+	const full = dayText(fx("daily/2026-01-05.md"))!;
+	assert.ok(full.startsWith("새해 첫 출근. 아침 8시 반"));
+	assert.ok(full.endsWith("정하지는 못했다."));
+	assert.equal(dayText(daily("## 하루\n\n<!-- 주석 -->\n첫 줄.\n\n둘째 단락.\n\n## 한 일\n")), "첫 줄.\n\n둘째 단락.");
+	assert.equal(dayText(daily("## 하루\n\n<!-- 주석만 -->\n\n## 한 일\n")), null);
+	assert.equal(dayText(daily("## 한 일\n\n- x\n")), null);
 });

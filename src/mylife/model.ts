@@ -16,6 +16,7 @@
 
 import { addDays, fromIsoDate, pad2 } from "../parser.ts";
 import { parseFrontmatterText } from "../pinboard/model.ts";
+import { hasWorkTag } from "../side.ts";
 import { detectEol, findSection, getSectionContent, listSections, setFrontmatterScalar, splitBody } from "../writer.ts";
 
 export const MY_LIFE_UNITS = ["daily", "weekly", "monthly", "yearly"] as const;
@@ -33,7 +34,11 @@ export const DIARY_LINKS_SECTION = "Diary";
 export const YEAR_SENTENCES_SECTION = "해의 문장들";
 /** Weekly's running summary of the week so far; Tear-off rewrites it each evening (AGENTS 「4-2-1」). */
 export const WEEK_FLOW_SECTION = "이번 주 흐름";
-/** Daily's opening paragraph (the 「이번 주 흐름」 card previews its first sentence). */
+/** Weekly's per-day 개인/회사 lines (`### YYYY-MM-DD (요일)` + `- 개인:` / `- 회사:`), right after 「이번 주 흐름」. */
+export const DAY_FLOW_SECTION = "요일별 흐름";
+/** Daily's list of what got done (`#회사` lines are 회사, the rest 개인). */
+export const DONE_SECTION = "한 일";
+/** Daily's opening paragraph (the 「이번 주 흐름」 card shows all of it on the day header: `dayText`). */
 export const DAY_SECTION = "하루";
 
 export const UNIT_FOLDER: Record<MyLifeUnit, string> = {
@@ -52,8 +57,8 @@ export const UNIT_LABEL: Record<MyLifeUnit, string> = {
 
 /** Section names of `_Templates/{Daily,Weekly,Monthly,Yearly}.md`, in template order. */
 export const TEMPLATE_SECTIONS: Record<MyLifeUnit, readonly string[]> = {
-	daily: [DAY_SECTION, "한 일", "결정", INSIGHT_SECTION, "열린 질문", "보낸 곳", "놓아준 일", LOG_SECTION, "메모", DIARY_LINKS_SECTION, "세션"],
-	weekly: [WEEK_FLOW_SECTION, "한 주", "진전 (Pinboard 대조)", "한 일", "결정", INSIGHT_SECTION, "계획과 실제", "놓아준 일", "반복 주제", USER_NOTE_SECTION, "날짜"],
+	daily: [DAY_SECTION, DONE_SECTION, "결정", INSIGHT_SECTION, "열린 질문", "보낸 곳", "놓아준 일", LOG_SECTION, "메모", DIARY_LINKS_SECTION, "세션"],
+	weekly: [WEEK_FLOW_SECTION, DAY_FLOW_SECTION, "한 주", "진전 (Pinboard 대조)", "한 일", "결정", INSIGHT_SECTION, "계획과 실제", "놓아준 일", "반복 주제", USER_NOTE_SECTION, "날짜"],
 	monthly: [
 		"한 달",
 		"목표 대조 (Pinboard)",
@@ -235,6 +240,147 @@ export function flowOf(weeklyText: string): string | null {
 	const content = getSectionContent(weeklyText, WEEK_FLOW_SECTION);
 	if (content === null || !stripComments(content).trim()) return null;
 	return content.trim();
+}
+
+/** The whole `## 하루` of a Daily (comments stripped, trimmed) for the day header's tooltip, or null. */
+export function dayText(text: string): string | null {
+	const content = getSectionContent(text, DAY_SECTION);
+	if (content === null) return null;
+	const t = stripComments(content).trim();
+	return t || null;
+}
+
+/** One day's lines of `## 요일별 흐름`: the value written after `- 개인:` / `- 회사:`, or null when no such line. */
+export interface DayFlow {
+	personal: string | null;
+	company: string | null;
+}
+
+/** The explicit "nothing" a writer puts in a scope (`- 회사: —`): shown as 「—」, no Daily fallback. */
+export const NONE_MARK = "—";
+
+/**
+ * Parse Weekly `## 요일별 흐름` into ISO date → {personal, company}.
+ *
+ *   ### 2026-11-09 (월)
+ *   - 개인: 한두 문장
+ *     이어지는 줄
+ *   - 회사: —
+ *
+ * HTML comments (also multi-line) are removed first, so the template's example headings never
+ * count. The weekday label after the date is optional and ignored. A value runs until the next
+ * bullet or heading; continuation lines are joined with `\n` and the result trimmed (inner markdown
+ * kept). A blank value counts as no line (null). Headings with an invalid date are skipped (and
+ * their lines ignored). A valid heading without 개인/회사 lines still appears, with nulls.
+ * Missing or comment-only section → empty map.
+ */
+export function parseDayFlow(weeklyText: string): Map<string, DayFlow> {
+	const out = new Map<string, DayFlow>();
+	const content = getSectionContent(weeklyText, DAY_FLOW_SECTION);
+	if (content === null) return out;
+	let day: DayFlow | null = null;
+	let key: keyof DayFlow | null = null;
+	let buf: string[] = [];
+	const flush = () => {
+		if (day && key) {
+			const v = buf.join("\n").trim();
+			day[key] = v ? v : null;
+		}
+		key = null;
+		buf = [];
+	};
+	for (const line of stripComments(content).split("\n")) {
+		const h = /^\s{0,3}#{1,6}\s+(.*)$/.exec(line);
+		if (h) {
+			flush();
+			const d = /^(\d{4}-\d{2}-\d{2})(?:\s|$)/.exec(h[1].trim());
+			if (d && fromIsoDate(d[1])) {
+				day = out.get(d[1]) ?? { personal: null, company: null };
+				out.set(d[1], day);
+			} else day = null;
+			continue;
+		}
+		const b = /^\s*[-*+]\s+(.*)$/.exec(line);
+		if (b) {
+			flush();
+			const s = /^(개인|회사)\s*[:：]\s?(.*)$/.exec(b[1]);
+			if (s && day) {
+				key = s[1] === "회사" ? "company" : "personal";
+				buf = [s[2]];
+			}
+			continue;
+		}
+		if (key) buf.push(line.trim());
+	}
+	flush();
+	return out;
+}
+
+/** A `## 한 일` line → short display text: link labels, no tags, no trailing `(…)` fields. */
+function itemText(body: string): string {
+	let t = body
+		.replace(/!?\[\[([^\]|]*)\|([^\]]*)\]\]/g, "$2")
+		.replace(/!?\[\[([^\]]*)\]\]/g, "$1")
+		.replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+		.replace(/(^|\s)#[^\s#()[\],.]+/gu, "$1")
+		.replace(/\(\s*[\w가-힣-]+\s*::[^)]*\)/gu, "")
+		.replace(/\s+/g, " ")
+		.trim();
+	// Trailing source parens: (세션: …), (Daily Pad), (발송·실행 미확인) stays only if mid-line.
+	for (;;) {
+		const m = /\s*\((?:세션\s*[:：][^)]*|Daily Pad)\)\s*$/.exec(t);
+		if (!m) break;
+		t = t.slice(0, m.index).trim();
+	}
+	return t;
+}
+
+/**
+ * `## 한 일` of a Daily split by side: a line with `#회사` is company, any other is personal
+ * (`side.ts`). Top-level list items only (nested lines are ignored); comments stripped.
+ */
+export function dailyItemsByScope(dailyText: string): { personal: string[]; company: string[] } {
+	const out = { personal: [] as string[], company: [] as string[] };
+	const content = getSectionContent(dailyText, DONE_SECTION);
+	if (content === null) return out;
+	for (const line of stripComments(content).split("\n")) {
+		const m = /^[-*+]\s+(?:\[.\]\s+)?(.*)$/.exec(line);
+		if (!m) continue;
+		const text = itemText(m[1]);
+		if (!text) continue;
+		(hasWorkTag(m[1]) ? out.company : out.personal).push(text);
+	}
+	return out;
+}
+
+export type WeekFlowScopeCell =
+	| { kind: "flow"; text: string }
+	| { kind: "items"; items: string[]; more: number }
+	| { kind: "empty" };
+
+export interface WeekFlowCell {
+	personal: WeekFlowScopeCell;
+	company: WeekFlowScopeCell;
+}
+
+/** How many Daily 「한 일」 lines a cell shows before 「외 N건」. */
+export const WEEK_FLOW_ITEMS_MAX = 3;
+
+/**
+ * What a day's 개인/회사 cell shows, per scope: the Weekly 「요일별 흐름」 value first (`—` means
+ * an explicit none: empty, no fallback); else up to 3 Daily 「한 일」 lines (+ more count); else empty.
+ */
+export function weekFlowCell(dayFlow: DayFlow | null | undefined, items: { personal: string[]; company: string[] } | null | undefined): WeekFlowCell {
+	const one = (flow: string | null | undefined, list: string[] | undefined): WeekFlowScopeCell => {
+		if (typeof flow === "string" && flow.trim()) {
+			return flow.trim() === NONE_MARK ? { kind: "empty" } : { kind: "flow", text: flow.trim() };
+		}
+		if (list && list.length) {
+			return { kind: "items", items: list.slice(0, WEEK_FLOW_ITEMS_MAX), more: Math.max(0, list.length - WEEK_FLOW_ITEMS_MAX) };
+		}
+		return { kind: "empty" };
+	};
+	return { personal: one(dayFlow?.personal, items?.personal), company: one(dayFlow?.company, items?.company) };
 }
 
 /**

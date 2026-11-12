@@ -6578,52 +6578,145 @@ body.is-mobile .mylogs-inbox-add-modal input.dc-ia-input {
 	font-size: 12.5px;
 }
 
-/* ── 이번 주 흐름 (오늘 tab, read-only) ── */
+/* ── 이번 주 흐름 (오늘 tab, read-only) ──
+   Top: 「오늘까지 흐름」 (the week's summary, primary). Below: a grid — row labels + 7 day columns,
+   rows 개인 / 회사, nothing clamped (cells grow). Narrow panes: one block per day, stacked. */
 .mylogs-my-life .mlf-week-flow {
 	margin-bottom: 18px;
 }
 .mylogs-my-life .mlf-wf-body {
-	padding: 2px 14px 14px;
+	padding: 4px 14px 14px;
 }
-.mylogs-my-life .mlf-wf-days {
-	display: grid;
-	grid-template-columns: repeat(7, minmax(0, 1fr));
-	gap: 6px;
-}
-.mylogs-my-life .mlf-wf-day {
-	display: flex;
-	flex-direction: column;
-	gap: 4px;
-	min-width: 0;
-	padding: 4px 6px 8px;
+.mylogs-my-life .mlf-wf-flow {
+	margin-bottom: 14px;
+	padding: 12px 16px 14px;
 	border: 1px solid var(--mlf-line);
+	border-left: 3px solid var(--mlf-accent);
 	border-radius: 6px;
+	background: var(--mlf-card);
+}
+.mylogs-my-life .mlf-wf-flow-head {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	margin-bottom: 6px;
+}
+.mylogs-my-life h4.mlf-wf-flow-title {
+	margin: 0;
+	color: var(--mlf-ink);
+	font-family: var(--mlf-font);
+	font-size: 14px;
+	font-weight: 700;
+	letter-spacing: 0.01em;
+}
+.mylogs-my-life .mlf-wf-at {
+	color: var(--mlf-faint);
+	font-size: 11.5px;
+	font-variant-numeric: tabular-nums;
+}
+.mylogs-my-life .mlf-wf-flow-md {
+	font-size: 15px;
+	line-height: 1.7;
+}
+.mylogs-my-life .mlf-wf-flow .mlf-wf-empty {
+	font-size: 13px;
+}
+
+.mylogs-my-life .mlf-wf-grid {
+	display: grid;
+	grid-template-columns: max-content repeat(7, minmax(0, 1fr));
+	grid-template-rows: auto auto auto;
+	column-gap: 6px;
+	row-gap: 0;
+	align-items: stretch;
+}
+.mylogs-my-life .mlf-wf-rowlabel {
+	grid-column: 1;
+	padding: 8px 6px 8px 0;
+	color: var(--mlf-muted);
+	font-size: 11.5px;
+	font-weight: 700;
+	white-space: nowrap;
+}
+.mylogs-my-life .mlf-wf-r-personal {
+	grid-row: 2;
+}
+.mylogs-my-life .mlf-wf-r-company {
+	grid-row: 3;
+	border-top: 1px solid var(--mlf-line);
+}
+/* A day column is not a box on wide panes: its three parts sit in the grid's rows (aligned across days). */
+.mylogs-my-life .mlf-wf-col {
+	display: contents;
+}
+.mylogs-my-life .mlf-wf-col > * {
+	min-width: 0;
 	background: var(--mlf-bg);
+	border-left: 1px solid var(--mlf-line);
+	border-right: 1px solid var(--mlf-line);
 }
-.mylogs-my-life .mlf-wf-day.is-today {
-	border-color: var(--mlf-accent);
+.mylogs-my-life .mlf-wf-col.col-1 > * { grid-column: 2; }
+.mylogs-my-life .mlf-wf-col.col-2 > * { grid-column: 3; }
+.mylogs-my-life .mlf-wf-col.col-3 > * { grid-column: 4; }
+.mylogs-my-life .mlf-wf-col.col-4 > * { grid-column: 5; }
+.mylogs-my-life .mlf-wf-col.col-5 > * { grid-column: 6; }
+.mylogs-my-life .mlf-wf-col.col-6 > * { grid-column: 7; }
+.mylogs-my-life .mlf-wf-col.col-7 > * { grid-column: 8; }
+.mylogs-my-life .mlf-wf-head {
+	grid-row: 1;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding: 2px 2px 0;
+	border-top: 1px solid var(--mlf-line);
+	border-radius: 6px 6px 0 0;
+}
+.mylogs-my-life .mlf-wf-cell {
+	padding: 6px 7px 8px;
+}
+.mylogs-my-life .mlf-wf-personal {
+	grid-row: 2;
+}
+.mylogs-my-life .mlf-wf-company {
+	grid-row: 3;
+	border-top: 1px dashed var(--mlf-line);
+	border-bottom: 1px solid var(--mlf-line);
+	border-radius: 0 0 6px 6px;
+}
+.mylogs-my-life .mlf-wf-col.is-today > * {
 	background: var(--mlf-accent-soft);
+	border-left-color: var(--mlf-accent);
+	border-right-color: var(--mlf-accent);
 }
-.mylogs-my-life .mlf-wf-day.is-selected {
-	box-shadow: inset 0 0 0 1px var(--mlf-accent);
-	border-color: var(--mlf-accent);
+.mylogs-my-life .mlf-wf-col.is-today > .mlf-wf-head {
+	border-top-color: var(--mlf-accent);
 }
-.mylogs-my-life .mlf-wf-day.is-selected:not(.is-today) {
-	border-style: dashed;
+.mylogs-my-life .mlf-wf-col.is-today > .mlf-wf-company {
+	border-bottom-color: var(--mlf-accent);
 }
-.mylogs-my-life .mlf-wf-day.is-future {
+.mylogs-my-life .mlf-wf-col.is-selected:not(.is-today) > * {
+	border-left: 1px dashed var(--mlf-accent);
+	border-right: 1px dashed var(--mlf-accent);
+}
+.mylogs-my-life .mlf-wf-col.is-selected:not(.is-today) > .mlf-wf-head {
+	border-top: 1px dashed var(--mlf-accent);
+}
+.mylogs-my-life .mlf-wf-col.is-selected:not(.is-today) > .mlf-wf-company {
+	border-bottom: 1px dashed var(--mlf-accent);
+}
+.mylogs-my-life .mlf-wf-col.is-future > * {
 	opacity: 0.45;
 	background: transparent;
-	border-style: dashed;
 }
 .mylogs-my-life button.mlf-wf-date {
 	display: flex;
+	flex: 1 1 auto;
 	align-items: baseline;
 	gap: 5px;
-	width: 100%;
+	min-width: 0;
 	height: auto;
 	min-height: 32px;
-	padding: 4px 2px;
+	padding: 4px 5px;
 	border: 0;
 	border-radius: 4px;
 	background: none;
@@ -6660,53 +6753,153 @@ body.is-mobile .mylogs-inbox-add-modal input.dc-ia-input {
 	font-size: 10.5px;
 	font-weight: 700;
 }
-/* Preview: two lines then … (like Desk .dc-cal); tap to expand, title for hover. */
-.mylogs-my-life .mlf-wf-line {
-	display: -webkit-box;
-	-webkit-box-orient: vertical;
-	-webkit-line-clamp: 2;
-	line-clamp: 2;
-	overflow: hidden;
+.mylogs-my-life .mlf-wf-haru-btn {
+	flex: 0 0 auto;
+	width: 24px;
+	height: 24px;
+	padding: 3px;
+	color: var(--mlf-faint);
+}
+.mylogs-my-life .mlf-wf-haru-btn svg {
+	width: 14px;
+	height: 14px;
+}
+.mylogs-my-life .mlf-wf-haru-btn.is-active {
+	color: var(--mlf-accent);
+}
+/* In-cell scope label: only in the stacked (narrow) layout; wide panes have the row labels. */
+.mylogs-my-life .mlf-wf-scope {
+	display: none;
+}
+.mylogs-my-life .mlf-wf-content {
 	color: var(--mlf-ink-2);
-	font-size: 12px;
-	line-height: 1.5;
+	font-size: 12.5px;
+	line-height: 1.55;
 	word-break: keep-all;
 	overflow-wrap: anywhere;
-	cursor: pointer;
 }
-.mylogs-my-life .mlf-wf-day.is-expanded .mlf-wf-line {
-	display: block;
-	-webkit-line-clamp: unset;
-	line-clamp: none;
-	overflow: visible;
+.mylogs-my-life .mlf-wf-content.markdown-rendered > :first-child {
+	margin-top: 0;
+}
+.mylogs-my-life .mlf-wf-content.markdown-rendered > :last-child {
+	margin-bottom: 0;
+}
+.mylogs-my-life .mlf-wf-content.markdown-rendered p {
+	margin: 0 0 4px;
+}
+.mylogs-my-life .mlf-wf-content.markdown-rendered ul,
+.mylogs-my-life .mlf-wf-content.markdown-rendered ol {
+	margin: 0;
+	padding-left: 1.1em;
+}
+.mylogs-my-life ul.mlf-wf-items {
+	margin: 0;
+	padding-left: 1em;
+}
+.mylogs-my-life ul.mlf-wf-items li {
+	margin: 0 0 2px;
+}
+.mylogs-my-life .mlf-wf-more {
+	color: var(--mlf-muted);
+	font-size: 11.5px;
 }
 .mylogs-my-life .mlf-wf-none {
 	color: var(--mlf-faint);
-	font-size: 11.5px;
 }
-.mylogs-my-life .mlf-wf-flow {
-	margin-top: 12px;
-	padding-top: 10px;
-	border-top: 1px solid var(--mlf-line);
+/* The full 「하루」 of one day, opened from the small toggle beside a date. */
+.mylogs-my-life .mlf-wf-haru {
+	margin-top: 10px;
+	padding: 10px 14px 12px;
+	border: 1px solid var(--mlf-line);
+	border-radius: 6px;
+	background: var(--mlf-card);
 }
-.mylogs-my-life .mlf-wf-flow-head {
+.mylogs-my-life .mlf-wf-haru-head {
 	display: flex;
-	align-items: baseline;
+	align-items: center;
 	gap: 8px;
 	margin-bottom: 4px;
 }
-.mylogs-my-life h4.mlf-wf-flow-title {
-	margin: 0;
+.mylogs-my-life .mlf-wf-haru-title {
 	color: var(--mlf-muted);
-	font-family: var(--mlf-font);
 	font-size: 12px;
 	font-weight: 700;
-	letter-spacing: 0.01em;
 }
-.mylogs-my-life .mlf-wf-at {
-	color: var(--mlf-faint);
-	font-size: 11px;
-	font-variant-numeric: tabular-nums;
+.mylogs-my-life .mlf-wf-haru-close {
+	margin-left: auto;
+}
+
+/* 이번 주 흐름 on narrow panes: no skinny columns — each day is a block (date, then 개인 / 회사). */
+@container (max-width: 720px) {
+	.mylogs-my-life .mlf-wf-grid {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.mylogs-my-life .mlf-wf-rowlabel {
+		display: none;
+	}
+	.mylogs-my-life .mlf-wf-col {
+		display: flex;
+		flex-direction: column;
+		border: 1px solid var(--mlf-line);
+		border-radius: 6px;
+		background: var(--mlf-bg);
+		overflow: hidden;
+	}
+	.mylogs-my-life .mlf-wf-col > *,
+	.mylogs-my-life .mlf-wf-col.is-today > *,
+	.mylogs-my-life .mlf-wf-col.is-selected:not(.is-today) > * {
+		border: 0;
+		border-radius: 0;
+		background: transparent;
+	}
+	.mylogs-my-life .mlf-wf-col.is-today {
+		border-color: var(--mlf-accent);
+		background: var(--mlf-accent-soft);
+	}
+	.mylogs-my-life .mlf-wf-col.is-selected:not(.is-today) {
+		border: 1px dashed var(--mlf-accent);
+	}
+	.mylogs-my-life .mlf-wf-col.is-future {
+		opacity: 0.45;
+		border-style: dashed;
+	}
+	.mylogs-my-life .mlf-wf-col.is-future > * {
+		opacity: 1;
+	}
+	.mylogs-my-life .mlf-wf-col.is-future .mlf-wf-cell {
+		display: none;
+	}
+	.mylogs-my-life .mlf-wf-head {
+		padding: 2px 6px 0 4px;
+	}
+	.mylogs-my-life .mlf-wf-cell {
+		display: flex;
+		gap: 10px;
+		padding: 4px 12px 8px;
+	}
+	.mylogs-my-life .mlf-wf-company {
+		border-top: 1px dashed var(--mlf-line) !important;
+		padding-top: 8px;
+	}
+	.mylogs-my-life .mlf-wf-scope {
+		display: block;
+		flex: 0 0 auto;
+		width: 2.4em;
+		padding-top: 1px;
+		color: var(--mlf-muted);
+		font-size: 11.5px;
+		font-weight: 700;
+	}
+	.mylogs-my-life .mlf-wf-content {
+		flex: 1 1 auto;
+		min-width: 0;
+		font-size: 13.5px;
+	}
+	.mylogs-my-life .mlf-wf-flow-md {
+		font-size: 14.5px;
+	}
 }
 
 /* ── narrow panes ── */
@@ -6720,31 +6913,18 @@ body.is-mobile .mylogs-inbox-add-modal input.dc-ia-input {
 	.mylogs-my-life .mlf-card-body {
 		padding-left: 16px;
 	}
-	/* 이번 주 흐름: one row that scrolls sideways (the selected day is scrolled into view). */
 	.mylogs-my-life .mlf-wf-body {
 		padding-left: 12px;
 		padding-right: 12px;
-	}
-	.mylogs-my-life .mlf-wf-days {
-		grid-template-columns: none;
-		grid-auto-flow: column;
-		grid-auto-columns: minmax(118px, 42%);
-		overflow-x: auto;
-		overscroll-behavior-x: contain;
-		scroll-snap-type: x proximity;
-		-webkit-overflow-scrolling: touch;
-		padding-bottom: 4px;
-	}
-	.mylogs-my-life .mlf-wf-day {
-		scroll-snap-align: start;
-	}
-	.mylogs-my-life .mlf-wf-line {
-		font-size: 13px;
 	}
 }
 body.is-mobile .mylogs-my-life button.mlf-wf-date {
 	min-height: 44px;
 	align-items: center;
+}
+body.is-mobile .mylogs-my-life .mlf-wf-haru-btn {
+	width: 44px;
+	height: 44px;
 }
 /* ===== /My Life view ===== */
 

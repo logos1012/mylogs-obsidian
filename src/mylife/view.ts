@@ -32,7 +32,9 @@ import { addDays, fromIsoDate } from "../parser.ts";
 import { todayIsoLocal } from "../desk/model.ts";
 import { trackKeyboard } from "../ui/mobile.ts";
 import {
-	dayLine,
+	dailyItemsByScope,
+	type DayFlow,
+	dayText,
 	flowOf,
 	flowUpdatedOf,
 	hasUserNote,
@@ -41,6 +43,7 @@ import {
 	type MyLifeTab,
 	type MyLifeUnit,
 	normalizeNote,
+	parseDayFlow,
 	parseMyLifeFile,
 	setUserNote,
 	UNIT_LABEL,
@@ -50,6 +53,8 @@ import {
 	userNoteOf,
 	WEEK_FLOW_SECTION,
 	weekDates,
+	weekFlowCell,
+	type WeekFlowScopeCell,
 } from "./model.ts";
 
 export const VIEW_TYPE_MY_LIFE = "mylogs-my-life";
@@ -528,19 +533,49 @@ export class MyLifeView extends ItemView {
 		});
 
 		const body = card.createDiv({ cls: "mlf-card-body mlf-wf-body" });
-		const grid = body.createDiv({ cls: "mlf-wf-days" });
-		let focus: HTMLElement | null = null;
+
+		// 1) 오늘까지 흐름 — the week's summary, first and largest.
+		const flow = body.createDiv({ cls: "mlf-wf-flow" });
+		const fh = flow.createDiv({ cls: "mlf-wf-flow-head" });
+		fh.createEl("h4", { cls: "mlf-wf-flow-title", text: "오늘까지 흐름" });
+		const content = data.weeklyText === null ? null : flowOf(data.weeklyText);
+		const at = content !== null && data.weeklyText !== null ? flowUpdatedOf(data.weeklyText) : null;
+		if (at) fh.createSpan({ cls: "mlf-wf-at", text: at, attr: { title: "Weekly flow_updated_at (KST)" } });
+		if (content === null) {
+			flow.createDiv({ cls: "mlf-card-none mlf-wf-empty", text: "아직 이번 주 흐름 요약이 없어요. 매일 저녁 Tear-off가 써 줘요." });
+		} else {
+			const md = flow.createDiv({ cls: "mlf-md mlf-wf-flow-md markdown-rendered" });
+			void this.renderMarkdown(md, content, data.weeklyPath);
+		}
+
+		// 2) 요일별: columns 월~일, rows 개인 / 회사 (a vertical list on narrow panes). Nothing is clamped.
+		const dayFlow = data.weeklyText === null ? new Map<string, DayFlow>() : parseDayFlow(data.weeklyText);
+		const grid = body.createDiv({ cls: "mlf-wf-grid" });
+		grid.createDiv({ cls: "mlf-wf-rowlabel mlf-wf-r-personal", text: "개인" });
+		grid.createDiv({ cls: "mlf-wf-rowlabel mlf-wf-r-company", text: "회사" });
+		const panel = body.createDiv({ cls: "mlf-wf-haru" });
+		panel.hide();
+		let openHaru: { date: string; btn: HTMLElement } | null = null;
+		const closeHaru = () => {
+			openHaru?.btn.setAttr("aria-expanded", "false");
+			openHaru?.btn.removeClass("is-active");
+			openHaru = null;
+			panel.empty();
+			panel.hide();
+		};
+
 		data.days.forEach(({ date, text }, i) => {
 			const future = date > today;
-			const cls = ["mlf-wf-day", `wd-${i + 1}`];
+			const cls = ["mlf-wf-col", `wd-${i + 1}`, `col-${i + 1}`];
 			if (date === today) cls.push("is-today");
 			if (date === this.date) cls.push("is-selected");
 			if (future) cls.push("is-future");
-			const cell = grid.createDiv({ cls: cls.join(" ") });
-			if (date === this.date) focus = cell;
+			const col = grid.createDiv({ cls: cls.join(" ") });
 			const [, mm, dd] = date.split("-");
 			const label = `${mm}/${dd} (${WEEKDAY_SHORT[i]})`;
-			const btn = cell.createEl("button", {
+
+			const hd = col.createDiv({ cls: "mlf-wf-head" });
+			const btn = hd.createEl("button", {
 				cls: "mlf-wf-date",
 				attr: {
 					type: "button",
@@ -551,47 +586,64 @@ export class MyLifeView extends ItemView {
 			btn.createSpan({ cls: "mlf-wf-wd", text: WEEKDAY_SHORT[i] });
 			btn.createSpan({ cls: "mlf-wf-md", text: `${mm}/${dd}` });
 			if (date === today) btn.createSpan({ cls: "mlf-wf-today", text: "오늘" });
+
+			const personal = col.createDiv({ cls: "mlf-wf-cell mlf-wf-personal" });
+			const company = col.createDiv({ cls: "mlf-wf-cell mlf-wf-company" });
+			personal.createSpan({ cls: "mlf-wf-scope", text: "개인" });
+			company.createSpan({ cls: "mlf-wf-scope", text: "회사" });
+
 			if (future) {
+				// Future: dimmed and empty, even if a file exists; the date does not navigate.
 				btn.disabled = true;
-				return; // future: dimmed and empty, even if a file exists
+				return;
 			}
 			btn.addEventListener("click", () => void this.openDaily(date));
-			if (text === null) {
-				cell.addClass("is-none");
-				cell.createDiv({ cls: "mlf-wf-none", text: "기록 없음" });
-				return;
-			}
-			const line = dayLine(text);
-			if (line === null) {
-				cell.addClass("is-none");
-				cell.createDiv({ cls: "mlf-wf-none", text: "「하루」 없음" });
-				return;
-			}
-			const prev = cell.createDiv({ cls: "mlf-wf-line", text: line, attr: { title: line } });
-			prev.addEventListener("click", () => {
-				// Expand only what is clamped (or collapse what was expanded); navigation is the date row.
-				if (!cell.hasClass("is-expanded") && prev.scrollHeight <= prev.clientHeight + 1) return;
-				cell.toggleClass("is-expanded", !cell.hasClass("is-expanded"));
-			});
-		});
-		if (focus) {
-			const cell: HTMLElement = focus;
-			window.requestAnimationFrame(() => {
-				if (grid.scrollWidth > grid.clientWidth) grid.scrollLeft = Math.max(0, cell.offsetLeft - grid.offsetLeft - 8);
-			});
-		}
 
-		const flow = body.createDiv({ cls: "mlf-wf-flow" });
-		const fh = flow.createDiv({ cls: "mlf-wf-flow-head" });
-		fh.createEl("h4", { cls: "mlf-wf-flow-title", text: "오늘까지 흐름" });
-		const content = data.weeklyText === null ? null : flowOf(data.weeklyText);
-		const at = content !== null && data.weeklyText !== null ? flowUpdatedOf(data.weeklyText) : null;
-		if (at) fh.createSpan({ cls: "mlf-wf-at", text: at, attr: { title: "Weekly flow_updated_at (KST)" } });
-		if (content === null) {
-			flow.createDiv({ cls: "mlf-card-none mlf-wf-empty", text: "아직 이번 주 흐름 요약이 없어요. 매일 저녁 Tear-off가 써 줘요." });
+			// The whole 「하루」: hover / long-press tooltip on the date, and a small toggle that opens it below.
+			const haru = text === null ? null : dayText(text);
+			if (haru !== null) {
+				tip(btn, haru);
+				const more = hd.createEl("button", {
+					cls: "mlf-wf-haru-btn clickable-icon",
+					attr: { type: "button", "aria-label": `${label} 「하루」 펼치기`, "aria-expanded": "false" },
+				});
+				setIcon(more, "text");
+				more.addEventListener("click", (e) => {
+					e.stopPropagation();
+					if (openHaru?.date === date) return closeHaru();
+					closeHaru();
+					openHaru = { date, btn: more };
+					more.setAttr("aria-expanded", "true");
+					more.addClass("is-active");
+					panel.show();
+					const ph = panel.createDiv({ cls: "mlf-wf-haru-head" });
+					ph.createSpan({ cls: "mlf-wf-haru-title", text: `${label} 하루` });
+					const x = ph.createEl("button", { cls: "mlf-wf-haru-close clickable-icon", attr: { type: "button", "aria-label": "닫기" } });
+					setIcon(x, "x");
+					x.addEventListener("click", closeHaru);
+					const md = panel.createDiv({ cls: "mlf-md markdown-rendered" });
+					void this.renderMarkdown(md, haru, this.pathOf("daily", date));
+				});
+			}
+
+			const cell = weekFlowCell(dayFlow.get(date), text === null ? null : dailyItemsByScope(text));
+			this.renderWeekFlowScope(personal, cell.personal, data.weeklyPath);
+			this.renderWeekFlowScope(company, cell.company, data.weeklyPath);
+		});
+	}
+
+	private renderWeekFlowScope(el: HTMLElement, c: WeekFlowScopeCell, weeklyPath: string): void {
+		el.addClass(`is-${c.kind}`);
+		const box = el.createDiv({ cls: "mlf-wf-content" });
+		if (c.kind === "flow") {
+			box.addClass("mlf-md", "markdown-rendered");
+			void this.renderMarkdown(box, c.text, weeklyPath);
+		} else if (c.kind === "items") {
+			const ul = box.createEl("ul", { cls: "mlf-wf-items" });
+			for (const it of c.items) ul.createEl("li", { text: it });
+			if (c.more > 0) box.createDiv({ cls: "mlf-wf-more", text: `외 ${c.more}건` });
 		} else {
-			const md = flow.createDiv({ cls: "mlf-md markdown-rendered" });
-			void this.renderMarkdown(md, content, data.weeklyPath);
+			box.createSpan({ cls: "mlf-wf-none", text: "—", attr: { "aria-label": "없음" } });
 		}
 	}
 

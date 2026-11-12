@@ -19,6 +19,7 @@ import {
 	setUserNote,
 	shiftMonthKey,
 	TEMPLATE_SECTIONS,
+	DAY_FLOW_SECTION,
 	unitPath,
 	unitTitle,
 	USER_NOTE_SECTION,
@@ -143,10 +144,10 @@ test("my-life: parse a sample Daily", () => {
 test("my-life: parse a sample Weekly (empty 사용자 한마디, ### kept inside sections)", () => {
 	const f = parseMyLifeFile(WEEKLY, "weekly");
 	assert.equal(f.title, "2026-W02 (01/05~01/11)");
-	// The sample predates 「이번 주 흐름」 (AGENTS 「4-2-1」): every other template section, in template order.
+	// The sample predates 「이번 주 흐름」 and 「요일별 흐름」 (AGENTS 「4-2-1」): every other template section, in template order.
 	assert.deepEqual(
 		f.sections.map((s) => s.name),
-		TEMPLATE_SECTIONS.weekly.filter((n) => n !== WEEK_FLOW_SECTION),
+		TEMPLATE_SECTIONS.weekly.filter((n) => n !== WEEK_FLOW_SECTION && n !== DAY_FLOW_SECTION),
 	);
 	assert.equal(TEMPLATE_SECTIONS.weekly[0], WEEK_FLOW_SECTION);
 	const note = f.sections.find((s) => s.name === USER_NOTE_SECTION)!;
