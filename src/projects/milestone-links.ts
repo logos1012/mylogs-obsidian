@@ -35,16 +35,6 @@ export function linkedRows(text: string, ms: string | undefined): HubTopRow[] {
 	return ms ? hubTopRows(text).filter(r => r.ms === ms) : [];
 }
 
-/**
- * Top-level `## 할 일` rows (keys) shown under a 마일스톤 row (its 「할 일 n/m」 panel): linked by
- * `(ms:: …)` to a 마일스톤 that exists and is not a 성과 지표 (those show no linked 할 일). The
- * 「할 일」 list leaves these out, so each 묶음 shows once. A link to no 마일스톤 counts for nothing.
- */
-export function linkedGroupKeys(text: string, milestones: Pick<Milestone, "ms" | "kind">[]): Set<string> {
-	const ids = new Set(milestones.filter(m => m.ms && milestoneKind(m) !== "metric").map(m => m.ms!));
-	return new Set(hubTopRows(text).filter(r => r.ms && ids.has(r.ms)).map(r => r.key));
-}
-
 export type TaskState = ProjectTask["state"];
 /** A reference row's state from its calendar copies (done if any is done; let go if all are). */
 export function calendarStateOf(tasks: ProjectTask[]): (id: string) => TaskState | undefined {
@@ -71,14 +61,6 @@ export function milestoneTaskProgress(rows: HubTopRow[], refState: (id: string) 
 	};
 	for (const r of rows) { if (r.children.length) r.children.forEach(count); else count(r); }
 	return { done, total };
-}
-
-/**
- * The linked-할 일 panel under a 마일스톤 starts open whenever it has linked 묶음; it closes only
- * for the ids the user folded this session (`collapsed`). No id or nothing linked → no panel.
- */
-export function milestonePanelOpen(ms: string | undefined, linkedCount: number, collapsed: ReadonlySet<string> = new Set()): boolean {
-	return !!ms && linkedCount > 0 && !collapsed.has(ms);
 }
 
 /** No automatic achievement: only a button, when every linked 할 일 is done and the 마일스톤 is open. */

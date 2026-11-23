@@ -210,11 +210,8 @@ export function hubRows(text: string): { id: string; key: string; depth: 0 | 1; 
  return out;
 }
 
-/**
- * The top-level row right above this one in the hub (where Tab puts it), or null. `skip`: top-level
- * rows (keys) not on screen; they and their 하위 rows count as not there.
- */
-export function previousTopLevel(text: string, id: string, skip?: Set<string>): string | null {
+/** The top-level row right above this one in the hub (where Tab puts it), or null. */
+export function previousTopLevel(text: string, id: string): string | null {
  const sec=findSection(text,"할 일");if(!sec)return null;
  const lines=splitLinesKeepEol(text).map(stripEol);let prev:string|null=null;
  for(let i=sec.headingIndex+1;i<lines.length;i++){
@@ -222,7 +219,7 @@ export function previousTopLevel(text: string, id: string, skip?: Set<string>): 
   const m=/^(\s*)[-*+]\s+(.*)$/.exec(lines[i]);if(!m)continue;
   const tid=keyAt(i,lines[i]);
   if(tid===id)return prev;
-  if(!m[1].length&&tid&&!skip?.has(tid))prev=/^\[[ xX]\]/.test(m[2])?tid:null;
+  if(!m[1].length&&tid)prev=/^\[[ xX]\]/.test(m[2])?tid:null;
  }
  return null;
 }
