@@ -1474,7 +1474,7 @@ export class DeskCalendarView extends ItemView {
 			const f = this.fileAt(task.path);
 			if (!f) throw new Error("프로젝트 허브를 찾지 못했어요.");
 			const { p } = await readProject(host, f.path);
-			const fresh = (await loadProjectTasks(host, p, await this.app.vault.read(f))).find((t) => t.id === task.id && t.kind === "hub") ?? task;
+			const fresh = (await loadProjectTasks(host, p, await this.app.vault.read(f))).find((t) => (t.key ?? t.id) === (task.key ?? task.id) && t.kind === "hub") ?? task;
 			await changeProjectTask(host, p, { kind: "schedule", task: fresh, target: { kind: "day", date: iso } }, todayIsoLocal());
 		} catch (err) {
 			new Notice(err instanceof Error ? err.message : String(err));

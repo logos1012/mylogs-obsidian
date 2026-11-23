@@ -13,7 +13,7 @@ import { splitWallBody } from "../wall/parse.ts";
 import { replaceContent, setFields, TIME_LEAD_RE } from "../line-edit.ts";
 import { WALL_DATE_RE } from "../wall/parse.ts";
 import { validMilestoneDate } from "./milestones.ts";
-import { annotateGroups, appendChildTask, hubRows, insertTaskAfter, placeTask, removeHubRow, appendHubTask, calendarTasks, executionTasks, hubTasks, replaceTaskLine, syncGroupChecks, taskLabel, taskTitle, type ProjectTask } from "./tasks.ts";
+import { adoptHubRow, hubOutline, annotateGroups, appendChildTask, hubReferenceLine, hubRows, isRowKey, rowKey, insertTaskAfter, placeTask, removeHubRow, appendHubTask, calendarTasks, executionTasks, hubTasks, replaceTaskLine, syncGroupChecks, taskLabel, taskTitle, type ProjectTask } from "./tasks.ts";
 
 export type ScheduleTarget = { kind:"day"; date:string } | { kind:"month"; month:string } | { kind:"week"; monday:string };
 export async function loadProjectTasks(host:ProjectsHost,p:Project,text:string, includeParents=false):Promise<ProjectTask[]> {
@@ -26,25 +26,38 @@ export async function loadProjectTasks(host:ProjectsHost,p:Project,text:string, 
  annotateGroups(tasks,text);
  return includeParents ? tasks : executionTasks(tasks).sort((a,b)=>Number(a.state!=="scheduled")-Number(b.state!=="scheduled")||(a.date??a.month??"").localeCompare(b.date??b.month??""));
 }
-export type TaskChange = {kind:"add";text:string;id:string;/** 하위 할 일 of this 묶음 / top-level task */parentId?:string;/** Insert right after this row (outline Enter); `child` = one level in */after?:string;child?:boolean} | {kind:"delete";id:string} | {kind:"toggle";task:ProjectTask} | {kind:"edit";task:ProjectTask;text:string} | {kind:"schedule";task:ProjectTask;target:ScheduleTarget;reviewed?:string} | {kind:"level";id:string;/** null = out to the top level */parentId:string|null};
+/**
+ * `adopt`: the change edits a hub row written without `(task:: …)` (key from `rowKey`); it gets
+ * `id` in the same save. The caller picks the id so the next queued change can name the row by it.
+ */
+export type TaskAdopt = {adopt?:{key:string;id:string}};
+export type TaskChange = TaskAdopt & ({kind:"add";text:string;id:string;/** 하위 할 일 of this 묶음 / top-level task */parentId?:string;/** Insert right after this row (outline Enter); `child` = one level in */after?:string;child?:boolean} | {kind:"delete";id:string} | {kind:"toggle";task:ProjectTask} | {kind:"edit";task:ProjectTask;text:string} | {kind:"schedule";task:ProjectTask;target:ScheduleTarget;reviewed?:string} | {kind:"level";id:string;/** null = out to the top level */parentId:string|null});
 export const newTaskId=():string=>`T-${crypto.randomUUID()}`;
 export function targetLabel(t:ScheduleTarget):string{return t.kind==="day"?t.date:t.kind==="month"?`${t.month} 인박스`:`${t.monday} 주`}
 /** No goal writes. Scheduling, canonical source and audit records commit or roll back together. */
 export async function changeProjectTask(host:ProjectsHost,displayed:Project,change:TaskChange,today:string):Promise<void> {
  return exclusive(host,async()=>{
-  const io=vaultIO(host.app),{p,text}=await readProject(host,displayed.path);
+  const io=vaultIO(host.app),{p,text:disk}=await readProject(host,displayed.path);
   if(p.id!==displayed.id||p.archived)throw Error("프로젝트가 바뀌었거나 보관됐어요.");
-  const writes=new Map<string,Write>(), calendarIndexes=new Set<string>(), snapshots=new Map<string,string|null>([[p.path,text]]);
-  const read=async(path:string)=>{if(writes.has(path))return writes.get(path)!.after;if(!snapshots.has(path))snapshots.set(path,await io.read(path));return snapshots.get(path)!;};
+  // `text`: the hub as this change sees it (an id-less row being edited has its id already).
+  let text=disk;
+  const writes=new Map<string,Write>(), calendarIndexes=new Set<string>(), snapshots=new Map<string,string|null>([[p.path,disk]]);
+  const read=async(path:string)=>{if(path===p.path)return text;if(writes.has(path))return writes.get(path)!.after;if(!snapshots.has(path))snapshots.set(path,await io.read(path));return snapshots.get(path)!;};
   const put=async(path:string,after:string)=>{const prev=writes.get(path),before=prev?prev.before:await read(path);writes.set(path,{path,before,after});};
   const deskRoot=cleanFolder(host.settings.deskCalendarFolder),wallRoot=cleanFolder(host.settings.wallCalendarFolder);
   const dp=(ym:string)=>`${deskRoot}/${ym.slice(0,4)}/${ym}.md`;
+  const adopt=(key:string,id:string)=>{
+   if(!/^T-[a-zA-Z0-9-]+$/.test(id))throw Error("할 일 식별자를 확인해 주세요.");
+   if(!hubRows(text).some(r=>r.id===id))text=adoptHubRow(text,key,id,p.id);
+   return id;
+  };
+  if(change.adopt)adopt(change.adopt.key,change.adopt.id);
   let edited=text,detail="";
   const logCalendar=(kind:"desk"|"wall")=>calendarIndexes.add(kind==="desk"?`${deskRoot}/Desk Calendar Index.md`:`${wallRoot}/Wall Calendar Index.md`);
   if(change.kind==="delete") {
    // The hub row goes; an assigned task's calendar copies go with it (not past Wall months: a record).
-   const rows=hubRows(text),row=rows.find(r=>r.id===change.id);if(!row)throw Error("할 일을 찾을 수 없어요. 다시 열어 주세요.");
-   const all=await loadProjectTasks(host,p,text,true),title=all.find(x=>x.id===change.id)?.title??change.id;
+   const rows=hubRows(text),row=rows.find(r=>r.key===change.id);if(!row)throw Error("할 일을 찾을 수 없어요. 다시 열어 주세요.");
+   const all=await loadProjectTasks(host,p,text,true),title=all.find(x=>(x.key??x.id)===change.id)?.title??change.id;
    edited=removeHubRow(text,change.id);
    if(row.ref){
     const byPath=new Map<string,ProjectTask[]>();
@@ -58,9 +71,11 @@ export async function changeProjectTask(host:ProjectsHost,displayed:Project,chan
    }
    detail=`할 일 삭제: ${title}`;
   }else if(change.kind==="level") {
-   edited=placeTask(text,change.id,change.parentId);if(edited===text)return;
-   const t=hubTasks(text,p.path,p.id).find(x=>x.id===change.id)?.title??change.id;
-   detail=change.parentId?`할 일 위계: ${t} → ${hubTasks(text,p.path,p.id).find(x=>x.id===change.parentId)?.title??change.parentId} 아래로`:`할 일 위계: ${t} → 위 단계로`;
+   // Moving an id-less row edits it: it gets its id first (the 묶음 it goes under does not).
+   const id=isRowKey(change.id)?adopt(change.id,newTaskId()):change.id;
+   edited=placeTask(text,id,change.parentId);if(edited===text)return;
+   const titleOf=(ref:string)=>hubTasks(text,p.path,p.id).find(x=>x.key===ref)?.title??hubOutline(text).groups.get(ref)?.title??ref;
+   detail=change.parentId?`할 일 위계: ${titleOf(id)} → ${titleOf(change.parentId)} 아래로`:`할 일 위계: ${titleOf(id)} → 위 단계로`;
   }else if(change.kind==="add") {
    const title=taskTitle(change.text); if(!/^T-[a-zA-Z0-9-]+$/.test(change.id))throw Error("할 일 식별자를 확인해 주세요.");
    const all=await loadProjectTasks(host,p,text);if(all.some(t=>t.id===change.id))return;
@@ -68,12 +83,20 @@ export async function changeProjectTask(host:ProjectsHost,displayed:Project,chan
    if(change.after!==undefined||change.child){
     edited=insertTaskAfter(text,change.after??null,row,!!change.child);detail=`할 일 추가: ${title}`;
    }else if(change.parentId){
-    const parent=hubTasks(text,p.path,p.id).find(x=>x.id===change.parentId&&!/^\s/.test(x.line));
+    const parent=hubTasks(text,p.path,p.id).find(x=>x.key===change.parentId&&!/^\s/.test(x.line));
     if(!parent)throw Error("위 단계 할 일을 찾을 수 없어요. 배정한 할 일에는 하위 할 일을 붙이지 않아요.");
     edited=appendChildTask(text,parent.index,row);detail=`하위 할 일 추가: ${parent.title} · ${title}`;
    }else{edited=appendHubTask(text,row);detail=`할 일 추가: ${title}`;}
   }else{
-   const t=change.task,all=await loadProjectTasks(host,p,text,true);
+   let t=change.task;
+   // An id-less hub row gets its id in this same save, then the change goes on by that id.
+   if(t.kind==="hub"&&!t.id){
+    const id=change.adopt?.id??adopt(t.key??rowKey(t.index,t.line),newTaskId());
+    const now=(await loadProjectTasks(host,p,text,true)).find(x=>x.kind==="hub"&&x.id===id);
+    if(!now)throw Error("할 일이 다른 곳에서 변경됐어요. 다시 열어 주세요.");
+    t=now;
+   }
+   const all=await loadProjectTasks(host,p,text,true);
    if(t.projectId!==p.id||!all.some(x=>x.path===t.path&&x.index===t.index&&x.line===t.line))throw Error("할 일이 다른 곳에서 바뀌었어요. 다시 열어 주세요.");
    if(t.kind==="wall"&&t.month!<today.slice(0,7))throw Error("지난달 Wall Calendar 기록은 읽기 전용이에요.");
    const before=await read(t.path);if(before===null)throw Error("할 일 원본이 없어졌어요.");
@@ -126,12 +149,12 @@ export async function changeProjectTask(host:ProjectsHost,displayed:Project,chan
      logCalendar("desk");
     }else{
      const id=t.id||newTaskId();let line=t.kind==="wall"?"- "+(()=>{const x=splitWallBody(t.line.replace(/^\s*[-*+]\s+/,""));return x.checkbox+(x.match?.[5]?x.match[5]+" ":"")+x.rest;})():t.line;
-     line=copyTask(line,t.date?movedCount(t.line)+1:undefined).replace(/^(\s*[-*+]\s+)(.*)$/,(_,a,b)=>a+setFields(b,{task:id,project:p.id}));
+     // `(ms:: …)` links the hub row to a milestone: it stays on the hub reference, not the calendar copy.
+     line=copyTask(line,t.date?movedCount(t.line)+1:undefined).replace(/^(\s*[-*+]\s+)(.*)$/,(_,a,b)=>a+setFields(b,{task:id,project:p.id,ms:t.kind==="hub"?"":undefined}));
      // A 하위 할 일 goes out flush and named with its 묶음; its hub reference keeps the indent.
-     const indent=/^(\s*)/.exec(t.line)?.[1]??"";
      line=line.replace(/^\s+/,"");
      if(t.kind==="hub"&&t.parentTitle)line=line.replace(/^([-*+]\s+)(.*)$/,(_,a,b)=>a+replaceContent(b,taskLabel(t),TIME_LEAD_RE));
-     if(t.kind==="hub")edited=replaceTaskLine(text,t,`${indent}- ${t.title} (task:: ${id}) (project:: ${p.id})`);
+     if(t.kind==="hub")edited=replaceTaskLine(text,t,hubReferenceLine(t.line,t.title,id,p.id));
      else{const anchor=kind==="wall"?ym:target.kind==="day"?key:target.kind==="month"?"이달 중":"";const destination=`[[${path.replace(/\.md$/,"")}${anchor?"#"+anchor:""}]]`;await put(t.path,setFrontmatterScalar(replaceTaskLine(before,t,markMoved(t.line,destination,t.date?movedCount(t.line)+1:undefined)),"updated",today));logCalendar(t.kind);}
      const dest=await read(path);
      if(kind==="desk") {
@@ -152,7 +175,7 @@ export async function changeProjectTask(host:ProjectsHost,displayed:Project,chan
    const flipped=change.kind==="toggle"&&change.task.kind!=="hub"?change.task:null;
    const hub=hubTasks(edited,p.path,p.id);
    edited=syncGroupChecks(edited,id=>{
-    const h=hub.find(x=>x.id===id);if(h)return h.state;
+    const h=hub.find(x=>x.key===id);if(h)return h.state;
     if(flipped?.id===id)return flipped.state==="done"?"scheduled":"done";
     const c=cal.filter(x=>x.id===id);if(!c.length)return undefined;
     return c.some(x=>x.state==="done")?"done":c.every(x=>x.state==="cancelled")?"cancelled":"scheduled";
@@ -162,7 +185,7 @@ export async function changeProjectTask(host:ProjectsHost,displayed:Project,chan
   if(calendarIndexes.size)for(const f of host.app.vault.getMarkdownFiles())if(f.path.startsWith(deskRoot+"/")||f.path.startsWith(wallRoot+"/"))calendarFiles.set(f.path,await read(f.path)??"");
   for(const w of writes.values())calendarFiles.set(w.path,w.after);
   for(const path of calendarIndexes){const before=await read(path);if(before===null)throw Error(`달력 등록부가 없어요: ${path}`);await put(path,prependChangeLog(refreshCalendarIndex(before,path.startsWith(deskRoot+"/")?"desk":"wall",calendarFiles,path.startsWith(deskRoot+"/")?deskRoot:wallRoot,today),today,`${p.id} ${detail}`));}
-  const audit=await projectRecordWrites(host,p,text,edited,"할 일 관리",detail,"실행 상태만 변경. 목표·마일스톤은 유지",today);
+  const audit=await projectRecordWrites(host,p,disk,edited,"할 일 관리",detail,"실행 상태만 변경. 목표·마일스톤은 유지",today);
   for(const [path,before] of snapshots)if(await io.read(path)!==before)throw Error(`동시 변경: ${path}. 저장하지 않았어요.`);
   await commitBatch(io,[...writes.values(),...audit]);
  });

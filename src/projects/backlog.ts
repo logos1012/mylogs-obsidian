@@ -40,10 +40,10 @@ export async function loadProjectBacklog(host: ProjectsHost, statuses: string[] 
 			const all = await loadProjectTasks(host, p, text);
 			const open = (t: ProjectTask) => t.kind === "hub" && t.state === "scheduled" && !t.date && !t.month;
 			const tasks = topLevel
-				? all.filter((t) => !t.parentId && open(t) && (!t.group || all.some((k) => k.parentId === t.id && open(k))))
+				? all.filter((t) => !t.parentId && open(t) && (!t.group || all.some((k) => k.parentId === (t.key ?? t.id) && open(k))))
 				: all.filter((t) => open(t) && !t.group);
 			const children: Record<string, number> = {};
-			if (topLevel) for (const t of tasks) if (t.group) children[t.id] = all.filter((k) => k.parentId === t.id && open(k)).length;
+			if (topLevel) for (const t of tasks) if (t.group) children[t.key ?? t.id] = all.filter((k) => k.parentId === (t.key ?? t.id) && open(k)).length;
 			if (tasks.length) out.push({ project: p.title, projectId: p.id, projectPath: p.path, scope, tasks, children });
 		} catch (err) {
 			console.warn("[MyLogs] project tasks unreadable", p.path, err);

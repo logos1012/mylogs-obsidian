@@ -503,12 +503,12 @@ export class WallCalendarView extends ItemView {
 				const item: ScheduleItem = { kind: "task", projectPath: g.projectPath, projectId: g.projectId, title: taskLabel(t), task: t };
 				const kids = t.group ? this.groupSize(g, t) : 0;
 				const b = list.createEl("button", { cls: `wc-backlog-task${t.group ? " is-group" : ""}`, text: `□ ${taskLabel(t)}${kids ? ` · 하위 ${kids}` : ""}`, attr: { type: "button" } });
-				const on = picked.length ? isPicked(this.plugin, item) : chosen?.kind === "task" && chosen.task.id === t.id;
+				const on = picked.length ? isPicked(this.plugin, item) : chosen?.kind === "task" && (chosen.task.key ?? chosen.task.id) === (t.key ?? t.id);
 				if (on) b.addClass("is-chosen");
 				// Shift / ⌘ click (a tap on a phone) adds to the pick; a plain click picks just this one.
 				b.addEventListener("click", (e) => {
 					if (e.shiftKey || e.metaKey || e.ctrlKey || Platform.isMobile) {
-						if (!picked.length && chosen?.kind === "task" && chosen.task.id !== t.id) togglePicked(this.plugin, chosen);
+						if (!picked.length && chosen?.kind === "task" && (chosen.task.key ?? chosen.task.id) !== (t.key ?? t.id)) togglePicked(this.plugin, chosen);
 						togglePicked(this.plugin, item);
 					} else selectSchedule(this.plugin, on ? null : item);
 					this.render();
@@ -519,8 +519,8 @@ export class WallCalendarView extends ItemView {
 	}
 
 	/** How many 하위 할 일 a 묶음 in the 인박스 would take to the month. */
-	private groupSize(g: BacklogGroup, t: { id: string }): number {
-		return g.children?.[t.id] ?? 0;
+	private groupSize(g: BacklogGroup, t: { id: string; key?: string }): number {
+		return g.children?.[t.key ?? t.id] ?? 0;
 	}
 
 	private renderMonth(grid: HTMLElement, month: number, lines: WallLine[], hasHeading: boolean): void {

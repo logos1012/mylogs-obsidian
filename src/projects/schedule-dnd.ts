@@ -41,9 +41,9 @@ export async function applySchedule(host:ProjectsHost,item:ScheduleItem,target:S
   if(item.task.group){
    if(target.kind!=="month")throw Error("묶음은 달에만 놓아요. 하위 할 일은 Desk에서 주·날로 배정해요.");
    const {text}=await readProject(host,item.projectPath);
-   const kids=(await loadProjectTasks(host,p,text!)).filter(t=>t.parentId===item.task.id&&t.kind==="hub"&&t.state==="scheduled");
+   const group=item.task.key??item.task.id,kids=(await loadProjectTasks(host,p,text!)).filter(t=>t.parentId===group&&t.kind==="hub"&&t.state==="scheduled");
    if(!kids.length)throw Error("달에 놓을 하위 할 일이 없어요.");
-   for(const k of kids){const fresh=(await loadProjectTasks(host,p,(await readProject(host,item.projectPath)).text!)).find(t=>t.id===k.id&&t.kind==="hub");if(fresh)await changeProjectTask(host,p,{kind:"schedule",task:fresh,target},todayIsoLocal());}
+   for(const k of kids){const fresh=(await loadProjectTasks(host,p,(await readProject(host,item.projectPath)).text!)).find(t=>t.key===k.key&&t.kind==="hub");if(fresh)await changeProjectTask(host,p,{kind:"schedule",task:fresh,target},todayIsoLocal());}
    return;
   }
   const n=/\(moved::\s*(\d+)\)/.exec(item.task.line);let reviewed:string|undefined;

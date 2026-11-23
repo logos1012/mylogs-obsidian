@@ -17,7 +17,7 @@ import type { Project } from "./model.ts";
 import { tip } from "../ui/tip.ts";
 import { readProject } from "../pinboard/create-actions.ts";
 import { todayIsoLocal } from "../desk/model.ts";
-import { hubRows, previousTopLevel, type ProjectTask, visibleTaskIds } from "./tasks.ts";
+import { hubRows, isRowKey, previousTopLevel, type ProjectTask, visibleTaskIds } from "./tasks.ts";
 import { changeProjectTask, loadProjectTasks, newTaskId, type TaskChange } from "./task-actions.ts";
 import { MIME, scheduleSource, selectSchedule, selectedSchedule, TOUCH_DROP, type ScheduleItem } from "./schedule-dnd.ts";
 
@@ -40,9 +40,12 @@ export interface OutlineState {
 	focused?: string;
 	/** 「완료 숨김」: leave done rows out (a 묶음 stays while it has open 하위 할 일). Screen only. */
 	hideDone?: boolean;
+	/** Rows written without `(task:: …)` that got their id here: row key → task id. */
+	adopted?: Record<string, string>;
 }
 
 interface Row {
+	/** Task id, or the row key of a line written without `(task:: …)` (`rowKey`). */
 	id: string;
 	depth: 0 | 1;
 	ref: boolean;
@@ -54,10 +57,15 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 	const texts = (state.texts ??= {});
 	const item = (t: ProjectTask): ScheduleItem => ({ kind: "task", projectPath: p.path, projectId: p.id, title: t.title, task: t });
 	const rows: Row[] = [];
+	const adopted = (state.adopted ??= {});
 	for (const r of hubRows(hubText)) {
-		const task = tasks.find((t) => t.id === r.id);
-		if (task) rows.push({ ...r, task, kids: 0 });
+		const task = tasks.find((t) => (t.key ?? t.id) === r.key);
+		if (task) rows.push({ id: r.key, depth: r.depth, ref: r.ref, task, kids: 0 });
 	}
+	/** How a queued change names a row: its id once it has one (an id-less row may get it meanwhile). */
+	const ref = (key: string): string => adopted[key] ?? key;
+	/** An edit of an id-less row gives it an id in the same save. */
+	const adoptFor = (key: string): TaskChange["adopt"] => (isRowKey(key) && !adopted[key] ? { key, id: newTaskId() } : undefined);
 	for (const r of rows) if (!r.depth) r.kids = rows.filter((x) => x.task.parentId === r.id).length;
 	const shown = visibleTaskIds(
 		rows.map((r) => ({ id: r.id, parentId: r.depth ? (r.task.parentId ?? null) : null, done: r.task.state === "done", group: r.kids > 0 })),
@@ -70,6 +78,7 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 			.then(async () => {
 				const c = await change();
 				if (c) await changeProjectTask(host, p, c, todayIsoLocal());
+				if (c?.adopt) adopted[c.adopt.key] = c.adopt.id;
 				state.error = "";
 			})
 			.catch((e) => {
@@ -78,23 +87,36 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 			.then(async () => {
 				// Keep the caret where the user is now, unless this change says where it goes.
 				const here = (document.activeElement as HTMLElement | null)?.closest?.<HTMLElement>(".pf-ol-row");
-				state.focus = focus ?? (here?.hasClass("is-draft") ? "draft" : here?.dataset.task);
+				const want = focus ?? (here?.hasClass("is-draft") ? "draft" : here?.dataset.task);
+				state.focus = want ? ref(want) : want;
 				await refresh();
 			});
 	};
 	/** The task as it is now in the files (rows shift as earlier changes save). */
-	const fresh = async (id: string): Promise<ProjectTask | undefined> => {
+	const fresh = async (key: string): Promise<ProjectTask | undefined> => {
 		const { p: now, text } = await readProject(host, p.path);
-		return (await loadProjectTasks(host, now, text)).find((t) => t.id === id);
+		const id = ref(key);
+		return (await loadProjectTasks(host, now, text)).find((t) => (t.key ?? t.id) === id);
+	};
+	/** A change of this row itself: toggle / edit (an id-less row gets its id with it). */
+	const own = async (r: Row, make: (t: ProjectTask) => TaskChange): Promise<TaskChange | null> => {
+		const t = await fresh(r.id);
+		if (!t) {
+			if (isRowKey(ref(r.id))) throw new Error("할 일이 다른 곳에서 변경됐어요. 다시 열어 주세요.");
+			return null;
+		}
+		return { ...make(t), adopt: t.id ? undefined : adoptFor(r.id) };
 	};
 	const saveText = (r: Row) => {
 		const v = texts[r.id];
 		if (v === undefined || v.trim() === r.task.title || !v.trim()) return;
 		delete texts[r.id];
-		queue(async () => {
-			const t = await fresh(r.id);
-			return t ? { kind: "edit", task: t, text: v.trim() } : null;
-		});
+		queue(() => own(r, (t) => ({ kind: "edit", task: t, text: v.trim() })));
+	};
+	/** Indent / outdent: an id-less row gets its id in the same save; the 묶음 it goes under does not. */
+	const level = (key: string, parentId: string | null): Promise<TaskChange> => {
+		const adopt = adoptFor(key);
+		return Promise.resolve({ kind: "level", id: adopt ? adopt.id : ref(key), parentId: parentId === null ? null : ref(parentId), adopt });
 	};
 	const open = (after: string | null, child: boolean) => {
 		state.draft = { after, child, text: "" };
@@ -105,7 +127,7 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 	// Drag a row onto another row (in) or onto the heading (out).
 	const dragged = () => {
 		const it = selectedSchedule(host);
-		return it?.kind === "task" && it.projectId === p.id && it.task.id ? it.task : null;
+		return it?.kind === "task" && it.projectId === p.id && (it.task.key ?? it.task.id) ? it.task : null;
 	};
 	const dropZone = (el: HTMLElement, parentOf: (t: ProjectTask) => string | null | undefined) => {
 		if (p.archived) return;
@@ -118,7 +140,8 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 			const t = ok();
 			if (!t) return;
 			selectSchedule(host, null);
-			queue(async () => ({ kind: "level", id: t.id, parentId: parentOf(t)! }), t.id);
+			const key = t.key ?? t.id;
+			queue(() => level(key, parentOf(t)!), key);
 		};
 		el.addEventListener("dragover", (e) => {
 			if (!e.dataTransfer?.types.includes(MIME) || !ok()) return;
@@ -218,7 +241,7 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 					const id = newTaskId();
 					const { after, child } = d;
 					state.draft = { after: id, child, text: "" };
-					queue(async () => ({ kind: "add", text: v, id, after: after ?? undefined, child }), "draft");
+					queue(async () => ({ kind: "add", text: v, id, after: after === null ? undefined : ref(after), child }), "draft");
 				},
 				tab: (out) => {
 					if (out) d.child = false;
@@ -243,7 +266,7 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 				if (!input.isConnected || state.draft !== d || document.activeElement === input) return;
 				const v = d.text.trim();
 				state.draft = null;
-				if (v) queue(async () => ({ kind: "add", text: v, id: newTaskId(), after: d.after ?? undefined, child: d.child }));
+				if (v) queue(async () => ({ kind: "add", text: v, id: newTaskId(), after: d.after === null ? undefined : ref(d.after), child: d.child }));
 			}, 150);
 		});
 	};
@@ -256,12 +279,7 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 		check.disabled = p.archived || t.state === "cancelled" || !!t.group || !!(t.desk && t.desk.section !== "day");
 		if (t.group) tip(check, "하위 할 일이 모두 끝나면 저절로 완료돼요");
 		else if (t.desk && t.desk.section !== "day") tip(check, "날짜를 정한 뒤 완료해요");
-		check.addEventListener("change", () =>
-			queue(async () => {
-				const f = await fresh(r.id);
-				return f ? { kind: "toggle", task: f } : null;
-			}, r.id),
-		);
+		check.addEventListener("change", () => queue(() => own(r, (f) => ({ kind: "toggle", task: f })), r.id));
 		const input = line.createEl("input", { cls: "pf-ol-text", attr: { type: "text", "aria-label": "할 일" } });
 		input.value = texts[r.id] ?? t.title;
 		input.readOnly = p.archived || t.state === "cancelled";
@@ -281,10 +299,10 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 				tab: (out) => {
 					saveText(r);
 					if (out) {
-						if (r.depth) queue(async () => ({ kind: "level", id: r.id, parentId: null }), r.id);
+						if (r.depth) queue(() => level(r.id, null), r.id);
 					} else if (!r.depth && !t.group) {
 						const prev = previousTopLevel(hubText, r.id);
-						if (prev) queue(async () => ({ kind: "level", id: r.id, parentId: prev }), r.id);
+						if (prev) queue(() => level(r.id, prev), r.id);
 					}
 				},
 				empty: () => {
@@ -292,7 +310,7 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 					const i = rows.indexOf(r);
 					delete texts[r.id];
 					// The caret goes to the previous row on screen (a hidden done row has no input).
-					queue(async () => ({ kind: "delete", id: r.id }), rows.slice(0, i).reverse().find((x) => shown.has(x.id))?.id);
+					queue(async () => ({ kind: "delete", id: ref(r.id) }), rows.slice(0, i).reverse().find((x) => shown.has(x.id))?.id);
 				},
 			}),
 		);
@@ -308,7 +326,7 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 				if (t.state === "scheduled" && !t.group) select(item(t));
 			});
 			dropZone(line, (d) => {
-				if (d.id === r.id || d.group) return undefined;
+				if ((d.key ?? d.id) === r.id || d.group) return undefined;
 				const target = r.depth ? t.parentId! : r.id;
 				return d.parentId === target || (!r.depth && r.ref) ? undefined : target;
 			});
@@ -317,7 +335,7 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 			del.disabled = r.kids > 0;
 			del.addEventListener("click", () => {
 				delete texts[r.id];
-				queue(async () => ({ kind: "delete", id: r.id }));
+				queue(async () => ({ kind: "delete", id: ref(r.id) }));
 			});
 		}
 	};

@@ -11,6 +11,60 @@ export interface ProjectTask {
  parentId?: string; parentTitle?: string;
  /** A 묶음: done by itself when every 하위 할 일 is done; not scheduled itself. */
  group?: boolean;
+ /** Hub rows: the task id, or for a row written without `(task:: …)` (by a bot or by hand) a row key
+  * from its position and text (`rowKey`). Calendar rows: unset (use `id`). */
+ key?: string;
+}
+
+/**
+ * A hub row written without `(task:: …)` still shows in the editor, under a key made from its
+ * position and its exact text. Only viewing never writes; the first edit adds the id to that line
+ * (`adoptHubRow`), re-checking the text first.
+ */
+export function rowKey(index: number, line: string): string {
+ let h=0x811c9dc5;for(const ch of stripEol(line)){h^=ch.codePointAt(0)!;h=Math.imul(h,0x01000193)>>>0;}
+ return `row:${index}:${h.toString(16).padStart(8,"0")}`;
+}
+export const isRowKey=(ref:string):boolean=>/^row:\d+:[0-9a-f]{8}$/.test(ref);
+/** A hub list line's id, or for an id-less task line its row key, or "" (not a task row). */
+function keyAt(index:number,line:string):string{
+ const m=/^(\s*)[-*+]\s+(.*)$/.exec(line);if(!m)return "";
+ const id=/\(task::\s*([^)]*)\)/.exec(m[2])?.[1]?.trim()||"";
+ if(id)return id;
+ return /^\[[ x>\-]\]/.test(m[2])&&parseItem(m[2]).kind==="task"?rowKey(index,line):"";
+}
+/** Where the row `ref` (task id or row key) is now, within `## 할 일` lines [from, to); -1 if gone. */
+function findRef(lines:string[],from:number,to:number,ref:string):number{
+ for(let i=from;i<to;i++)if(keyAt(i,stripEol(lines[i]))===ref)return i;
+ if(!isRowKey(ref))return -1;
+ // Lines above it moved: the same text, once, still counts.
+ const hash=ref.slice(ref.lastIndexOf(":")+1),hits:number[]=[];
+ for(let i=from;i<to;i++){const k=keyAt(i,stripEol(lines[i]));if(isRowKey(k)&&k.endsWith(":"+hash))hits.push(i);}
+ return hits.length===1?hits[0]:-1;
+}
+function sectionEnd(lines:string[],head:number):number{let end=head+1;while(end<lines.length&&!/^#{1,2}\s/.test(stripEol(lines[end])))end++;return end;}
+
+/**
+ * Give the id-less row `key` its id: `(task:: id) (project:: projectId)` goes on the end of that
+ * line only. If its text changed since it was shown, nothing is written.
+ */
+export function adoptHubRow(text: string, key: string, id: string, projectId: string): string {
+ const sec=findSection(text,"할 일");if(!sec||!isRowKey(key))throw Error("할 일이 다른 곳에서 변경됐어요. 다시 열어 주세요.");
+ const lines=splitLinesKeepEol(text),at=findRef(lines,sec.headingIndex+1,sectionEnd(lines,sec.headingIndex),key);
+ if(at<0)throw Error("할 일이 다른 곳에서 변경됐어요. 다시 열어 주세요.");
+ const line=stripEol(lines[at]);
+ lines[at]=line.replace(/\s+$/,"")+` (task:: ${id}) (project:: ${projectId})`+lines[at].slice(line.length);
+ return lines.join("");
+}
+
+/**
+ * The hub line left when a task goes to a calendar: `- 제목 (task::) (project::)`, keeping every
+ * other inline field of the row (e.g. `(ms:: …)`) as it was.
+ */
+export function hubReferenceLine(line: string, title: string, id: string, projectId: string): string {
+ const indent=/^(\s*)/.exec(line)?.[1]??"";
+ const kept=[...line.matchAll(/\(\s*([A-Za-z_][\w-]*)\s*::[^)]*\)/g)].filter(m=>m[1]!=="task"&&m[1]!=="project").map(m=>" "+m[0]).join("");
+ return `${indent}- ${title} (task:: ${id}) (project:: ${projectId})${kept}`;
 }
 
 /** A 묶음 row of the hub's `## 할 일` and the ids of its 하위 rows (checkbox or reference). */
@@ -28,7 +82,7 @@ export function hubOutline(text: string): { groups: Map<string, TaskGroup>; pare
  for(let i=sec.headingIndex+1;i<lines.length;i++){
   const line=stripEol(lines[i]);if(/^#{1,2}\s/.test(line))break;
   const m=/^(\s*)[-*+]\s+(.*)$/.exec(line);if(!m)continue;
-  const id=/\(task::\s*([^)]*)\)/.exec(m[2])?.[1]?.trim()||"";
+  const id=keyAt(i,line);
   if(!m[1].length){top=id?{id,title:parseItem(m[2]).text,index:i,line,children:[]}:null;continue;}
   if(top&&id){top.children.push(id);groups.set(top.id,top);parentOf.set(id,top);}
  }
@@ -38,7 +92,7 @@ export function hubOutline(text: string): { groups: Map<string, TaskGroup>; pare
 /** 하위 할 일 → its 묶음 (calendar copies included). */
 export function annotateGroups(tasks: ProjectTask[], text: string): ProjectTask[] {
  const {groups,parentOf}=hubOutline(text);
- for(const t of tasks){const g=t.id?parentOf.get(t.id):undefined;if(g){t.parentId=g.id;t.parentTitle=g.title;}if(t.kind==="hub"&&t.id&&groups.has(t.id))t.group=true;}
+ for(const t of tasks){const k=t.key??t.id,g=k?parentOf.get(k):undefined;if(g){t.parentId=g.id;t.parentTitle=g.title;}if(t.kind==="hub"&&k&&groups.has(k))t.group=true;}
  return tasks;
 }
 
@@ -66,28 +120,31 @@ export function appendChildTask(text: string, parentIndex: number, line: string)
 export function placeTask(text: string, id: string, parentId: string | null): string {
  const sec=findSection(text,"할 일");if(!sec)throw Error("할 일 섹션이 없어요.");
  const lines=splitLinesKeepEol(text),eol=detectEol(text);
- let end=sec.headingIndex+1;while(end<lines.length&&!/^#{1,2}\s/.test(stripEol(lines[end])))end++;
- const idOf=(i:number)=>/\(task::\s*([^)]*)\)/.exec(stripEol(lines[i]))?.[1]?.trim()??"";
+ let end=sectionEnd(lines,sec.headingIndex);
+ const idOf=(i:number)=>keyAt(i,stripEol(lines[i]));
  const isList=(i:number)=>/^\s*[-*+]\s/.test(stripEol(lines[i]));
  const isChild=(i:number)=>/^\s+[-*+]\s/.test(stripEol(lines[i]));
  const blockEnd=(top:number)=>{let j=top+1;while(j<end&&isChild(j))j++;return j;};
- const at=lines.findIndex((_,i)=>i>sec.headingIndex&&i<end&&isList(i)&&idOf(i)===id);
- if(at<0)throw Error("할 일을 찾을 수 없어요. 다시 열어 주세요.");
+ const at=findRef(lines,sec.headingIndex+1,end,id);
+ if(at<0||!isList(at))throw Error("할 일을 찾을 수 없어요. 다시 열어 주세요.");
  const child=isChild(at);
  if(parentId===null&&!child)return text;
  if(parentId!==null&&!child&&blockEnd(at)>at+1)throw Error("하위 할 일이 있는 묶음은 다른 할 일 아래로 넣을 수 없어요. 위계는 두 단계까지예요.");
  if(parentId===id)return text;
  // The 묶음 this row is in now (for an outdent, it goes right after that block).
  let top=at;while(top>sec.headingIndex&&isChild(top))top--;
- if(parentId!==null&&child&&idOf(top)===parentId)return text;
+ // Find the new 묶음 before lines shift (an id-less row's key holds its line number).
+ const pAt=parentId===null?-1:findRef(lines,sec.headingIndex+1,end,parentId);
+ if(parentId!==null&&child&&pAt===top)return text;
  const row=stripEol(lines[at]).replace(/^\s+/,"");
+ const pKey=pAt>=0?idOf(pAt):"";
  lines.splice(at,1);end--;
  if(parentId===null){
   const j=blockEnd(top);
   lines.splice(j,0,row+eol);
  }else{
-  const p=lines.findIndex((_,i)=>i>sec.headingIndex&&i<end&&isList(i)&&!isChild(i)&&idOf(i)===parentId);
-  if(p<0)throw Error("위 단계 할 일을 찾을 수 없어요.");
+  const p=pAt<0?-1:pAt>at?pAt-1:pAt;
+  if(p<0||!pKey||!isList(p)||isChild(p))throw Error("위 단계 할 일을 찾을 수 없어요.");
   if(!/^[-*+]\s+\[[ xX]\]/.test(stripEol(lines[p])))throw Error("배정한 할 일 아래에는 넣을 수 없어요.");
   const j=blockEnd(p);
   if(j>0&&!lines[j-1].endsWith("\n"))lines[j-1]+=eol;
@@ -109,10 +166,9 @@ export function insertTaskAfter(text: string, afterId: string | null, line: stri
   return insertTaskAfter(text,last,row,true);
  }
  const lines=splitLinesKeepEol(text),eol=detectEol(text);
- let end=sec.headingIndex+1;while(end<lines.length&&!/^#{1,2}\s/.test(stripEol(lines[end])))end++;
- const idOf=(i:number)=>/\(task::\s*([^)]*)\)/.exec(stripEol(lines[i]))?.[1]?.trim()??"";
+ const end=sectionEnd(lines,sec.headingIndex);
  const isChild=(i:number)=>/^\s+[-*+]\s/.test(stripEol(lines[i]));
- const at=lines.findIndex((_,i)=>i>sec.headingIndex&&i<end&&/^\s*[-*+]\s/.test(stripEol(lines[i]))&&idOf(i)===afterId);
+ const at=findRef(lines,sec.headingIndex+1,end,afterId);
  if(at<0)throw Error("할 일을 찾을 수 없어요. 다시 열어 주세요.");
  let top=at;while(top>sec.headingIndex&&isChild(top))top--;
  let j:number;
@@ -130,22 +186,25 @@ export function insertTaskAfter(text: string, afterId: string | null, line: stri
 /** Remove the hub row of task `id` (a 묶음 only once it has no 하위 할 일). */
 export function removeHubRow(text: string, id: string): string {
  const lines=splitLinesKeepEol(text),sec=findSection(text,"할 일");if(!sec)throw Error("할 일 섹션이 없어요.");
- let end=sec.headingIndex+1;while(end<lines.length&&!/^#{1,2}\s/.test(stripEol(lines[end])))end++;
- const at=lines.findIndex((l,i)=>i>sec.headingIndex&&i<end&&/^\s*[-*+]\s/.test(stripEol(l))&&/\(task::\s*([^)]*)\)/.exec(stripEol(l))?.[1]?.trim()===id);
+ const end=sectionEnd(lines,sec.headingIndex);
+ const at=findRef(lines,sec.headingIndex+1,end,id);
  if(at<0)throw Error("할 일을 찾을 수 없어요. 다시 열어 주세요.");
  if(!/^\s/.test(stripEol(lines[at]))&&at+1<end&&/^\s+[-*+]\s/.test(stripEol(lines[at+1])))throw Error("하위 할 일이 있어요. 하위 할 일을 먼저 옮기거나 지워 주세요.");
  lines.splice(at,1);return lines.join("");
 }
 
-/** Hub rows in file order (checkbox or reference), with their level. */
-export function hubRows(text: string): { id: string; depth: 0 | 1; ref: boolean; index: number }[] {
+/**
+ * Hub rows in file order (checkbox or reference), with their level. A task row written without
+ * `(task:: …)` comes too, with `id: ""` and a row `key` (see `rowKey`); `key` is the id otherwise.
+ */
+export function hubRows(text: string): { id: string; key: string; depth: 0 | 1; ref: boolean; index: number }[] {
  const sec=findSection(text,"할 일");if(!sec)return [];
- const lines=splitLinesKeepEol(text).map(stripEol),out:{ id: string; depth: 0 | 1; ref: boolean; index: number }[]=[];
+ const lines=splitLinesKeepEol(text).map(stripEol),out:{ id: string; key: string; depth: 0 | 1; ref: boolean; index: number }[]=[];
  for(let i=sec.headingIndex+1;i<lines.length;i++){
   if(/^#{1,2}\s/.test(lines[i]))break;
   const m=/^(\s*)[-*+]\s+(.*)$/.exec(lines[i]);if(!m)continue;
-  const id=/\(task::\s*([^)]*)\)/.exec(m[2])?.[1]?.trim()??"";if(!id)continue;
-  out.push({id,depth:m[1].length?1:0,ref:!/^\[.\]/.test(m[2]),index:i});
+  const key=keyAt(i,lines[i]);if(!key)continue;
+  out.push({id:isRowKey(key)?"":key,key,depth:m[1].length?1:0,ref:!/^\[.\]/.test(m[2]),index:i});
  }
  return out;
 }
@@ -157,7 +216,7 @@ export function previousTopLevel(text: string, id: string): string | null {
  for(let i=sec.headingIndex+1;i<lines.length;i++){
   if(/^#{1,2}\s/.test(lines[i]))break;
   const m=/^(\s*)[-*+]\s+(.*)$/.exec(lines[i]);if(!m)continue;
-  const tid=/\(task::\s*([^)]*)\)/.exec(m[2])?.[1]?.trim()??"";
+  const tid=keyAt(i,lines[i]);
   if(tid===id)return prev;
   if(!m[1].length&&tid)prev=/^\[[ xX]\]/.test(m[2])?tid:null;
  }
@@ -171,7 +230,7 @@ export function lastTopLevel(text: string): string | null {
  for(let i=sec.headingIndex+1;i<lines.length;i++){
   if(/^#{1,2}\s/.test(lines[i]))break;
   const m=/^([-*+])\s+(.*)$/.exec(lines[i]);if(!m)continue;
-  const tid=/\(task::\s*([^)]*)\)/.exec(m[2])?.[1]?.trim()??"";
+  const tid=keyAt(i,lines[i]);
   last=tid&&/^\[[ xX]\]/.test(m[2])?tid:null;
  }
  return last;
@@ -201,7 +260,8 @@ export function hubTasks(text: string, path: string, projectId: string): Project
   const line=stripEol(lines[i]); if (/^#{1,2}\s/.test(line)) break;
   const m=/^\s*[-*+]\s+(\[[ x>\-]\].*)$/.exec(line); if(!m) continue;
   const item=parseItem(m[1]); if(item.kind!=="task") continue;
-  out.push({path,index:i,line,id:Object.fromEntries(item.fields).task||"",projectId,title:item.text,state:item.status,kind:"hub"});
+  const id=Object.fromEntries(item.fields).task||"";
+  out.push({path,index:i,line,id,projectId,title:item.text,state:item.status,kind:"hub",key:id||rowKey(i,line)});
  }
  return out;
 }

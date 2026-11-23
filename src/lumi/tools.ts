@@ -432,7 +432,7 @@ export const LUMI_TOOLS: LumiTool[] = [
 			if (a.parent) {
 				const top = findTask(await loadProjectTasks(ctx.host, p, hub), String(a.parent), (t) => t.kind === "hub" && !t.parentId);
 				parentTitle = top.title;
-				await changeProjectTask(ctx.host, p, { kind: "add", text, id, parentId: top.id }, ctx.today);
+				await changeProjectTask(ctx.host, p, { kind: "add", text, id, parentId: top.key ?? top.id }, ctx.today);
 			} else await changeProjectTask(ctx.host, p, { kind: "add", text, id }, ctx.today);
 			const target = targetOf(a);
 			const where = parentTitle ? `「${parentTitle}」 아래 ` : "";
@@ -452,10 +452,10 @@ export const LUMI_TOOLS: LumiTool[] = [
 			const { p, text } = await findProject(ctx, String(a.project));
 			const tasks = await loadProjectTasks(ctx.host, p, text);
 			const lines = hubRows(text).flatMap((r) => {
-				const t = tasks.find((x) => x.id === r.id);
+				const t = tasks.find((x) => (x.key ?? x.id) === r.key);
 				if (!t) return [];
 				const box = t.state === "done" ? "[x]" : t.state === "cancelled" ? "[-]" : "[ ]";
-				const kids = t.group ? tasks.filter((x) => x.parentId === t.id) : [];
+				const kids = t.group ? tasks.filter((x) => x.parentId === r.key) : [];
 				const where = t.group ? `묶음 · 하위 ${kids.filter((k) => k.state === "done").length}/${kids.length}` : t.date ?? (t.desk?.section === "alloc" ? `${t.desk.monday} 주` : t.month ? `${t.month} 인박스` : "배정 전");
 				return [`${r.depth ? "    " : ""}- ${box} ${t.title} — ${where}`];
 			});
@@ -479,7 +479,7 @@ export const LUMI_TOOLS: LumiTool[] = [
 		async preview(ctx, a) {
 			const { p, text } = await findProject(ctx, String(a.project));
 			const t = findTask(await loadProjectTasks(ctx.host, p, text), String(a.task));
-			if (t.group && hubRows(text).some((r) => tasksParent(text, r.id) === t.id)) throw new Error("하위 할 일이 있는 묶음이에요. 하위 할 일을 먼저 옮기거나 지워 주세요.");
+			if (t.group && hubRows(text).some((r) => tasksParent(text, r.key) === (t.key ?? t.id))) throw new Error("하위 할 일이 있는 묶음이에요. 하위 할 일을 먼저 옮기거나 지워 주세요.");
 			return { title: `할 일 지우기: ${t.title}`, lines: [`프로젝트 · ${p.title}`, t.date || t.month ? "달력에 배정한 줄도 함께 지워요" : "아직 배정 전이에요"] };
 		},
 		async run(ctx, a) {
@@ -506,15 +506,15 @@ export const LUMI_TOOLS: LumiTool[] = [
 			}
 			if (action === "under") {
 				if (!a.value) throw new Error("value에 묶음(위 단계 할 일) 이름을 주세요.");
-				const top = findTask(tasks, String(a.value), (x) => x.kind === "hub" && !x.parentId && x.id !== t.id);
-				await changeProjectTask(ctx.host, p, { kind: "level", id: t.id, parentId: top.id }, ctx.today);
+				const top = findTask(tasks, String(a.value), (x) => x.kind === "hub" && !x.parentId && x !== t);
+				await changeProjectTask(ctx.host, p, { kind: "level", id: t.key ?? t.id, parentId: top.key ?? top.id }, ctx.today);
 				return `「${t.title}」을(를) 「${top.title}」 아래로 넣었어요.`;
 			}
 			if (action === "out") {
-				await changeProjectTask(ctx.host, p, { kind: "level", id: t.id, parentId: null }, ctx.today);
+				await changeProjectTask(ctx.host, p, { kind: "level", id: t.key ?? t.id, parentId: null }, ctx.today);
 				return `「${t.title}」을(를) 위 단계로 뺐어요.`;
 			}
-			await changeProjectTask(ctx.host, p, { kind: "delete", id: t.id }, ctx.today);
+			await changeProjectTask(ctx.host, p, { kind: "delete", id: t.key ?? t.id }, ctx.today);
 			return `「${t.title}」을(를) 지웠어요.`;
 		},
 	},
