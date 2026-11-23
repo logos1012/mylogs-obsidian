@@ -380,7 +380,9 @@ export class ProjectFoldersView extends ItemView {
 		const matches = this.data?.projects.filter(p => p.id === idOrPath || p.path === idOrPath) ?? [];
 		if (matches.length !== 1 || !matches[0].id) { new Notice("프로젝트를 하나로 찾지 못했어요. 등록부와 허브 id를 확인해 주세요."); return false; }
 		this.selectedId = matches[0].id;
-		this.milestoneStates.set(matches[0].path, { open: true });
+		// Fresh inline state; 마일스톤 section always opens on entering the project page, but the user's folds this session (panels, notes) stay.
+		const prev = this.milestoneStates.get(matches[0].path);
+		this.milestoneStates.set(matches[0].path, { open: true, collapsed: prev?.collapsed, dismissed: prev?.dismissed });
 		await this.refresh(); this.contentEl.scrollTop = 0;
 		this.rootEl.querySelector<HTMLElement>(".pf-workspace h1")?.focus();
 		this.app.workspace.requestSaveLayout();

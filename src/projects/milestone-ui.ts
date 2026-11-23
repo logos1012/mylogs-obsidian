@@ -5,7 +5,7 @@ import { touchReorder } from "./schedule-dnd.ts";
 import { todayIsoLocal } from "../desk/model.ts";
 import type { Project } from "./model.ts";
 import { formatMetricValue, metricMeasure, milestoneKind, milestoneSplit, milestoneSummary, type MilestoneChange, type Milestone } from "./milestones.ts";
-import { aimIds, calendarStateOf, linkedRows, milestoneTaskProgress, readyToConfirm, recommendLinks, reviewNotes, type LinkChange } from "./milestone-links.ts";
+import { aimIds, calendarStateOf, linkedRows, milestonePanelOpen, milestoneTaskProgress, readyToConfirm, recommendLinks, reviewNotes, type LinkChange } from "./milestone-links.ts";
 import { hubTopRows, type HubTopRow, type ProjectTask } from "./tasks.ts";
 
 /**
@@ -34,14 +34,12 @@ export interface MilestoneUIState {
 	current?: { line: number; value: string; source: string };
 	/** 「지표 설정」: target · unit · period of one 성과 지표. */
 	metric?: { line: number; target: string; unit: string; period: string; source: string };
-	/** Milestone ids whose linked 할 일 are open under the row (screen only). */
-	expanded?: Set<string>;
+	/** Milestone ids whose linked 할 일 panel the user folded this session (screen only; open by default). */
+	collapsed?: Set<string>;
 	/** 「노리는 성과 지표」: the 성과 지표 lines ticked so far. */
 	aiming?: { line: number; chosen: number[]; source: string };
 	/** 「다시 검토」 notes closed this session (`milestone ms|metric ms`); never written to the file. */
 	dismissed?: Set<string>;
-	/** A 마일스톤 that just got its first 묶음 (no id on screen yet): open its panel after the reload. */
-	expandNew?: number;
 }
 
 /** Reordering by the ⋮⋮ handle; a type of its own, so it never reads as a drop on the calendar. */
@@ -88,7 +86,7 @@ export function renderMilestones(parent: HTMLElement, p: Project, state: Milesto
 			catch (e) { state.busy = false; state.error = e instanceof Error ? e.message : String(e); paint(true); }
 		};
 		const cancelInline = () => { state.current = undefined; state.metric = undefined; state.aiming = undefined; state.error = ""; paint(); };
-		const expanded = (state.expanded ??= new Set()), dismissed = (state.dismissed ??= new Set());
+		const collapsed = (state.collapsed ??= new Set()), dismissed = (state.dismissed ??= new Set());
 		const topRows: HubTopRow[] = links ? hubTopRows(links.hubText) : [];
 		const refState = links ? calendarStateOf(links.tasks) : () => undefined;
 		const notes = links ? reviewNotes(items) : [];
@@ -98,7 +96,7 @@ export function renderMilestones(parent: HTMLElement, p: Project, state: Milesto
 			if (!links || locked) return;
 			const title = await links.askTitle(item.text);
 			if (!title?.trim()) return;
-			await commitLink({ kind: "addGroup", line: item.line, title, taskId: links.newTaskId(), projectId: p.id }, () => { if (item.ms) expanded.add(item.ms); else state.expandNew = item.line; });
+			await commitLink({ kind: "addGroup", line: item.line, title, taskId: links.newTaskId(), projectId: p.id }, () => { if (item.ms) collapsed.delete(item.ms); });
 		};
 		const move = (item: Milestone, target: Milestone, place: "before" | "after") => void commit({ kind: "move", line: item.line, target: target.line, place }, source);
 		const clearDrop = () => body.querySelectorAll(".is-drop-before, .is-drop-after").forEach(el => el.removeClass("is-drop-before", "is-drop-after"));
@@ -163,13 +161,12 @@ export function renderMilestones(parent: HTMLElement, p: Project, state: Milesto
 			const check = label.createEl("input", { attr: { type: "checkbox", "aria-label": `${item.text} 달성 확인` } });
 			check.checked = item.done; check.disabled = p.archived || locked;
 			label.createSpan({ cls: "pf-ms-title", text: item.text });
-			// 「할 일 n/m」: small, on the same line; tapping opens the linked 할 일 under the row.
+			// 「할 일 n/m」: small, on the same line; the linked 할 일 show under the row; tapping folds / unfolds them.
 			const linked = links && !metric ? linkedRows(links.hubText, item.ms) : [];
 			const progress = milestoneTaskProgress(linked, refState);
-			if (state.expandNew === item.line && item.ms && linked.length) { expanded.add(item.ms); state.expandNew = undefined; }
-			const open = !!item.ms && expanded.has(item.ms) && linked.length > 0;
+			const open = milestonePanelOpen(item.ms, linked.length, collapsed);
 			if (linked.length) {
-				const chip = button(first, `할 일 ${progress.done}/${progress.total}`, () => { if (open) expanded.delete(item.ms!); else expanded.add(item.ms!); paint(); });
+				const chip = button(first, `할 일 ${progress.done}/${progress.total}`, () => { if (!item.ms) return; if (open) collapsed.add(item.ms); else collapsed.delete(item.ms); paint(); });
 				chip.addClass("pf-ms-tasks");
 				if (progress.total && progress.done === progress.total) chip.addClass("is-complete");
 				chip.setAttr("aria-expanded", String(open));
@@ -209,7 +206,7 @@ export function renderMilestones(parent: HTMLElement, p: Project, state: Milesto
 						menu.addItem(i => i.setTitle("+ 할 일").setIcon("list-plus").onClick(() => void addGroup(item)));
 						if (free.length) menu.addItem(i => i.setTitle("기존 묶음 연결").setIcon("link").onClick(() => void (async () => {
 							const picked = await links.pick(`「${item.text}」에 연결할 할 일`, free.map(r => ({ label: r.title, sub: r.children.length ? `하위 ${r.children.length}개` : r.ref ? "배정됨" : "단독 할 일", row: r })));
-							if (picked) await commitLink({ kind: "link", line: item.line, rows: [{ key: picked.row.key, line: picked.row.line }] }, () => { if (item.ms) expanded.add(item.ms); else state.expandNew = item.line; });
+							if (picked) await commitLink({ kind: "link", line: item.line, rows: [{ key: picked.row.key, line: picked.row.line }] }, () => { if (item.ms) collapsed.delete(item.ms); });
 						})()));
 						if (mine.length) menu.addItem(i => i.setTitle("연결 풀기").setIcon("unlink").onClick(() => void (async () => {
 							const all = { label: `모두 풀기 (${mine.length}개)`, sub: "할 일은 그대로 남아요", rows: mine };
@@ -238,7 +235,7 @@ export function renderMilestones(parent: HTMLElement, p: Project, state: Milesto
 					const ok = button(body, "할 일을 다 끝냈어요 · 달성 확인", () => void commit({ kind: "check", line: item.line, done: true }, source), locked);
 					ok.addClass("pf-ms-confirm");
 				}
-				if (item.ms && expanded.has(item.ms) && linked.length) {
+				if (item.ms && milestonePanelOpen(item.ms, linked.length, collapsed)) {
 					const panel = body.createDiv({ cls: "pf-ms-panel", attr: { role: "group", "aria-label": `${item.text} 연결된 할 일` } });
 					links.outline(panel, new Set(linked.map(r => r.key)), item.ms);
 					if (!p.archived) {

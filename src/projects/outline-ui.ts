@@ -17,7 +17,8 @@ import type { Project } from "./model.ts";
 import { tip } from "../ui/tip.ts";
 import { readProject } from "../pinboard/create-actions.ts";
 import { todayIsoLocal } from "../desk/model.ts";
-import { hubRows, hubTopRows, isRowKey, previousTopLevel, type ProjectTask, visibleTaskIds } from "./tasks.ts";
+import { hubRows, isRowKey, previousTopLevel, type ProjectTask, visibleTaskIds } from "./tasks.ts";
+import { linkedGroupKeys } from "./milestone-links.ts";
 import { changeProjectTask, loadProjectTasks, newTaskId, type TaskChange } from "./task-actions.ts";
 import { MIME, scheduleSource, selectSchedule, selectedSchedule, TOUCH_DROP, type ScheduleItem } from "./schedule-dnd.ts";
 
@@ -65,20 +66,16 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 	const item = (t: ProjectTask): ScheduleItem => ({ kind: "task", projectPath: p.path, projectId: p.id, title: t.title, task: t });
 	const rows: Row[] = [];
 	const adopted = (state.adopted ??= {});
+	/** 「할 일」 목록: a 묶음 linked to a 마일스톤 shows once, under that 마일스톤 (its panel), not here. */
+	const linked = scope ? new Set<string>() : linkedGroupKeys(hubText, p.milestoneError ? [] : (p.milestones ?? []));
 	let top = "";
 	for (const r of hubRows(hubText)) {
 		if (!r.depth) top = r.key;
-		if (scope && !scope.keys.has(top)) continue;
+		if (scope ? !scope.keys.has(top) : linked.has(top)) continue;
 		const task = tasks.find((t) => (t.key ?? t.id) === r.key);
 		if (task) rows.push({ id: r.key, depth: r.depth, ref: r.ref, task, kids: 0 });
 	}
 	if (scope && !rows.length && !state.draft) return;
-	/** 「할 일」 목록: a 묶음 linked to a 마일스톤 carries a small 「◆ 마일스톤 이름」 tag. */
-	const msName = new Map<string, string>();
-	if (!scope) {
-		const names = new Map((p.milestones ?? []).filter((m) => m.ms).map((m) => [m.ms!, m.text] as const));
-		for (const r of hubTopRows(hubText)) if (r.ms && names.has(r.ms)) msName.set(r.key, names.get(r.ms)!);
-	}
 	/** How a queued change names a row: its id once it has one (an id-less row may get it meanwhile). */
 	const ref = (key: string): string => adopted[key] ?? key;
 	/** An edit of an id-less row gives it an id in the same save. */
@@ -292,11 +289,6 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 	const drawRow = (r: Row) => {
 		const t = r.task;
 		const line = box.createDiv({ cls: `pf-ol-row${r.depth ? " is-child" : ""}${t.state === "done" ? " is-done" : ""}${t.group ? " is-group" : ""}${r.ref ? " is-assigned" : ""}`, attr: { role: "listitem", "data-task": r.id } });
-		const linked = msName.get(r.id);
-		if (linked) {
-			const tag = line.createSpan({ cls: "pf-ol-ms", text: `◆ ${linked}` });
-			tip(tag, `마일스톤 「${linked}」에 연결된 할 일`);
-		}
 		const check = line.createEl("input", { cls: "pf-ol-check", attr: { type: "checkbox", "aria-label": `${t.title} 완료` } });
 		check.checked = t.state === "done";
 		check.disabled = p.archived || t.state === "cancelled" || !!t.group || !!(t.desk && t.desk.section !== "day");
@@ -327,7 +319,8 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 					if (out) {
 						if (r.depth) queue(() => level(r.id, null), r.id);
 					} else if (!r.depth && !t.group) {
-						const prev = previousTopLevel(hubText, r.id);
+						// Under the top-level row above on screen, never under a 묶음 shown only by its 마일스톤.
+						const prev = previousTopLevel(hubText, r.id, linked);
 						if (prev) queue(() => level(r.id, prev), r.id);
 					}
 				},
@@ -397,6 +390,9 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 			add.addEventListener("click", () => open(rows[rows.length - 1].id, false));
 		}
 	}
+	// Count only the linked rows that are 할 일 here (a key without a loaded task is not shown anyway).
+	const away = [...linked].filter((k) => tasks.some((t) => (t.key ?? t.id) === k)).length;
+	if (away) box.createDiv({ cls: "pf-ol-linked-note", text: `마일스톤에 연결된 할 일 ${away}묶음은 위 마일스톤에서 볼 수 있어요` });
 	if (state.error) list.createDiv({ cls: "pf-ms-error", text: state.error, attr: { role: "alert" } });
 
 	const want = state.focus ?? state.focused;

@@ -12857,8 +12857,8 @@ body.is-mobile .pf-schedule-head .pf-done-toggle { min-height: 44px; }
 .mylogs-projects .pf-ms-suggest { margin: 8px 0; }
 .mylogs-projects .pf-ms-suggest button.pf-ms-suggest-go { height: auto; min-height: 32px; padding: 3px 12px; border: 1px solid var(--pf-accent); background: var(--pf-accent-soft); box-shadow: none; color: var(--pf-accent); font-size: 12px; white-space: normal; text-align: left; }
 .mylogs-projects .pf-ms-suggest-list { margin: 4px 0 0; padding-left: 18px; color: var(--pf-ink-2); font-size: 12px; overflow-wrap: anywhere; }
-/* 「할 일」 목록: ◆ 마일스톤 이름 in front of a linked 묶음. */
-.pf-ol-ms { flex: 0 1 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #7353a6; font-size: var(--font-ui-smaller); }
+/* 「할 일」 목록: the 묶음 linked to a 마일스톤 show under it; one quiet line says so. */
+.pf-ol-linked-note { padding: 2px 6px; font-size: 12px; color: var(--text-faint); overflow-wrap: anywhere; }
 @media (max-width: 760px) {
  .mylogs-projects .pf-ms-row button.pf-ms-tasks { margin-top: 12px; padding: 3px 8px 4px; }
  .mylogs-projects .pf-ms-panel { margin-left: 8px; }
