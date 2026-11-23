@@ -256,3 +256,24 @@ export function changeMilestones(text: string, expected: string, change: Milesto
 	}
 	return text.slice(0, current.start) + rows.join("") + text.slice(current.end);
 }
+
+/** One inline field on one `## 마일스톤` item (`null` removes it). */
+export interface MilestoneFieldEdit { line: number; key: "ms" | "aim" | "start"; value: string | null }
+/**
+ * Several field edits on `## 마일스톤` items in one go (lines keep their place; nothing else moves).
+ * The section must still read `expected`; a new field goes in plugin order.
+ */
+export function setMilestoneFields(text: string, expected: string, edits: MilestoneFieldEdit[]): string {
+	const current = readMilestones(text);
+	if (current.source !== expected) throw new Error("마일스톤이 다른 곳에서 변경됐어요. 취소한 뒤 최신 목록에서 다시 수정해 주세요.");
+	if (!edits.length) return text;
+	const rows = lines(current.source);
+	for (const e of edits) {
+		if (!current.items.some(i => i.line === e.line)) throw new Error("마일스톤을 찾지 못했어요. 목록을 새로 열어 주세요.");
+		if (e.value !== null) fieldValue(e.value, "연결 값");
+		const old = rows[e.line], ending = old.endsWith("\r\n") ? "\r\n" : old.endsWith("\n") ? "\n" : "";
+		const bare = old.slice(0, old.length - ending.length), head = /^- \[[ xX]\][ \t]+/.exec(bare)![0];
+		rows[e.line] = head + setLineField(bare.slice(head.length), e.key, e.value) + ending;
+	}
+	return text.slice(0, current.start) + rows.join("") + text.slice(current.end);
+}

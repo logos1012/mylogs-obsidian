@@ -2,6 +2,7 @@
 import { parseItem, splitLinesKeepEol, stripEol } from "../parser.ts";
 import { findSection, detectEol } from "../writer.ts";
 import { parseMonthFile, isoWeekNo, type DeskItem } from "../desk/model.ts";
+import { getField, setField } from "../line-edit.ts";
 import { parseWallYear } from "../wall/parse.ts";
 export interface ProjectTask {
  path: string; index: number; line: string; id: string; projectId: string; title: string;
@@ -330,4 +331,34 @@ export function visibleTaskIds(rows: { id: string; parentId?: string | null; don
   if(kids.length?kids.some(k=>!k.done):!r.done)out.add(r.id);
  }
  return out;
+}
+
+/**
+ * A top-level row of `## 할 일` (묶음 or 단독 할 일, checkbox or reference) with its `(ms:: …)` link
+ * and its 하위 rows. Children never carry the link: they follow their 묶음.
+ */
+export interface HubTopRow { key: string; id: string; index: number; line: string; title: string; ms: string; ref: boolean; children: { key: string; id: string; index: number; line: string; ref: boolean }[] }
+export function hubTopRows(text: string): HubTopRow[] {
+ const lines=splitLinesKeepEol(text).map(stripEol),out:HubTopRow[]=[];
+ for(const r of hubRows(text)){
+  const line=lines[r.index],body=line.replace(/^\s*[-*+]\s+/,"");
+  if(!r.depth){out.push({key:r.key,id:r.id,index:r.index,line,title:parseItem(body).text,ms:getField(body,"ms"),ref:r.ref,children:[]});continue;}
+  out[out.length-1]?.children.push({key:r.key,id:r.id,index:r.index,line,ref:r.ref});
+ }
+ return out;
+}
+
+/**
+ * Set (or with `null` remove) one inline field on the top-level `## 할 일` row `key`, only if that
+ * line still reads `line`. A 하위 row is refused: it follows its 묶음.
+ */
+export function setTopRowField(text: string, key: string, line: string, name: string, value: string | null): string {
+ const sec=findSection(text,"할 일");const changed="할 일이 다른 곳에서 변경됐어요. 다시 열어 주세요.";
+ if(!sec)throw Error(changed);
+ const lines=splitLinesKeepEol(text),at=findRef(lines,sec.headingIndex+1,sectionEnd(lines,sec.headingIndex),key);
+ if(at<0||stripEol(lines[at])!==line)throw Error(changed);
+ const m=/^([-*+]\s+)(.*)$/.exec(line);if(!m)throw Error("하위 할 일에는 연결을 붙이지 않아요. 묶음에 연결해 주세요.");
+ const next=m[1]+setField(m[2],name,value??"");
+ lines[at]=next+lines[at].slice(line.length);
+ return lines.join("");
 }

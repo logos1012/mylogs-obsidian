@@ -1,15 +1,16 @@
 import { renderProjectSchedule, type ScheduleState } from "./schedule-ui.ts";
 import { mountAppNav } from "../ui/nav.ts";
 import { tip } from "../ui/tip.ts";
-import { loadProjectTasks } from "./task-actions.ts";
+import { loadProjectTasks, newTaskId } from "./task-actions.ts";
+import { renderTaskOutline, type OutlineState } from "./outline-ui.ts";
 import type { ProjectTask } from "./tasks.ts";
 import { scheduleSource, type ScheduleItem } from "./schedule-dnd.ts";
 import { Component, debounce, ItemView, Keymap, Menu, normalizePath, Notice, Platform, setIcon, type TAbstractFile, TFile, TFolder, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type MyLogsPlugin from "../main.ts";
 import { toIsoDate } from "../parser.ts";
 import { valueToString, parseFrontmatterText } from "../pinboard/model.ts";
-import { renderMilestones, type MilestoneUIState } from "./milestone-ui.ts";
-import { saveMilestone } from "./milestone-actions.ts";
+import { renderMilestones, type MilestoneLinks, type MilestoneUIState } from "./milestone-ui.ts";
+import { saveMilestone, saveMilestoneLink } from "./milestone-actions.ts";
 import { renderWorkspace } from "./workspace-ui.ts";
 import { expandedFolders, projectGoalLinks, toggleExpandedFolder } from "./workspace.ts";
 import { connectProject, readGoals } from "../pinboard/create-actions.ts";
@@ -97,6 +98,8 @@ export class ProjectFoldersView extends ItemView {
 	private pending = false;
 	private scheduleStates = new Map<string, ScheduleState>();
 	private milestoneStates = new Map<string, MilestoneUIState>();
+	/** The 할 일 opened under a 마일스톤 row: one outline state each (`project id|ms`). */
+	private milestoneOutlines = new Map<string, OutlineState>();
 	private selectedId: string | null = null;
 	private workspaceComponent: Component | null = null;
 
@@ -421,7 +424,7 @@ export class ProjectFoldersView extends ItemView {
 			link: () => void this.connectGoal(p), unlink: g => void this.connectGoal(p, g, false), repair: g => void this.connectGoal(p, g),
 			file: path => navigate(() => { const f = this.app.vault.getAbstractFileByPath(path); if (f instanceof TFile) void this.app.workspace.getLeaf("tab").openFile(f); else new Notice(`파일을 찾지 못했어요: ${path}`); }),
 			wheel: e => navigate(() => { void openFlywheelElement(this.plugin, e.id); }),
-			milestones: el => { let ms = this.milestoneStates.get(p.path); if (!ms) { ms = { open: true }; this.milestoneStates.set(p.path, ms); } renderMilestones(el, p, ms, (change, expected) => saveMilestone(this.plugin, p, expected, change, todayIso()), () => this.refresh(), m => choose({kind:"milestone",projectPath:p.path,projectId:p.id,line:m.line,title:m.text,source:p.milestoneSource??"",date:m.due}), (el,m) => scheduleSource(el,this.plugin,{kind:"milestone",projectPath:p.path,projectId:p.id,line:m.line,title:m.text,source:p.milestoneSource??"",date:m.due})); },
+			milestones: el => { let ms = this.milestoneStates.get(p.path); if (!ms) { ms = { open: true }; this.milestoneStates.set(p.path, ms); } renderMilestones(el, p, ms, (change, expected) => saveMilestone(this.plugin, p, expected, change, todayIso()), () => this.refresh(), m => choose({kind:"milestone",projectPath:p.path,projectId:p.id,line:m.line,title:m.text,source:p.milestoneSource??"",date:m.due}), (el,m) => scheduleSource(el,this.plugin,{kind:"milestone",projectPath:p.path,projectId:p.id,line:m.line,title:m.text,source:p.milestoneSource??"",date:m.due}), this.milestoneLinks(p, d, choose)); },
 			// Hubs without an `id` would all share "" — fall back to the hub path.
 			expanded: expandedFolders(this.plugin.settings.projectFolderExpanded, p.id || p.path),
 			folder: (path, open) => {
@@ -432,6 +435,26 @@ export class ProjectFoldersView extends ItemView {
 			},
 			schedule: (el, cal) => renderProjectSchedule(el, this.plugin, p, d.tasks.get(p.id) ?? [], schedule!, () => this.refresh(), d.texts.get(p.id) ?? "", cal),
 		});
+	}
+
+	/** 마일스톤 ↔ 할 일 (0.51.0): the hub text and 할 일 the workspace already loaded. */
+	private milestoneLinks(p: Project, d: Loaded, choose: (item: ScheduleItem) => void): MilestoneLinks | undefined {
+		const hubText = d.texts.get(p.id), tasks = d.tasks.get(p.id);
+		if (hubText === undefined || !tasks) return undefined;
+		return {
+			hubText, tasks,
+			save: (change, expected) => saveMilestoneLink(this.plugin, p, expected, change, todayIso()),
+			outline: (el, keys, msId) => {
+				const key = `${p.id}|${msId}`;
+				let st = this.milestoneOutlines.get(key);
+				if (!st) { st = {}; this.milestoneOutlines.set(key, st); }
+				st.hideDone = this.plugin.settings.projectScheduleHideDone !== false;
+				renderTaskOutline(el, this.plugin, p, tasks, hubText, st, () => this.refresh(), choose, { keys });
+			},
+			askTitle: async milestone => (await askForm(this.app, { title: "+ 할 일", desc: `마일스톤 「${milestone}」에 연결된 새 묶음을 「할 일」에 추가해요. 하위 할 일은 펼친 칸에서 바로 적을 수 있어요.`, fields: [{ key: "title", label: "할 일", type: "text", value: "", placeholder: "예: 자사몰 세팅" }], cta: "추가", validate: v => (v.title?.trim() ? [] : ["할 일 내용을 적어 주세요."]) }))?.title ?? null,
+			pick: (title, items) => pickTarget(this.app, title, items),
+			newTaskId,
+		};
 	}
 
 	private render(): void {

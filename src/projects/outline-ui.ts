@@ -17,7 +17,7 @@ import type { Project } from "./model.ts";
 import { tip } from "../ui/tip.ts";
 import { readProject } from "../pinboard/create-actions.ts";
 import { todayIsoLocal } from "../desk/model.ts";
-import { hubRows, isRowKey, previousTopLevel, type ProjectTask, visibleTaskIds } from "./tasks.ts";
+import { hubRows, hubTopRows, isRowKey, previousTopLevel, type ProjectTask, visibleTaskIds } from "./tasks.ts";
 import { changeProjectTask, loadProjectTasks, newTaskId, type TaskChange } from "./task-actions.ts";
 import { MIME, scheduleSource, selectSchedule, selectedSchedule, TOUCH_DROP, type ScheduleItem } from "./schedule-dnd.ts";
 
@@ -53,14 +53,31 @@ interface Row {
 	kids: number;
 }
 
-export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Project, tasks: ProjectTask[], hubText: string, state: OutlineState, refresh: () => Promise<void>, select: (item: ScheduleItem) => void): void {
+/**
+ * `scope` (마일스톤 줄을 펼친 칸): only these top-level rows (by key) and their 하위 할 일. There a new
+ * line is always a 하위 할 일 (a new 묶음 comes from the panel's 「+ 할 일」, already linked), and
+ * Tab / Shift+Tab do not move rows out of the 묶음 (they would leave the 마일스톤).
+ */
+export interface OutlineScope { keys: Set<string> }
+
+export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Project, tasks: ProjectTask[], hubText: string, state: OutlineState, refresh: () => Promise<void>, select: (item: ScheduleItem) => void, scope?: OutlineScope): void {
 	const texts = (state.texts ??= {});
 	const item = (t: ProjectTask): ScheduleItem => ({ kind: "task", projectPath: p.path, projectId: p.id, title: t.title, task: t });
 	const rows: Row[] = [];
 	const adopted = (state.adopted ??= {});
+	let top = "";
 	for (const r of hubRows(hubText)) {
+		if (!r.depth) top = r.key;
+		if (scope && !scope.keys.has(top)) continue;
 		const task = tasks.find((t) => (t.key ?? t.id) === r.key);
 		if (task) rows.push({ id: r.key, depth: r.depth, ref: r.ref, task, kids: 0 });
+	}
+	if (scope && !rows.length && !state.draft) return;
+	/** 「할 일」 목록: a 묶음 linked to a 마일스톤 carries a small 「◆ 마일스톤 이름」 tag. */
+	const msName = new Map<string, string>();
+	if (!scope) {
+		const names = new Map((p.milestones ?? []).filter((m) => m.ms).map((m) => [m.ms!, m.text] as const));
+		for (const r of hubTopRows(hubText)) if (r.ms && names.has(r.ms)) msName.set(r.key, names.get(r.ms)!);
 	}
 	/** How a queued change names a row: its id once it has one (an id-less row may get it meanwhile). */
 	const ref = (key: string): string => adopted[key] ?? key;
@@ -166,7 +183,7 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 			}
 		});
 	};
-	const heading = list.querySelector<HTMLElement>("h3");
+	const heading = scope ? null : list.querySelector<HTMLElement>("h3");
 	if (heading) dropZone(heading, (t) => (t.parentId ? null : undefined));
 
 	const box = list.createDiv({ cls: "pf-outline", attr: { role: "list" } });
@@ -227,7 +244,7 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 					const v = d.text.trim();
 					if (!v) {
 						// An empty 하위 line steps out; an empty top-level line closes (like a note's list).
-						if (d.child) {
+						if (d.child && !scope) {
 							d.child = false;
 							state.focus = "draft";
 							void refresh();
@@ -244,6 +261,7 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 					queue(async () => ({ kind: "add", text: v, id, after: after === null ? undefined : ref(after), child }), "draft");
 				},
 				tab: (out) => {
+					if (scope) return;
 					if (out) d.child = false;
 					else if (d.after && (rows.find((r) => r.id === d.after)?.depth || !rows.find((r) => r.id === d.after)?.ref)) d.child = true;
 					state.focus = "draft";
@@ -274,6 +292,11 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 	const drawRow = (r: Row) => {
 		const t = r.task;
 		const line = box.createDiv({ cls: `pf-ol-row${r.depth ? " is-child" : ""}${t.state === "done" ? " is-done" : ""}${t.group ? " is-group" : ""}${r.ref ? " is-assigned" : ""}`, attr: { role: "listitem", "data-task": r.id } });
+		const linked = msName.get(r.id);
+		if (linked) {
+			const tag = line.createSpan({ cls: "pf-ol-ms", text: `◆ ${linked}` });
+			tip(tag, `마일스톤 「${linked}」에 연결된 할 일`);
+		}
 		const check = line.createEl("input", { cls: "pf-ol-check", attr: { type: "checkbox", "aria-label": `${t.title} 완료` } });
 		check.checked = t.state === "done";
 		check.disabled = p.archived || t.state === "cancelled" || !!t.group || !!(t.desk && t.desk.section !== "day");
@@ -293,11 +316,14 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 			keys(input, e, {
 				enter: () => {
 					saveText(r);
-					// Under a 묶음 the new line is its first 하위 할 일; else a sibling.
-					open(r.id, !!r.depth || r.kids > 0);
+					// Under a 묶음 the new line is its first 하위 할 일; else a sibling (in a 마일스톤's
+					// panel always a 하위 할 일, so it stays with the 마일스톤).
+					if (scope && r.ref && !r.depth) return;
+					open(r.id, !!scope || !!r.depth || r.kids > 0);
 				},
 				tab: (out) => {
 					saveText(r);
+					if (scope) return;
 					if (out) {
 						if (r.depth) queue(() => level(r.id, null), r.id);
 					} else if (!r.depth && !t.group) {
@@ -360,7 +386,7 @@ export function renderTaskOutline(list: HTMLElement, host: ProjectsHost, p: Proj
 				if (last) last.after(box.lastElementChild as HTMLElement);
 			} else renderDraft();
 		}
-	} else if (!p.archived) {
+	} else if (!p.archived && !scope) {
 		if (!rows.length) {
 			state.draft = { after: null, child: false, text: "" };
 			renderDraft();

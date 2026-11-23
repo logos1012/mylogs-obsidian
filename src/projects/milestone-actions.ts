@@ -4,6 +4,7 @@ import { readProject, vaultIO, exclusive } from "../pinboard/create-actions.ts";
 import { commitBatch } from "../pinboard/batch.ts";
 import { type Project, monthlyLogPath, logIndexPath } from "./model.ts";
 import { changeMilestones, readMilestones, milestoneSummary, milestoneKind, formatMetricValue, type Milestone, type MilestoneChange, type MilestoneKind } from "./milestones.ts";
+import { applyLinkChange, type LinkChange } from "./milestone-links.ts";
 import { applyHubChange, appendLogEntry, formatLogEntry, newMonthlyLog, updateLogIndex, updateProjectAgents, upsertActiveRow, logRegistryChange, setFmValue } from "./ops.ts";
 
 /** Save the hub and its four operational records together; never touch goal metrics. */
@@ -36,6 +37,23 @@ export async function saveMilestone(host: ProjectsHost, displayed: Project, expe
 		const summary = milestoneSummary(after);
 		const title = change.kind === "setMetric" ? verb : `마일스톤 ${verb}`, detail = `${title}: ${description}`;
 		await commitBatch(io, await withProjectRollup(host, await projectRecordWrites(host, p, text, edited, title, detail, summary.label, today), today));
+	});
+}
+
+/**
+ * 마일스톤 ↔ 할 일 / 성과 지표 links: the hub's line edits (ids given in the same save) and the
+ * usual five records, one batch. A section changed since it was shown cancels everything.
+ */
+export async function saveMilestoneLink(host: ProjectsHost, displayed: Project, expected: string, change: LinkChange, today: string): Promise<void> {
+	return exclusive(host, async () => {
+		const io = vaultIO(host.app), { p, text } = await readProject(host, displayed.path);
+		if (p.id !== displayed.id || p.archived) throw new Error("프로젝트가 바뀌었거나 보관됐어요. 다시 열어 주세요.");
+		if (change.kind === "addGroup" && change.projectId !== p.id) throw new Error("프로젝트가 바뀌었어요. 다시 열어 주세요.");
+		const { text: edited, detail } = applyLinkChange(text, expected, change);
+		if (edited === text) return;
+		const summary = milestoneSummary(readMilestones(edited).items);
+		const title = "마일스톤 연결";
+		await commitBatch(io, await withProjectRollup(host, await projectRecordWrites(host, p, text, edited, title, `${title}: ${detail}`, summary.label, today), today));
 	});
 }
 

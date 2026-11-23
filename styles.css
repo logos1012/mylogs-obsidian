@@ -12835,3 +12835,41 @@ body.is-mobile .mylogs-desk-calendar button.dc-inbox-assigned-toggle {
 .pf-schedule-head .pf-done-toggle.is-active { color: var(--text-accent); }
 .pf-ol-hidden { padding: 2px 6px; font-size: 12px; color: var(--text-faint); }
 body.is-mobile .pf-schedule-head .pf-done-toggle { min-height: 44px; }
+
+/* ── 0.51.0 마일스톤 ↔ 할 일 ── */
+/* 「할 일 n/m」: a small chip on the row's one line (tap: open the linked 할 일 under it). */
+.mylogs-projects .pf-ms-row button.pf-ms-tasks { flex: 0 0 auto; align-self: flex-start; display: inline-flex; flex-direction: column; align-items: stretch; gap: 2px; height: auto; min-height: 0; margin-top: 8px; padding: 1px 6px 3px; border: 1px solid var(--pf-line-strong); border-radius: 999px; background: transparent; box-shadow: none; color: var(--pf-ink-2); font-size: 10px; line-height: 14px; white-space: nowrap; font-variant-numeric: tabular-nums; cursor: pointer; }
+.mylogs-projects .pf-ms-row button.pf-ms-tasks[aria-expanded="true"] { border-color: var(--pf-accent); color: var(--pf-accent); }
+.mylogs-projects .pf-ms-row button.pf-ms-tasks.is-complete { color: var(--pf-accent); }
+.mylogs-projects .pf-ms-tasks-bar { display: block; height: 2px; border-radius: 1px; background: var(--pf-line); overflow: hidden; }
+.mylogs-projects .pf-ms-tasks-bar > span { display: block; height: 100%; background: var(--pf-accent); }
+/* The linked 할 일, in place under the row; full width so it works on a phone. */
+.mylogs-projects .pf-ms-panel { margin: 0 0 8px 26px; padding: 4px 0 6px 8px; border-left: 2px solid var(--pf-accent-soft); min-width: 0; }
+.mylogs-projects .pf-ms-panel .pf-outline { min-width: 0; }
+.mylogs-projects .pf-ms-panel-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.mylogs-projects .pf-ms-panel-actions button { height: auto; min-height: 30px; padding: 2px 10px; font-size: 12px; }
+.mylogs-projects button.pf-ms-confirm { display: block; height: auto; min-height: 30px; margin: 4px 0 8px 26px; padding: 3px 10px; border: 1px solid var(--pf-accent); background: var(--pf-accent-soft); box-shadow: none; color: var(--pf-accent); font-size: 12px; white-space: normal; text-align: left; }
+/* 다시 검토: soft, not a warning; closing only hides it for this session. */
+.mylogs-projects .pf-ms-review { display: flex; align-items: flex-start; gap: 6px; margin: 4px 0 8px 26px; padding: 6px 4px 6px 10px; border-radius: 8px; background: var(--background-secondary); color: var(--pf-ink-2); font-size: 12px; line-height: 1.5; }
+.mylogs-projects .pf-ms-review > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.mylogs-projects .pf-ms-review button.pf-ms-review-close { flex: 0 0 auto; width: 28px; height: 28px; min-height: 0; padding: 0; border: 0; background: transparent; box-shadow: none; color: var(--pf-muted); font-size: 16px; }
+.mylogs-projects .pf-ms-aim-form .pf-ms-aim-choice { display: flex; align-items: center; gap: 8px; min-height: 32px; overflow-wrap: anywhere; }
+.mylogs-projects .pf-ms-suggest { margin: 8px 0; }
+.mylogs-projects .pf-ms-suggest button.pf-ms-suggest-go { height: auto; min-height: 32px; padding: 3px 12px; border: 1px solid var(--pf-accent); background: var(--pf-accent-soft); box-shadow: none; color: var(--pf-accent); font-size: 12px; white-space: normal; text-align: left; }
+.mylogs-projects .pf-ms-suggest-list { margin: 4px 0 0; padding-left: 18px; color: var(--pf-ink-2); font-size: 12px; overflow-wrap: anywhere; }
+/* 「할 일」 목록: ◆ 마일스톤 이름 in front of a linked 묶음. */
+.pf-ol-ms { flex: 0 1 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #7353a6; font-size: var(--font-ui-smaller); }
+@media (max-width: 760px) {
+ .mylogs-projects .pf-ms-row button.pf-ms-tasks { margin-top: 12px; padding: 3px 8px 4px; }
+ .mylogs-projects .pf-ms-panel { margin-left: 8px; }
+ .mylogs-projects .pf-ms-confirm, .mylogs-projects .pf-ms-review { margin-left: 8px; }
+ .mylogs-projects .pf-ms-panel-actions button, .mylogs-projects button.pf-ms-confirm, .mylogs-projects .pf-ms-suggest button.pf-ms-suggest-go { min-height: 44px; }
+ .mylogs-projects .pf-ms-review button.pf-ms-review-close { width: 44px; height: 44px; }
+ .mylogs-projects .pf-ms-aim-form .pf-ms-aim-choice { min-height: 44px; }
+}
+body.is-mobile .mylogs-projects .pf-ms-row button.pf-ms-tasks { margin-top: 12px; padding: 3px 8px 4px; }
+body.is-mobile .mylogs-projects .pf-ms-panel { margin-left: 8px; }
+body.is-mobile .mylogs-projects .pf-ms-confirm, body.is-mobile .mylogs-projects .pf-ms-review { margin-left: 8px; }
+body.is-mobile .mylogs-projects .pf-ms-panel-actions button, body.is-mobile .mylogs-projects button.pf-ms-confirm, body.is-mobile .mylogs-projects .pf-ms-suggest button.pf-ms-suggest-go { min-height: 44px; }
+body.is-mobile .mylogs-projects .pf-ms-review button.pf-ms-review-close { width: 44px; height: 44px; }
+body.is-mobile .mylogs-projects .pf-ms-aim-form .pf-ms-aim-choice { min-height: 44px; }
