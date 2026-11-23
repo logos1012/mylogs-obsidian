@@ -72,15 +72,25 @@ export function scheduleTarget(el:HTMLElement,host:ProjectsHost,target:ScheduleT
  el.addEventListener("keydown",e=>{if(e.key==="Escape")selectSchedule(host,null);if(e.target===el&&(e.key==="Enter"||e.key===" ")&&accepts()){e.preventDefault();void run();}});
 }
 
+export interface TouchReorder{selector:string;scroller?:HTMLElement;hint:(target:HTMLElement)=>string|null;drop:(target:HTMLElement)=>void}
+const reorders=new WeakMap<HTMLElement,TouchReorder>();
+/**
+ * The same long-press that carries `el` to a calendar day also reorders it: lifted over a
+ * schedule target it schedules, over a `selector` match (another row) it calls `drop`.
+ * One timer, one ghost — the gesture branches only on where the finger is lifted.
+ */
+export function touchReorder(el:HTMLElement,reorder:TouchReorder):void {reorders.set(el,reorder);}
 /**
  * Touch screens have no HTML5 drag: a long press (~350 ms) picks the item up, a ghost follows the
  * finger, and lifting it over a schedule target (`scheduleTarget`) drops it there — the same
  * `run()` as a click on that target. Moving before the press completes is an ordinary scroll.
  */
 function touchDrag(el:HTMLElement,host:ProjectsHost,item:ScheduleItem):void {
- let timer:number|null=null,ghost:HTMLElement|null=null,over:HTMLElement|null=null,sx=0,sy=0,dragged=0;
+ let timer:number|null=null,ghost:HTMLElement|null=null,over:HTMLElement|null=null,mark:HTMLElement|null=null,markCls="",sx=0,sy=0,dragged=0;
  const targetAt=(x:number,y:number)=>{const hit=el.doc.elementFromPoint(x,y) as HTMLElement|null;return hit?.closest<HTMLElement>(".ml-schedule-target")??null;};
- const end=()=>{if(timer!==null)window.clearTimeout(timer);timer=null;ghost?.remove();ghost=null;over?.removeClass("ml-schedule-over");over=null;el.removeClass("is-dragging");};
+ const rowAt=(x:number,y:number)=>{const r=reorders.get(el);if(!r)return null;const t=(el.doc.elementFromPoint(x,y) as HTMLElement|null)?.closest<HTMLElement>(r.selector)??null;const cls=t?r.hint(t):null;return t&&cls?{t,cls}:null;};
+ const unmark=()=>{if(mark&&markCls)mark.removeClass(markCls);mark=null;markCls="";};
+ const end=()=>{if(timer!==null)window.clearTimeout(timer);timer=null;ghost?.remove();ghost=null;over?.removeClass("ml-schedule-over");over=null;unmark();el.removeClass("is-dragging");};
  el.addEventListener("touchstart",e=>{
   if(e.touches.length!==1)return;const p=e.touches[0];sx=p.clientX;sy=p.clientY;
   e.stopPropagation(); // not the view-wide long-press menu: here a long press picks the item up
@@ -94,11 +104,13 @@ function touchDrag(el:HTMLElement,host:ProjectsHost,item:ScheduleItem):void {
   if(!ghost){if(Math.abs(p.clientX-sx)>8||Math.abs(p.clientY-sy)>8)end();return;}
   e.preventDefault();ghost.style.left=`${p.clientX}px`;ghost.style.top=`${p.clientY}px`;
   const t=targetAt(p.clientX,p.clientY);if(t!==over){over?.removeClass("ml-schedule-over");over=t;over?.addClass("ml-schedule-over");}
+  const r=t?null:rowAt(p.clientX,p.clientY);if(r?.t!==mark||r?.cls!==markCls){unmark();if(r){mark=r.t;markCls=r.cls;mark.addClass(markCls);}}
+  const sc=reorders.get(el)?.scroller;if(sc){const vh=el.doc.documentElement.clientHeight;if(p.clientY>vh-90)sc.scrollTop+=12;else if(p.clientY<160)sc.scrollTop-=12;}
  },{passive:false});
  el.addEventListener("touchend",e=>{
   if(!ghost){end();return;}
-  const p=e.changedTouches[0],t=p?targetAt(p.clientX,p.clientY):null;end();dragged=Date.now();
-  if(t)t.dispatchEvent(new CustomEvent(TOUCH_DROP));else selectSchedule(host,null);
+  const p=e.changedTouches[0],t=p?targetAt(p.clientX,p.clientY):null,r=p&&!t?rowAt(p.clientX,p.clientY):null;end();dragged=Date.now();
+  if(t)t.dispatchEvent(new CustomEvent(TOUCH_DROP));else{selectSchedule(host,null);if(r)reorders.get(el)?.drop(r.t);}
  });
  el.addEventListener("touchcancel",()=>{end();selectSchedule(host,null);});
  // The tap that ends a drag must not also open the project / swallow-native menu.

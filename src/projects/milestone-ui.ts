@@ -1,6 +1,7 @@
 import { Menu } from "obsidian";
 import { tip } from "../ui/tip.ts";
 import { touchDrag } from "../desk/touch-drag.ts";
+import { touchReorder } from "./schedule-dnd.ts";
 import { todayIsoLocal } from "../desk/model.ts";
 import type { Project } from "./model.ts";
 import { formatMetricValue, metricMeasure, milestoneKind, milestoneSplit, milestoneSummary, type MilestoneChange, type Milestone } from "./milestones.ts";
@@ -62,11 +63,11 @@ export function renderMilestones(parent: HTMLElement, p: Project, state: Milesto
 			const metric = milestoneKind(item) === "metric";
 			const row = body.createDiv({ cls: `pf-ms-row${item.done ? " is-done" : ""}${metric ? " is-metric" : ""}`, attr: { "data-line": String(item.line) } });
 			if (!p.archived && !locked) draggable?.(row, item);
-			// ⋮⋮: drag up or down to reorder (desktop) · long-press then drag (phone).
+			// ⋮⋮ (desktop, shown on hover): drag up or down to reorder. Phone: long-press the row itself.
 			if (!p.archived && items.length > 1) {
 				const handle = row.createSpan({ cls: "pf-ms-handle", text: "⋮⋮", attr: { role: "button", tabindex: "-1", "aria-label": `${item.text} 순서 바꾸기` } });
 				if (!locked) {
-					tip(handle, "끌어서 순서 바꾸기 · 휴대폰은 길게 누른 뒤 끌어요");
+					tip(handle, "끌어서 순서 바꾸기 · 휴대폰은 줄을 길게 누른 뒤 끌어요");
 					handle.draggable = true;
 					handle.addEventListener("dragstart", e => {
 						e.stopPropagation(); // not the row's drag to the calendar
@@ -76,11 +77,19 @@ export function renderMilestones(parent: HTMLElement, p: Project, state: Milesto
 						row.addClass("is-dragging");
 					});
 					handle.addEventListener("dragend", () => { ordering = null; row.removeClass("is-dragging"); clearDrop(); });
-					touchDrag(scroller, handle, `⋮⋮ ${item.text}`, ".pf-ms-row", target => {
-						if (!body.contains(target)) return;
-						const to = items.find(i => String(i.line) === target.dataset.line);
-						if (to && to !== item) move(item, to, items.indexOf(to) > index ? "after" : "before");
-					});
+					// One long-press on the row: over another row it reorders, over a calendar day it sets the date.
+					const reorder = {
+						selector: ".pf-ms-row", scroller,
+						hint: (target: HTMLElement) => target === row || !body.contains(target) ? null : items.findIndex(i => String(i.line) === target.dataset.line) > index ? "is-drop-after" : "is-drop-before",
+						drop: (target: HTMLElement) => {
+							if (!body.contains(target)) return;
+							const to = items.find(i => String(i.line) === target.dataset.line);
+							if (to && to !== item) move(item, to, items.indexOf(to) > index ? "after" : "before");
+						},
+					};
+					// The calendar long-press (`scheduleSource`) already owns this row's touches: extend it.
+					if (row.hasClass("ml-schedule-draggable")) touchReorder(row, reorder);
+					else touchDrag(scroller, row, `⋮⋮ ${item.text}`, reorder.selector, reorder.drop);
 				}
 			}
 			if (!p.archived && !locked) {
@@ -104,14 +113,15 @@ export function renderMilestones(parent: HTMLElement, p: Project, state: Milesto
 				});
 			}
 			const main = row.createDiv({ cls: "pf-ms-main" });
-			const label = main.createEl("label", { cls: "pf-ms-check" });
+			const first = main.createDiv({ cls: "pf-ms-line" });
+			const label = first.createEl("label", { cls: "pf-ms-check" });
 			const check = label.createEl("input", { attr: { type: "checkbox", "aria-label": `${item.text} 달성 확인` } });
 			check.checked = item.done; check.disabled = p.archived || locked;
-			label.createSpan({ text: item.text });
+			label.createSpan({ cls: "pf-ms-title", text: item.text });
+			// Only a 성과 지표 is marked, small, at the end of the line; a plain 마일스톤 needs no label.
+			if (metric) first.createSpan({ cls: "pf-ms-badge is-metric", text: "성과 지표" });
 			check.addEventListener("change", () => void commit({ kind: "check", line: item.line, done: check.checked }, source));
-			const sub = main.createDiv({ cls: "pf-ms-sub" });
-			sub.createSpan({ cls: `pf-ms-badge${metric ? " is-metric" : ""}`, text: metric ? "성과 지표" : "마일스톤" });
-			if (metric) renderMeasure(sub, main, item);
+			if (metric) renderMeasure(main.createDiv({ cls: "pf-ms-sub" }), main, item);
 			if (item.fieldIssue) main.createDiv({ cls: "pf-ms-field-issue", text: item.fieldIssue });
 			const editItem = (dateFocus = false) => {
 				state.editor = { line: item.line, text: item.text, source, due: item.due, dueIssue: item.dueIssue }; state.error = ""; paint(true);
