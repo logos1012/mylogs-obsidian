@@ -8835,6 +8835,18 @@ body.is-mobile .mylogs-daily-pad .ml-nav button.ml-btn {
 	min-height: 44px;
 	justify-content: center;
 }
+/* 메모 들여쓰기 / 내어쓰기 (mobile edit mode only; desktop uses Tab / Shift+Tab). */
+body.is-mobile .mylogs-daily-pad .ml-indent-tools {
+	display: flex;
+	gap: 4px;
+}
+body.is-mobile .mylogs-daily-pad button.ml-indent-btn {
+	min-width: 44px;
+	min-height: 44px;
+	padding: 0 8px;
+	justify-content: center;
+	font-size: 12px;
+}
 body.is-mobile .mylogs-daily-pad input.ml-date-input {
 	flex: 1 1 140px;
 	height: 44px;

@@ -49,6 +49,7 @@ import { parseLogTable } from "./flywheel/ops.ts";
 import { activateFlywheel, openFlywheelElement } from "./flywheel/register.ts";
 import { weekMonday } from "./mylife/model.ts";
 import { AutoGrow } from "./ui/autogrow.ts";
+import { adjustMemoIndent, type MemoIndentDirection } from "./memo-indent.ts";
 import { trackKeyboard } from "./ui/mobile.ts";
 import {
 	appendToSection,
@@ -243,6 +244,8 @@ class SectionPanel {
 	private barEl!: HTMLElement;
 	private statusEl!: HTMLElement;
 	private editBtn!: HTMLElement;
+	/** 메모 들여쓰기/내어쓰기 buttons (mobile edit mode only; no Tab key there). */
+	private indentTools: HTMLElement | null = null;
 	private textarea: HTMLTextAreaElement | null = null;
 	/** Auto-grow + caret follow for the mounted textarea (`src/ui/autogrow.ts`). */
 	private grow: AutoGrow | null = null;
@@ -336,6 +339,8 @@ class SectionPanel {
 		this.grow?.dispose();
 		this.grow = null;
 		this.textarea = null;
+		this.indentTools?.remove();
+		this.indentTools = null;
 		this.el.removeClass("is-editing");
 		this.editBtn.setText("편집");
 		this.bodyEl.empty();
@@ -458,6 +463,13 @@ class SectionPanel {
 			this.scheduleSave();
 		});
 		ta.addEventListener("keydown", (e) => {
+			if (this.key === "memo" && e.key === "Tab" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+				if (e.isComposing || e.keyCode === 229) return; // 한글 조합 중
+				e.preventDefault();
+				e.stopPropagation();
+				this.indentMemo(e.shiftKey ? "out" : "in");
+				return;
+			}
 			if (e.key === "Escape") {
 				e.preventDefault();
 				e.stopPropagation();
@@ -471,8 +483,47 @@ class SectionPanel {
 				void this.exitEdit();
 			}, 120);
 		});
+		if (this.key === "memo" && Platform.isMobile) this.mountIndentTools();
 		ta.focus();
 		ta.selectionStart = ta.selectionEnd = ta.value.length;
+	}
+
+	/** Tab / Shift+Tab (or the mobile buttons) on the 메모 textarea: nest or un-nest the bullet(s). */
+	private indentMemo(direction: MemoIndentDirection): void {
+		const ta = this.textarea;
+		if (!ta) return;
+		const r = adjustMemoIndent(ta.value, ta.selectionStart, ta.selectionEnd, direction);
+		if (!r) return;
+		ta.value = r.text;
+		ta.setSelectionRange(r.start, r.end);
+		this.dirty = normalizeContent(ta.value) !== (this.base ?? "");
+		this.setStatus(this.dirty ? "입력 중" : "");
+		this.scheduleSave();
+		this.autosize();
+	}
+
+	private mountIndentTools(): void {
+		this.indentTools?.remove();
+		const box = this.editBtn.parentElement!.createDiv({ cls: "ml-indent-tools" });
+		this.editBtn.before(box);
+		const add = (label: string, direction: MemoIndentDirection) => {
+			const btn = box.createEl("button", {
+				cls: "ml-btn ml-btn-ghost ml-indent-btn",
+				text: label,
+				attr: { type: "button", "aria-label": `메모 ${label}` },
+			});
+			// Keep the textarea focused (keyboard stays up) while tapping; the blur check also skips
+			// focus moving inside this panel.
+			btn.addEventListener("mousedown", (e) => e.preventDefault());
+			btn.addEventListener("click", (e) => {
+				e.stopPropagation();
+				this.indentMemo(direction);
+				this.textarea?.focus();
+			});
+		};
+		add("내어쓰기", "out");
+		add("들여쓰기", "in");
+		this.indentTools = box;
 	}
 
 	/** Refit the height after a programmatic value change (no caret follow). */
